@@ -1,0 +1,23 @@
+diff -r 91b7c7518692 js/src/methodjit/StubCalls.cpp
+--- a/js/src/methodjit/StubCalls.cpp	Sat Oct 06 16:50:51 2012 +0900
++++ b/js/src/methodjit/StubCalls.cpp	Sun Oct 07 07:53:52 2012 +0900
+@@ -63,16 +63,19 @@ stubs::BindName(VMFrame &f, PropertyName
+ 
+ JSObject * JS_FASTCALL
+ stubs::BindGlobalName(VMFrame &f)
+ {
+     return &f.fp()->global();
+ }
+ 
+ template<JSBool strict>
++#ifdef _MSC_VER
++__declspec(noinline)
++#endif
+ void JS_FASTCALL
+ stubs::SetName(VMFrame &f, PropertyName *name)
+ {
+     JSContext *cx = f.cx;
+     const Value &rval = f.regs.sp[-1];
+     const Value &lval = f.regs.sp[-2];
+ 
+     if (!SetPropertyOperation(cx, f.pc(), lval, rval))

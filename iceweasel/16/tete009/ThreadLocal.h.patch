@@ -1,0 +1,57 @@
+diff -r 6a3897dad583 mfbt/ThreadLocal.h
+--- a/mfbt/ThreadLocal.h	Sat Oct 06 15:30:41 2012 +0900
++++ b/mfbt/ThreadLocal.h	Sat Oct 06 15:40:43 2012 +0900
+@@ -12,17 +12,27 @@
+ // This file will get included in any file that wants to add a profiler mark.
+ // In order to not bring <windows.h> together we could include windef.h and
+ // winbase.h which are sufficient to get the prototypes for the Tls* functions.
+ // # include <windef.h>
+ // # include <winbase.h>
+ // Unfortunately, even including these headers causes us to add a bunch of ugly
+ // stuff to our namespace e.g #define CreateEvent CreateEventW
+ extern "C" {
++#if _MSC_VER >= 1400
++#ifdef _WIN64
++unsigned __int64 __readgsqword(unsigned long Offset);
++#pragma intrinsic(__readgsqword)
++#else /* _WIN64 */
++unsigned long __readfsdword(unsigned long Offset);
++#pragma intrinsic(__readfsdword)
++#endif /* _WIN64 */
++#else
+ __declspec(dllimport) void * __stdcall TlsGetValue(unsigned long);
++#endif /* _MSC_VER >= 1400 */
+ __declspec(dllimport) int __stdcall TlsSetValue(unsigned long, void *);
+ __declspec(dllimport) unsigned long __stdcall TlsAlloc();
+ }
+ #else
+ #  include <pthread.h>
+ #  include <signal.h>
+ #endif
+ 
+@@ -113,17 +123,25 @@ ThreadLocal<T>::init()
+ 
+ template<typename T>
+ inline T
+ ThreadLocal<T>::get() const
+ {
+   MOZ_ASSERT(initialized());
+   Helper h;
+ #ifdef XP_WIN
++#if _MSC_VER >= 1400
++#ifdef _WIN64
++  h.ptr = (void *)(__readgsqword(key * 8 + 0x1480));
++#else /* _WIN64 */
++  h.ptr = (void *)(*(unsigned long *)(__readfsdword(0x18) + key * 4 + 3600));
++#endif /* _WIN64 */
++#else
+   h.ptr = TlsGetValue(key);
++#endif /* _MSC_VER >= 1400 */
+ #else
+   h.ptr = pthread_getspecific(key);
+ #endif
+   return h.value;
+ }
+ 
+ template<typename T>
+ inline bool

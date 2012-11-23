@@ -1,0 +1,26 @@
+diff -r 99930dd98444 security/nss/lib/freebl/Makefile
+--- a/security/nss/lib/freebl/Makefile	Thu Feb 23 06:23:32 2012 +0900
++++ b/security/nss/lib/freebl/Makefile	Thu Feb 23 06:33:44 2012 +0900
+@@ -158,21 +158,20 @@ ifdef NS_USE_GCC
+ #     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE \
+ #                -DMP_ASSEMBLY_DIV_2DX1D
+ # but we haven't figured out how to make it work, so we are not
+ # using assembler right now.
+     ASFILES  =
+     DEFINES += -DMP_NO_MP_WORD -DMP_USE_UINT_DIGIT
+ else
+ # MSVC
+-    MPI_SRCS += mpi_x86_asm.c
+     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE 
+     DEFINES += -DMP_ASSEMBLY_DIV_2DX1D -DMP_USE_UINT_DIGIT -DMP_NO_MP_WORD
+     ifdef BUILD_OPT
+-	OPTIMIZER += -Ox  # maximum optimization for freebl
++	OPTIMIZER += -O2  # maximum optimization for freebl
+     endif
+ endif
+ else
+     # -DMP_NO_MP_WORD
+     ifdef BUILD_OPT
+ 	OPTIMIZER += -Ox  # maximum optimization for freebl
+     endif
+     ASFILES  = arcfour-amd64-masm.asm mpi_amd64_masm.asm mp_comba_amd64_masm.asm

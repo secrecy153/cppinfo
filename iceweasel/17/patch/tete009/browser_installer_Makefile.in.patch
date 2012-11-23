@@ -1,0 +1,24 @@
+diff -r 6a3897dad583 browser/installer/Makefile.in
+--- a/browser/installer/Makefile.in	Sat Oct 06 15:30:41 2012 +0900
++++ b/browser/installer/Makefile.in	Sat Oct 06 16:20:40 2012 +0900
+@@ -75,20 +75,16 @@ endif
+ include $(topsrcdir)/ipc/app/defs.mk
+ DEFINES += -DMOZ_CHILD_PROCESS_NAME=$(MOZ_CHILD_PROCESS_NAME)
+ 
+ # Set MSVC dlls version to package, if any.
+ ifdef WIN32_REDIST_DIR
+ DEFINES += -DMOZ_MSVC_REDIST=$(_MSC_VER)
+ endif
+ 
+-ifneq (,$(filter aurora beta,$(MOZ_UPDATE_CHANNEL)))
+-DEFINES += -DSHIP_FEEDBACK=1
+-endif
+-
+ ifneq (,$(filter WINNT Darwin Android,$(OS_TARGET)))
+ DEFINES += -DMOZ_SHARED_MOZGLUE=1
+ endif
+ 
+ ifdef MOZ_JSDEBUGGER
+ DEFINES += -DMOZ_JSDEBUGGER
+ endif
+ 

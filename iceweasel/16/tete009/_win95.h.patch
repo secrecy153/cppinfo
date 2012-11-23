@@ -1,0 +1,31 @@
+diff -r 6a3897dad583 nsprpub/pr/include/md/_win95.h
+--- a/nsprpub/pr/include/md/_win95.h	Sat Oct 06 15:30:41 2012 +0900
++++ b/nsprpub/pr/include/md/_win95.h	Sat Oct 06 15:42:56 2012 +0900
+@@ -474,16 +474,27 @@ extern __declspec(thread) struct PRThrea
+ extern __declspec(thread) struct PRThread *_pr_thread_last_run;
+ #define _MD_LAST_THREAD() _pr_thread_last_run
+ #define _MD_SET_LAST_THREAD(_thread) (_pr_thread_last_run = 0)
+ 
+ extern __declspec(thread) struct _PRCPU *_pr_currentCPU;
+ #define _MD_CURRENT_CPU() _pr_currentCPU
+ #define _MD_SET_CURRENT_CPU(_cpu) (_pr_currentCPU = 0)
+ #else /* _PR_USE_STATIC_TLS */
++#if _MSC_VER >= 1400
++#ifdef _WIN64
++unsigned __int64 __readgsqword(unsigned long Offset);
++#pragma intrinsic(__readgsqword)
++#define TlsGetValue(x) (LPVOID)(__readgsqword((x) * 8 + 0x1480))
++#else /* _WIN64 */
++unsigned long __readfsdword(unsigned long Offset);
++#pragma intrinsic(__readfsdword)
++#define TlsGetValue(x) (LPVOID)(*(unsigned long *)(__readfsdword(0x18) + (x) * 4 + 3600))
++#endif /* _WIN64 */
++#endif /* _MSC_VER >= 1400 */
+ extern DWORD _pr_currentThreadIndex;
+ #define _MD_GET_ATTACHED_THREAD() ((PRThread *) TlsGetValue(_pr_currentThreadIndex))
+ #define _MD_SET_CURRENT_THREAD(_thread) TlsSetValue(_pr_currentThreadIndex, (_thread))
+ 
+ extern DWORD _pr_lastThreadIndex;
+ #define _MD_LAST_THREAD() ((PRThread *) TlsGetValue(_pr_lastThreadIndex))
+ #define _MD_SET_LAST_THREAD(_thread) TlsSetValue(_pr_lastThreadIndex, 0)
+ 

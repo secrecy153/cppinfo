@@ -1,0 +1,27 @@
+diff -r aa0ca203d703 js/src/yarr/YarrInterpreter.cpp
+--- a/js/src/yarr/YarrInterpreter.cpp	Fri Jun 15 21:22:41 2012 +0900
++++ b/js/src/yarr/YarrInterpreter.cpp	Sun Jun 17 12:59:56 2012 +0900
+@@ -1848,17 +1848,23 @@ public:
+     }
+ 
+ private:
+     YarrPattern& m_pattern;
+     OwnPtr<ByteDisjunction> m_bodyDisjunction;
+     unsigned m_currentAlternativeIndex;
+     Vector<ParenthesesStackEntry> m_parenthesesStack;
+     Vector<ByteDisjunction*> m_allParenthesesInfo;
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
+ };
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
+ 
+ PassOwnPtr<BytecodePattern> byteCompile(YarrPattern& pattern, BumpPointerAllocator* allocator)
+ {
+     return ByteCompiler(pattern).compile(allocator);
+ }
+ 
+ int interpret(BytecodePattern* bytecode, const UChar* input, unsigned start, unsigned length, int* output)
+ {

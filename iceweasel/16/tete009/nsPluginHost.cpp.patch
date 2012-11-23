@@ -1,0 +1,32 @@
+diff -r 6a3897dad583 dom/plugins/base/nsPluginHost.cpp
+--- a/dom/plugins/base/nsPluginHost.cpp	Sat Oct 06 15:30:41 2012 +0900
++++ b/dom/plugins/base/nsPluginHost.cpp	Sat Oct 06 16:18:56 2012 +0900
+@@ -2741,16 +2741,28 @@ nsPluginHost::ReadPluginInfo()
+   rv = mPluginRegFile->Clone(getter_AddRefs(pluginReg));
+   if (NS_FAILED(rv))
+     return rv;
+ 
+   rv = pluginReg->AppendNative(kPluginRegistryFilename);
+   if (NS_FAILED(rv))
+     return rv;
+ 
++#ifdef TT_MEMUTIL
++  {
++    const char pref_appdir_hash[] = "tete009.appdir_hash";
++    PRInt32 old_appdir_hash = Preferences::GetInt(pref_appdir_hash);
++    PRInt32 new_appdir_hash = GetAppDirHash_tt();
++    if (old_appdir_hash != new_appdir_hash &&
++      NS_SUCCEEDED(Preferences::SetInt(pref_appdir_hash, new_appdir_hash))) {
++      pluginReg->Remove(PR_FALSE);
++    }
++  }
++#endif
++
+   PRInt64 fileSize;
+   rv = pluginReg->GetFileSize(&fileSize);
+   if (NS_FAILED(rv))
+     return rv;
+ 
+   PRInt32 flen = PRInt64(fileSize);
+   if (flen == 0) {
+     NS_WARNING("Plugins Registry Empty!");

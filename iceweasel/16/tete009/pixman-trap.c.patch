@@ -1,0 +1,208 @@
+diff -r 28eff799c22e gfx/cairo/libpixman/src/pixman-trap.c
+--- a/gfx/cairo/libpixman/src/pixman-trap.c	Thu Sep 06 17:23:00 2012 +0900
++++ b/gfx/cairo/libpixman/src/pixman-trap.c	Sat Sep 29 14:24:58 2012 +0900
+@@ -20,75 +20,123 @@
+  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+  * PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++#include <limits.h>
++
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include "pixman-private.h"
+ 
+ /*
+  * Compute the smallest value greater than or equal to y which is on a
+  * grid row.
+  */
+ 
+ PIXMAN_EXPORT pixman_fixed_t
+ pixman_sample_ceil_y (pixman_fixed_t y, int n)
+ {
+     pixman_fixed_t f = pixman_fixed_frac (y);
+     pixman_fixed_t i = pixman_fixed_floor (y);
+ 
++if (8 == n)
++{
++    f = DIV (f - Y_FRAC_FIRST (8) + (STEP_Y_SMALL (8) - pixman_fixed_e), STEP_Y_SMALL (8)) * STEP_Y_SMALL (8) +
++	Y_FRAC_FIRST (8);
++    
++    if (f > Y_FRAC_LAST (8))
++    {
++	if (pixman_fixed_to_int (i) == 0x7fff)
++	{
++	    f = 0xffff; /* saturate */
++	}
++	else
++	{
++	    f = Y_FRAC_FIRST (8);
++	    i += pixman_fixed_1;
++	}
++    }
++}
++else
++{
+     f = DIV (f - Y_FRAC_FIRST (n) + (STEP_Y_SMALL (n) - pixman_fixed_e), STEP_Y_SMALL (n)) * STEP_Y_SMALL (n) +
+ 	Y_FRAC_FIRST (n);
+     
+     if (f > Y_FRAC_LAST (n))
+     {
+ 	if (pixman_fixed_to_int (i) == 0x7fff)
+ 	{
+ 	    f = 0xffff; /* saturate */
+ 	}
+ 	else
+ 	{
+ 	    f = Y_FRAC_FIRST (n);
+ 	    i += pixman_fixed_1;
+ 	}
+     }
++}
+     return (i | f);
+ }
+ 
+ /*
+  * Compute the largest value strictly less than y which is on a
+  * grid row.
+  */
+ PIXMAN_EXPORT pixman_fixed_t
+ pixman_sample_floor_y (pixman_fixed_t y,
+                        int            n)
+ {
+     pixman_fixed_t f = pixman_fixed_frac (y);
+     pixman_fixed_t i = pixman_fixed_floor (y);
+ 
++if (8 == n)
++{
++    f = DIV (f - pixman_fixed_e - Y_FRAC_FIRST (8), STEP_Y_SMALL (8)) * STEP_Y_SMALL (8) +
++	Y_FRAC_FIRST (8);
++
++    if (f < Y_FRAC_FIRST (8))
++    {
++	if (pixman_fixed_to_int (i) == 0x8000)
++	{
++	    f = 0; /* saturate */
++	}
++	else
++	{
++	    f = Y_FRAC_LAST (8);
++	    i -= pixman_fixed_1;
++	}
++    }
++}
++else
++{
+     f = DIV (f - pixman_fixed_e - Y_FRAC_FIRST (n), STEP_Y_SMALL (n)) * STEP_Y_SMALL (n) +
+ 	Y_FRAC_FIRST (n);
+ 
+     if (f < Y_FRAC_FIRST (n))
+     {
+ 	if (pixman_fixed_to_int (i) == 0x8000)
+ 	{
+ 	    f = 0; /* saturate */
+ 	}
+ 	else
+ 	{
+ 	    f = Y_FRAC_LAST (n);
+ 	    i -= pixman_fixed_1;
+ 	}
+     }
++}
++
+     return (i | f);
+ }
+ 
+ /*
+  * Step an edge by any amount (including negative values)
+  */
+ PIXMAN_EXPORT void
+ pixman_edge_step (pixman_edge_t *e,
+@@ -181,21 +229,32 @@ pixman_edge_init (pixman_edge_t *e,
+ 	else
+ 	{
+ 	    e->signdx = -1;
+ 	    e->stepx = -(-dx / dy);
+ 	    e->dx = -dx % dy;
+ 	    e->e = 0;
+ 	}
+ 
++if (8 == n)
++{
++	_pixman_edge_multi_init (e, STEP_Y_SMALL (8),
++				 &e->stepx_small, &e->dx_small);
++
++	_pixman_edge_multi_init (e, STEP_Y_BIG (8),
++				 &e->stepx_big, &e->dx_big);
++}
++else
++{
+ 	_pixman_edge_multi_init (e, STEP_Y_SMALL (n),
+ 				 &e->stepx_small, &e->dx_small);
+ 
+ 	_pixman_edge_multi_init (e, STEP_Y_BIG (n),
+ 				 &e->stepx_big, &e->dx_big);
++}
+     }
+     pixman_edge_step (e, y_start - y_top);
+ }
+ 
+ /*
+  * Initialize one edge structure given a line, starting y value
+  * and a pixel offset for the line
+  */
+@@ -322,25 +381,47 @@ pixman_add_trapezoids (pixman_image_t * 
+                        const pixman_trapezoid_t *traps)
+ {
+     int i;
+ 
+ #if 0
+     dump_image (image, "before");
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++int omp_thread_counts = omp_get_max_threads();
++if (omp_thread_counts >= 2 &&
++    ntraps >= omp_thread_counts &&
++    ntraps >= 160)
++{
++#pragma omp parallel for schedule(guided) default(none) \
++shared(ntraps, traps, image, x_off, y_off)
++    for (i = 0; i < ntraps; ++i)
++    {
++	const pixman_trapezoid_t *trap = &(traps[i]);
++
++	if (pixman_trapezoid_valid (trap))
++	{
++		pixman_rasterize_trapezoid (image, trap, x_off, y_off);
++	}
++    }
++}
++else
++#endif
++{
+     for (i = 0; i < ntraps; ++i)
+     {
+ 	const pixman_trapezoid_t *trap = &(traps[i]);
+ 
+ 	if (!pixman_trapezoid_valid (trap))
+ 	    continue;
+ 
+ 	pixman_rasterize_trapezoid (image, trap, x_off, y_off);
+     }
++}
+ 
+ #if 0
+     dump_image (image, "after");
+ #endif
+ }
+ 
+ PIXMAN_EXPORT void
+ pixman_rasterize_trapezoid (pixman_image_t *          image,

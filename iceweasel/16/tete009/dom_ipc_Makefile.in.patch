@@ -1,0 +1,19 @@
+diff -r 6a3897dad583 dom/ipc/Makefile.in
+--- a/dom/ipc/Makefile.in	Sat Oct 06 15:30:41 2012 +0900
++++ b/dom/ipc/Makefile.in	Sat Oct 06 16:22:51 2012 +0900
+@@ -86,8 +86,15 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),$(findstring
+ DEFINES += -DMOZ_ENABLE_FREETYPE
+ endif
+ 
+ ifdef MOZ_PERMISSIONS
+ DEFINES += -DMOZ_PERMISSIONS
+ endif
+ 
+ CXXFLAGS += $(TK_CFLAGS)
++
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif

@@ -1,0 +1,95 @@
+diff --git a/content/canvas/src/nsCanvasRenderingContext2D.cpp b/content/canvas/src/nsCanvasRenderingContext2D.cpp
+--- a/content/canvas/src/nsCanvasRenderingContext2D.cpp
++++ b/content/canvas/src/nsCanvasRenderingContext2D.cpp
+@@ -3989,37 +3989,18 @@ nsCanvasRenderingContext2D::GetImageData
+     // make sure sUnpremultiplyTable has been created
+     EnsureUnpremultiplyTable();
+ 
+     // NOTE! dst is the same as src, and this relies on reading
+     // from src and advancing that ptr before writing to dst.
+     uint8_t *src = data;
+     uint8_t *dst = data;
+ 
+-    for (uint32_t j = 0; j < aHeight; ++j) {
+-        for (uint32_t i = 0; i < aWidth; ++i) {
+-            // XXX Is there some useful swizzle MMX we can use here?
+-#ifdef IS_LITTLE_ENDIAN
+-            PRUint8 b = *src++;
+-            PRUint8 g = *src++;
+-            PRUint8 r = *src++;
+-            PRUint8 a = *src++;
+-#else
+-            PRUint8 a = *src++;
+-            PRUint8 r = *src++;
+-            PRUint8 g = *src++;
+-            PRUint8 b = *src++;
+-#endif
+-            // Convert to non-premultiplied color
+-            *dst++ = sUnpremultiplyTable[a][r];
+-            *dst++ = sUnpremultiplyTable[a][g];
+-            *dst++ = sUnpremultiplyTable[a][b];
+-            *dst++ = a;
+-        }
+-    }
++    GetImageData_component(src, dst, aWidth, aHeight,
++      aWidth * 4, aWidth * 4, sUnpremultiplyTable);
+ 
+     *aRetval = darray;
+     return NS_OK;
+ }
+ 
+ void
+ nsCanvasRenderingContext2D::EnsurePremultiplyTable() {
+   if (sPremultiplyTable)
+@@ -4153,47 +4134,29 @@ nsCanvasRenderingContext2D::PutImageData
+     if (dirtyRect.Width() <= 0 || dirtyRect.Height() <= 0)
+         return NS_OK;
+ 
+     PRUint32 len = w * h * 4;
+     if (aDataLen != len)
+         return NS_ERROR_DOM_SYNTAX_ERR;
+ 
+     nsRefPtr<gfxImageSurface> imgsurf = new gfxImageSurface(gfxIntSize(w, h),
+-                                                            gfxASurface::ImageFormatARGB32);
++                                                            gfxASurface::ImageFormatARGB32,
++                                                            false);
+     if (!imgsurf || imgsurf->CairoStatus())
+         return NS_ERROR_FAILURE;
+ 
+     // ensure premultiply table has been created
+     EnsurePremultiplyTable();
+ 
+     PRUint8 *src = aData;
+     PRUint8 *dst = imgsurf->Data();
+ 
+-    for (PRUint32 j = 0; j < h; j++) {
+-        for (PRUint32 i = 0; i < w; i++) {
+-            PRUint8 r = *src++;
+-            PRUint8 g = *src++;
+-            PRUint8 b = *src++;
+-            PRUint8 a = *src++;
+-
+-            // Convert to premultiplied color (losslessly if the input came from getImageData)
+-#ifdef IS_LITTLE_ENDIAN
+-            *dst++ = sPremultiplyTable[a][b];
+-            *dst++ = sPremultiplyTable[a][g];
+-            *dst++ = sPremultiplyTable[a][r];
+-            *dst++ = a;
+-#else
+-            *dst++ = a;
+-            *dst++ = sPremultiplyTable[a][r];
+-            *dst++ = sPremultiplyTable[a][g];
+-            *dst++ = sPremultiplyTable[a][b];
+-#endif
+-        }
+-    }
++    PutImageData_component(src, dst, w, h,
++                           w * 4, w * 4, sPremultiplyTable);
+ 
+     PathAutoSaveRestore pathSR(this);
+     gfxContextAutoSaveRestore autoSR(mThebes);
+ 
+     // ignore clipping region, as per spec
+     mThebes->ResetClip();
+ 
+     mThebes->IdentityMatrix();

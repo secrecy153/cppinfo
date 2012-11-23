@@ -1,0 +1,127 @@
+--- a/build/pgo/index.html	2012-07-11 03:32:33 +0800
++++ b/build/pgo/index.html	2012-07-13 17:59:27 +0800
+@@ -181,9 +181,83 @@
+   "js-input/string-fasta.html",
+   "js-input/string-tagcloud.html",
+   "js-input/string-unpack-code.html",
+-  "js-input/string-validate-input.html"
++  "js-input/string-validate-input.html",
++  "betterpgo/js/V8/index.html",
++  "betterpgo/js/timer/index1.html",
++  "betterpgo/js/The Real World/index.html",
++  "betterpgo/js/sunspider-0.9.1/index.html",
++  "betterpgo/browseload/index-deviantart.html",
++  "betterpgo/browseload/index-flash.html",
++  "betterpgo/browseload/index-game.html",
++  "betterpgo/browseload/index-gmail.html",
++  "betterpgo/browseload/index-google.html",
++  "betterpgo/browseload/index-googleimage.html",
++  "betterpgo/browseload/index-googlesearch.html",
++  "betterpgo/browseload/index-sogoumap.html",
++  "betterpgo/browseload/index-youku.html",
++  "betterpgo/browseload/index-zuigui.html",
++  "betterpgo/DHTML/index1.html",
++  "betterpgo/DHTML/index3.html",
++  "betterpgo/DHTML/index6.html",
++  "betterpgo/div/doraemon.html",
++  "betterpgo/flash/index1.html",
++  "betterpgo/standard/index-html5.html",
++  "betterpgo/standard/index-css3.html",
++  "betterpgo/standard/index-acid3.html",
++  "betterpgo/AnimationBenchmark/svg/index.html",
++  "betterpgo/AnimationBenchmark/html/index.htm",
++  "betterpgo/browseload/alexatop/China/01-baidu.html",
++  "betterpgo/browseload/alexatop/China/02-qq.html",
++  "betterpgo/browseload/alexatop/China/03-taobao.html",
++  "betterpgo/browseload/alexatop/China/04-sinanews.html",
++  "betterpgo/browseload/alexatop/China/06-weibo.html",
++  "betterpgo/browseload/alexatop/China/07-163.html",
++  "betterpgo/browseload/alexatop/China/08-sohu.html",
++  "betterpgo/browseload/alexatop/China/10-youku.html",
++  "betterpgo/browseload/alexatop/China/11-ifeng.html",
++  "betterpgo/browseload/alexatop/China/12-tudou.html",
++  "betterpgo/browseload/alexatop/China/13-soso.html",
++  "betterpgo/browseload/alexatop/China/13-soso.html",
++  "betterpgo/browseload/alexatop/China/14-tmall.html",
++  "betterpgo/browseload/alexatop/China/15-alipay.html",
++  "betterpgo/browseload/alexatop/China/16-360buy.html",
++  "betterpgo/browseload/alexatop/China/17-hao123.html",
++  "betterpgo/browseload/alexatop/China/18-chinaz.html",
++  "betterpgo/browseload/alexatop/China/19-renren.html",
++  "betterpgo/browseload/alexatop/China/20-douban.html",
++  "betterpgo/browseload/alexatop/China/23-yahoocn.html",
++  "betterpgo/browseload/alexatop/China/24-tianya.html",
++  "betterpgo/browseload/alexatop/China/25-pengyou.html",
++  "betterpgo/browseload/alexatop/China/29-360.html",
++  "betterpgo/browseload/alexatop/China/31-zol.html",
++  "betterpgo/browseload/alexatop/China/32-iqiyi.html",
++  "betterpgo/browseload/alexatop/China/37-people.html",
++  "betterpgo/browseload/alexatop/China/38-xinhuanet.html",
++  "betterpgo/browseload/alexatop/China/39-ku6.html",
++  "betterpgo/browseload/alexatop/China/40-ganji.html",
++  "betterpgo/browseload/alexatop/China/41-csdn.html",
++  "betterpgo/browseload/alexatop/China/42-mop.html",
++  "betterpgo/browseload/alexatop/China/41-csdn.html",
++  "betterpgo/browseload/alexatop/China/46-sofun.html",
++  "betterpgo/browseload/alexatop/China/49-paipai.html",
++  "betterpgo/browseload/alexatop/China/50-10086.html",
++  "betterpgo/browseload/alexatop/China/51-kafan.html",
++  "betterpgo/browseload/alexatop/China/52-tiexue.html",
++  "betterpgo/browseload/alexatop/China/53-firefoxnet.html",
++  "betterpgo/browseload/alexatop/Global/10-amazon.html",
++  "betterpgo/browseload/alexatop/Global/17-sina.html",
++  "betterpgo/browseload/alexatop/Global/06-wikipedia.html",
++  "betterpgo/browseload/webspeed/index-114.html",
++  "betterpgo/webgl/fishie/index.html",
++  "betterpgo/webgl/mozilla/index-sample4.html",
++  "betterpgo/webgl/mozilla/index-sample5.html",
++  "betterpgo/webgl/mozilla/index-sample6.html",
++  "betterpgo/webgl/mozilla/index-sample7.html",
++  "betterpgo/webgl/index-aquarium.html",
++  "betterpgo/webgl/index-webglsamples.html",
++  "betterpgo/webgl/index-webgl-matrix-benchmarks.html"
+      ];
+- var interval = 3000; // 15000
++ var interval = 14000; // 15000
+  var idx = 0;
+  var w;
+  
+--- a/build/pgo/Makefile.in	2012-06-29 19:28:15 +0800
++++ b/build/pgo/Makefile.in	2012-07-11 21:17:17 +0800
+@@ -47,6 +47,7 @@
+ DIRS = \
+   blueprint \
+   js-input \
++  betterpgo \
+   $(NULL)
+ 
+ include $(topsrcdir)/config/rules.mk
+--- a/build/pgo/betterpgo/Makefile.in	2012-07-11 21:26:06 +0800
++++ b/build/pgo/betterpgo/Makefile.in	2012-07-09 18:10:57 +0800
+@@ -0,0 +1,26 @@
++DEPTH		= ../../..
++topsrcdir	= @top_srcdir@
++srcdir		= @srcdir@
++VPATH		= @srcdir@
++PYSTALL        = $(PYTHON) $(topsrcdir)/config/nsinstall.py
++
++include $(DEPTH)/config/autoconf.mk
++include $(topsrcdir)/config/rules.mk
++
++_PROFILE_DIR = $(DEPTH)/_profile/pgo/betterpgo
++
++_PGO_FILES = 	\
++  AnimationBenchmark \
++  browseload \
++  DHTML \
++  div \
++  flash \
++  HWACCEL-SpecialEffects \
++  js \
++  standard \
++  talos \
++  webgl \
++  $(NULL)
++
++libs:: $(_PGO_FILES)
++	$(PYSTALL) $^ $(_PROFILE_DIR)

@@ -1,0 +1,44 @@
+diff -r 6a3897dad583 js/src/jsstr.h
+--- a/js/src/jsstr.h	Sat Oct 06 15:30:41 2012 +0900
++++ b/js/src/jsstr.h	Sat Oct 06 15:44:43 2012 +0900
+@@ -188,21 +188,40 @@ extern size_t
+ js_strlen(const jschar *s);
+ 
+ extern jschar *
+ js_strchr(const jschar *s, jschar c);
+ 
+ extern jschar *
+ js_strchr_limit(const jschar *s, jschar c, const jschar *limit);
+ 
++#if _MSC_VER >= 1400
++/* #include <intrin.h> */
++#ifdef  __cplusplus
++extern "C" {
++#endif
++#ifdef _WIN64
++#include <intrin.h>
++#else /* WIN64 */
++void __movsw(unsigned short *Dest, unsigned short *Source, size_t Count);
++#pragma intrinsic(__movsw)
++#endif /* WIN64 */
++#define js_strncpy(dst, src, nelem)   (((nelem) <= 30) ? \
++    (__movsw((unsigned short *)(dst), (unsigned short *)(src), (nelem)), (dst)) : \
++    (js::PodCopy((dst), (src), (nelem))))
++#ifdef  __cplusplus
++}
++#endif
++#else /* _MSC_VER >= 1400 */
+ static JS_ALWAYS_INLINE void
+ js_strncpy(jschar *dst, const jschar *src, size_t nelem)
+ {
+     return js::PodCopy(dst, src, nelem);
+ }
++#endif /* _MSC_VER >= 1400 */
+ 
+ namespace js {
+ 
+ /*
+  * Inflate bytes to jschars. Return null on error, otherwise return the jschar
+  * or byte vector that was malloc'ed. length is updated to the length of the
+  * new string (in jschars).
+  */

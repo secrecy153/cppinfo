@@ -1,0 +1,20 @@
+diff -r 6a3897dad583 gfx/cairo/libpixman/src/pixman-private.h
+--- a/gfx/cairo/libpixman/src/pixman-private.h	Sat Oct 06 15:30:41 2012 +0900
++++ b/gfx/cairo/libpixman/src/pixman-private.h	Sat Oct 06 15:47:32 2012 +0900
+@@ -991,9 +991,16 @@ void pixman_timer_register (pixman_timer
+ 	begin ## tname = OIL_STAMP ();
+ 
+ #define TIMER_END(tname)                                                \
+     timer ## tname.total += OIL_STAMP () - begin ## tname;		\
+     }
+ 
+ #endif /* PIXMAN_TIMERS */
+ 
++#ifdef TT_MEMUTIL
++extern pixman_bool_t nt_initialized;
++extern uint32_t dwNonTemporalDataSizeMin;
++extern uint32_t dwNonTemporalMemcpySizeMin;
++void InitializeNonTemporalData();
++#endif /* TT_MEMUTIL */
++
+ #endif /* PIXMAN_PRIVATE_H */

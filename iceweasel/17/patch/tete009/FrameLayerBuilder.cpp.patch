@@ -1,0 +1,123 @@
+diff --git a/layout/base/FrameLayerBuilder.cpp b/layout/base/FrameLayerBuilder.cpp
+--- a/layout/base/FrameLayerBuilder.cpp
++++ b/layout/base/FrameLayerBuilder.cpp
+@@ -194,37 +194,55 @@ public:
+ 
+   nscoord GetAppUnitsPerDevPixel() { return mAppUnitsPerDevPixel; }
+ 
+   nsIntRect ScaleToNearestPixels(const nsRect& aRect)
+   {
+     return aRect.ScaleToNearestPixels(mParameters.mXScale, mParameters.mYScale,
+                                       mAppUnitsPerDevPixel);
+   }
++  nsIntRect ToNearestPixels(const nsRect& aRect)
++  {
++    return aRect.ToNearestPixels(mAppUnitsPerDevPixel);
++  }
+   nsIntRegion ScaleRegionToNearestPixels(const nsRegion& aRegion)
+   {
+     return aRegion.ScaleToNearestPixels(mParameters.mXScale, mParameters.mYScale,
+                                         mAppUnitsPerDevPixel);
+   }
+   nsIntRect ScaleToOutsidePixels(const nsRect& aRect, bool aSnap)
+   {
+     if (aSnap && mSnappingEnabled) {
+       return ScaleToNearestPixels(aRect);
+     }
+     return aRect.ScaleToOutsidePixels(mParameters.mXScale, mParameters.mYScale,
+                                       mAppUnitsPerDevPixel);
+   }
++  nsIntRect ToOutsidePixels(const nsRect& aRect, bool aSnap)
++  {
++    if (aSnap && mSnappingEnabled) {
++      return ToNearestPixels(aRect);
++    }
++    return aRect.ToOutsidePixels(mAppUnitsPerDevPixel);
++  }
+   nsIntRect ScaleToInsidePixels(const nsRect& aRect, bool aSnap)
+   {
+     if (aSnap && mSnappingEnabled) {
+       return ScaleToNearestPixels(aRect);
+     }
+     return aRect.ScaleToInsidePixels(mParameters.mXScale, mParameters.mYScale,
+                                      mAppUnitsPerDevPixel);
+   }
++  nsIntRect ToInsidePixels(const nsRect& aRect, bool aSnap)
++  {
++    if (aSnap && mSnappingEnabled) {
++      return ToNearestPixels(aRect);
++    }
++    return aRect.ToInsidePixels(mAppUnitsPerDevPixel);
++  }
+ 
+   nsIntRegion ScaleRegionToInsidePixels(const nsRegion& aRegion, bool aSnap)
+   {
+     if (aSnap && mSnappingEnabled) {
+       return ScaleRegionToNearestPixels(aRegion);
+     }
+     return aRegion.ScaleToInsidePixels(mParameters.mXScale, mParameters.mYScale,
+                                         mAppUnitsPerDevPixel);
+@@ -1781,36 +1799,40 @@ PaintInactiveLayer(nsDisplayListBuilder*
+  * of ContainerState::Finish.
+  */
+ void
+ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
+                                     FrameLayerBuilder::Clip& aClip,
+                                     uint32_t aFlags)
+ {
+   SAMPLE_LABEL("ContainerState", "ProcessDisplayItems");
++  const bool scaled = mParameters.Scaled();
+   for (nsDisplayItem* item = aList.GetBottom(); item; item = item->GetAbove()) {
+     nsDisplayItem::Type type = item->GetType();
+     if (type == nsDisplayItem::TYPE_CLIP ||
+         type == nsDisplayItem::TYPE_CLIP_ROUNDED_RECT) {
+       FrameLayerBuilder::Clip childClip(aClip, item);
+       ProcessDisplayItems(*item->GetList(), childClip, aFlags);
+       continue;
+     }
+ 
+     NS_ASSERTION(mAppUnitsPerDevPixel == AppUnitsPerDevPixel(item),
+       "items in a container layer should all have the same app units per dev pixel");
+ 
+     nsIntRect itemVisibleRect =
+-      ScaleToOutsidePixels(item->GetVisibleRect(), false);
++      scaled ? ScaleToOutsidePixels(item->GetVisibleRect(), false) :
++               ToOutsidePixels(item->GetVisibleRect(), false);
+     bool snap;
+     nsRect itemContent = item->GetBounds(mBuilder, &snap);
+-    nsIntRect itemDrawRect = ScaleToOutsidePixels(itemContent, snap);
++    nsIntRect itemDrawRect = scaled ? ScaleToOutsidePixels(itemContent, snap) :
++                                      ToOutsidePixels(itemContent, snap);
+     if (aClip.mHaveClipRect) {
+       itemContent.IntersectRect(itemContent, aClip.mClipRect);
+-      nsIntRect clipRect = ScaleToNearestPixels(aClip.mClipRect);
++      nsIntRect clipRect = scaled ? ScaleToNearestPixels(aClip.mClipRect) :
++                                    ToNearestPixels(aClip.mClipRect);
+       itemDrawRect.IntersectRect(itemDrawRect, clipRect);
+     }
+     mBounds.UnionRect(mBounds, itemContent);
+     itemVisibleRect.IntersectRect(itemVisibleRect, itemDrawRect);
+ 
+     LayerState layerState = item->GetLayerState(mBuilder, mManager, mParameters);
+ 
+     nsIFrame* activeScrolledRoot;
+@@ -1874,17 +1896,18 @@ ContainerState::ProcessDisplayItems(cons
+       NS_ASSERTION(!ownLayer->HasUserData(&gLayerManagerUserData),
+                    "We shouldn't have a FrameLayerBuilder-managed layer here!");
+       NS_ASSERTION(aClip.mHaveClipRect ||
+                      aClip.mRoundedClipRects.IsEmpty(),
+                    "If we have rounded rects, we must have a clip rect");
+       // It has its own layer. Update that layer's clip and visible rects.
+       if (aClip.mHaveClipRect) {
+         ownLayer->IntersectClipRect(
+-          ScaleToNearestPixels(aClip.NonRoundedIntersection()));
++          scaled ? ScaleToNearestPixels(aClip.NonRoundedIntersection()) :
++                   ToNearestPixels(aClip.NonRoundedIntersection()));
+       }
+       ThebesLayerData* data = GetTopThebesLayerData();
+       if (data) {
+         data->mVisibleAboveRegion.Or(data->mVisibleAboveRegion, itemVisibleRect);
+         data->mVisibleAboveRegion.SimplifyOutward(4);
+         // Add the entire bounds rect to the mDrawAboveRegion.
+         // The visible region may be excluding opaque content above the
+         // item, and we need to ensure that that content is not placed

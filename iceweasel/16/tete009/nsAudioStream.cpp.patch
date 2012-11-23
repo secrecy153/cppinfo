@@ -1,0 +1,112 @@
+diff -r 284837bbf631 content/media/nsAudioStream.cpp
+--- a/content/media/nsAudioStream.cpp	Sat Aug 25 07:23:12 2012 +0900
++++ b/content/media/nsAudioStream.cpp	Sat Aug 25 10:52:45 2012 +0900
+@@ -5,16 +5,19 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "mozilla/dom/ContentChild.h"
+ #include "mozilla/dom/PAudioChild.h"
+ #include "mozilla/dom/AudioChild.h"
+ #include "nsXULAppAPI.h"
+ using namespace mozilla::dom;
+ 
++#if (_M_IX86_FP >= 1) || defined(__SSE__)
++#include <xmmintrin.h>
++#endif
+ #include <stdio.h>
+ #include <math.h>
+ #include "prlog.h"
+ #include "prmem.h"
+ #include "prdtoa.h"
+ #include "nsAutoPtr.h"
+ #include "nsAudioStream.h"
+ #include "nsAlgorithm.h"
+@@ -491,29 +494,87 @@ nsresult nsNativeAudioStream::Write(cons
+ #if defined(IS_BIG_ENDIAN)
+           s = ((s & 0x00ff) << 8) | ((s & 0xff00) >> 8);
+ #endif
+           s_data[i] = short((PRInt32(s) * volume) >> 16);
+         }
+         break;
+       }
+       case FORMAT_FLOAT32: {
+-        const float* buf = static_cast<const float*>(aBuf);
++        const float* buf = static_cast<const float*>(aBuf);
++#if (_M_IX86_FP >= 1) || defined(__SSE__)
++        static const __m128 sMin = _mm_set_ps1(-32768.0);
++        static const __m128 sMax = _mm_set_ps1(32767.0);
++        const __m128 xmmMin = sMin;
++        const __m128 xmmMax = sMax;
++        float* b = (float*)buf;
++        const __m128 xmmMul = _mm_set_ps1((float)(32768 * scaled_volume));
++        __m128 xmmTmp = _mm_setzero_ps();
++        PRUint32 i = 0;
++        PRUint32 n = samples;
++#ifdef _MSC_VER
++        __declspec(align(16)) PRInt32
++#elif defined(__GNUC__)
++        PRInt32 __attribute__((aligned(16)))
++#else
++        PRInt32
++#endif
++        r_dest[4];
++
++        while (n >= 1 && ((unsigned long)b & 15)) {
++          __m128 scaled_value = _mm_mul_ss(xmmMul, _mm_load_ss(b));
++          scaled_value = _mm_max_ss(scaled_value, xmmMin);
++          scaled_value = _mm_min_ss(scaled_value, xmmMax);
++          s_data[i] = (short)_mm_cvtss_si32(scaled_value);
++
++          b++;
++          i++;
++          n--;
++        }
++
++        while (n >= 4) {
++          __m128 scaled_value = _mm_mul_ps(xmmMul, _mm_load_ps(b));
++          scaled_value = _mm_max_ps(scaled_value, xmmMin);
++          scaled_value = _mm_min_ps(scaled_value, xmmMax);
++          *((__m64*)&r_dest[0]) = _mm_cvtps_pi32(scaled_value);
++          *((__m64*)&r_dest[2]) = _mm_cvtps_pi32(_mm_movehl_ps(xmmTmp, scaled_value));
++          s_data[i++] = r_dest[0];
++          s_data[i++] = r_dest[1];
++          s_data[i++] = r_dest[2];
++          s_data[i++] = r_dest[3];
++
++          b += 4;
++          n -= 4;
++        }
++        _mm_empty();
++
++        while (n >= 1) {
++          __m128 scaled_value = _mm_mul_ss(xmmMul, _mm_load_ss(b));
++          scaled_value = _mm_max_ss(scaled_value, xmmMin);
++          scaled_value = _mm_min_ss(scaled_value, xmmMax);
++          s_data[i] = (short)_mm_cvtss_si32(scaled_value);
++
++          b++;
++          i++;
++          n--;
++        }
++#else // (_M_IX86_FP >= 1) || defined(__SSE__)
+         for (PRUint32 i = 0; i <  samples; ++i) {
+           float scaled_value = floorf(0.5 + 32768 * buf[i] * scaled_volume);
+           if (buf[i] < 0.0) {
+             s_data[i] = (scaled_value < -32768.0) ?
+               -32768 :
+               short(scaled_value);
+           } else {
+             s_data[i] = (scaled_value > 32767.0) ?
+               32767 :
+               short(scaled_value);
+           }
+         }
++#endif // (_M_IX86_FP >= 1) || defined(__SSE__)
+         break;
+       }
+     }
+ 
+     if (sa_stream_write(static_cast<sa_stream_t*>(mAudioHandle),
+                         s_data.get(),
+                         samples * sizeof(short)) != SA_SUCCESS)
+     {

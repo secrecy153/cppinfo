@@ -1,0 +1,60 @@
+diff --git a/js/src/jsobjinlines.h b/js/src/jsobjinlines.h
+--- a/js/src/jsobjinlines.h
++++ b/js/src/jsobjinlines.h
+@@ -3,16 +3,20 @@
+  *
+  * This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #ifndef jsobjinlines_h___
+ #define jsobjinlines_h___
+ 
++#if (_M_IX86_FP >= 2) || defined(__SSE2__) || defined(_M_AMD64) || defined(__amd64__)
++#include <emmintrin.h>
++#endif
++
+ #include <new>
+ 
+ #include "jsapi.h"
+ #include "jsarray.h"
+ #include "jsbool.h"
+ #include "jscntxt.h"
+ #include "jsfun.h"
+ #include "jsiter.h"
+@@ -1355,17 +1359,35 @@ class AutoPropertyDescriptorRooter : pri
+     }
+ 
+     friend void AutoGCRooter::trace(JSTracer *trc);
+ };
+ 
+ inline void
+ NewObjectCache::copyCachedToObject(JSObject *dst, JSObject *src)
+ {
++#if (_M_IX86_FP >= 2) || defined(__SSE2__) || defined(_M_AMD64) || defined(__amd64__)
++    if ((dst->sizeOfThis() & 15) == 0 &&
++        ((unsigned)dst & 15) == 0) {
++        char *s = (char *)src;
++        char *d = (char *)dst;
++        int count = (dst->sizeOfThis() >> 4);
++
++        for (int i = 0; i < count; i++) {
++            _mm_store_si128((__m128i *)d, _mm_loadu_si128((__m128i const*)s));
++            s += 16;
++            d += 16;
++        }
++    } else {
++        js_memcpy(dst, src, dst->sizeOfThis());
++    }
++#else
+     js_memcpy(dst, src, dst->sizeOfThis());
++#endif
++
+ #ifdef JSGC_GENERATIONAL
+     Shape::writeBarrierPost(dst->shape_, &dst->shape_);
+     types::TypeObject::writeBarrierPost(dst->type_, &dst->type_);
+ #endif
+ }
+ 
+ static inline bool
+ CanBeFinalizedInBackground(gc::AllocKind kind, Class *clasp)

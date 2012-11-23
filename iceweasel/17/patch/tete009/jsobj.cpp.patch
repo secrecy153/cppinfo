@@ -1,0 +1,41 @@
+diff --git a/js/src/jsobj.cpp b/js/src/jsobj.cpp
+--- a/js/src/jsobj.cpp
++++ b/js/src/jsobj.cpp
+@@ -4458,17 +4458,17 @@ js_NativeGetInline(JSContext *cx, Handle
+     Rooted<Shape*> shapeRoot(cx, shape);
+     RootedObject pobjRoot(cx, pobj);
+     RootedValue nvp(cx, *vp);
+ 
+     if (!shape->get(cx, receiver, obj, pobj, &nvp))
+         return false;
+ 
+     /* Update slotful shapes according to the value produced by the getter. */
+-    if (shapeRoot->hasSlot() && pobjRoot->nativeContains(cx, shapeRoot))
++    if (shapeRoot->hasSlot() && pobjRoot->nativeContains(cx, (HandleShape)shapeRoot))
+         pobjRoot->nativeSetSlot(shapeRoot->slot(), nvp);
+ 
+     *vp = nvp;
+     return true;
+ }
+ 
+ JSBool
+ js_NativeGet(JSContext *cx, Handle<JSObject*> obj, Handle<JSObject*> pobj, Shape *shape,
+@@ -4511,17 +4511,17 @@ js_NativeSet(JSContext *cx, Handle<JSObj
+         return false;
+ 
+     /*
+      * Update any slot for the shape with the value produced by the setter,
+      * unless the setter deleted the shape.
+      */
+     if (shapeRoot->hasSlot() &&
+         (JS_LIKELY(cx->runtime->propertyRemovals == sample) ||
+-         obj->nativeContains(cx, shapeRoot))) {
++         obj->nativeContains(cx, (HandleShape)shapeRoot))) {
+         AddTypePropertyId(cx, obj, shape->propid(), *vp);
+         obj->setSlot(shapeRoot->slot(), nvp);
+     }
+ 
+     *vp = nvp;
+     return true;
+ }
+ 

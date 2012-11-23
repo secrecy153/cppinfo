@@ -1,0 +1,67 @@
+diff -r 130a6a134e0c gfx/cairo/libpixman/src/pixman-edge.c
+--- a/gfx/cairo/libpixman/src/pixman-edge.c	Sat Jul 03 07:19:26 2010 +0900
++++ b/gfx/cairo/libpixman/src/pixman-edge.c	Wed Jul 07 06:49:12 2010 +0900
+@@ -161,16 +161,18 @@ rasterize_edges_8 (pixman_image_t *image
+ {
+     pixman_fixed_t y = t;
+     uint32_t  *line;
+     int fill_start = -1, fill_end = -1;
+     int fill_size = 0;
+     uint32_t *buf = (image)->bits.bits;
+     int stride = (image)->bits.rowstride;
+     int width = (image)->bits.width;
++    pixman_fixed_t rx_old = 0;
++    int rxs_old = 0, rxi_old = 0;
+ 
+     line = buf + pixman_fixed_to_int (y) * stride;
+ 
+     for (;;)
+     {
+         uint8_t *ap = (uint8_t *) line;
+         pixman_fixed_t lx, rx;
+         int lxi, rxi;
+@@ -192,22 +194,39 @@ rasterize_edges_8 (pixman_image_t *image
+ 	}
+ 
+         /* Skip empty (or backwards) sections */
+         if (rx > lx)
+         {
+             int lxs, rxs;
+ 
+             /* Find pixel bounds for span. */
+-            lxi = pixman_fixed_to_int (lx);
+-            rxi = pixman_fixed_to_int (rx);
++            /* Sample coverage for edge pixels */
++            if (lx == 0)
++            {
++                lxi = 0;
++                lxs = 0;
++            }
++            else
++            {
++                lxi = pixman_fixed_to_int (lx);
++                lxs = RENDER_SAMPLES_X (lx, 8);
++            }
+ 
+-            /* Sample coverage for edge pixels */
+-            lxs = RENDER_SAMPLES_X (lx, 8);
+-            rxs = RENDER_SAMPLES_X (rx, 8);
++            if (rx == rx_old)
++            {
++                rxi = rxi_old;
++                rxs = rxs_old;
++            }
++            else
++            {
++                rxi_old = rxi = pixman_fixed_to_int (rx);
++                rxs_old = rxs = RENDER_SAMPLES_X (rx, 8);
++                rx_old = rx;
++            }
+ 
+             /* Add coverage across row */
+             if (lxi == rxi)
+             {
+                 WRITE (image, ap + lxi,
+ 		       clip255 (READ (image, ap + lxi) + rxs - lxs));
+ 	    }
+             else

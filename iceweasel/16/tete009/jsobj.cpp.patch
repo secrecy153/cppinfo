@@ -1,0 +1,60 @@
+diff -r 6a3897dad583 js/src/jsobj.cpp
+--- a/js/src/jsobj.cpp	Sat Oct 06 15:30:41 2012 +0900
++++ b/js/src/jsobj.cpp	Sat Oct 06 16:26:52 2012 +0900
+@@ -4523,17 +4523,17 @@ js::FindIdentifierBase(JSContext *cx, Ha
+      * must not be passed a global object (i.e. one with null parent).
+      */
+     for (int scopeIndex = 0;
+          obj->isGlobal() || IsCacheableNonGlobalScope(obj);
+          scopeIndex++)
+     {
+         RootedObject pobj(cx);
+         RootedShape shape(cx);
+-        if (!LookupPropertyWithFlags(cx, obj, name, cx->resolveFlags, &pobj, &shape))
++        if (!LookupPropertyWithFlags(cx, obj, (PropertyName *)name, cx->resolveFlags, &pobj, &shape))
+             return NULL;
+         if (shape) {
+             if (!pobj->isNative()) {
+                 JS_ASSERT(obj->isGlobal());
+                 return obj;
+             }
+             JS_ASSERT_IF(obj->isScope(), pobj->getClass() == obj->getClass());
+             JS_PROPERTY_CACHE(cx).fill(cx, scopeChain, scopeIndex, pobj, shape);
+@@ -4595,17 +4595,17 @@ js_NativeGetInline(JSContext *cx, Handle
+ 
+     Rooted<Shape*> shapeRoot(cx, shape);
+     RootedObject pobjRoot(cx, pobj);
+ 
+     if (!shape->get(cx, receiver, obj, pobj, vp))
+         return false;
+ 
+     /* Update slotful shapes according to the value produced by the getter. */
+-    if (shapeRoot->hasSlot() && pobjRoot->nativeContains(cx, shapeRoot))
++    if (shapeRoot->hasSlot() && pobjRoot->nativeContains(cx, (HandleShape)shapeRoot))
+         pobjRoot->nativeSetSlot(shapeRoot->slot(), *vp);
+ 
+     return true;
+ }
+ 
+ JSBool
+ js_NativeGet(JSContext *cx, Handle<JSObject*> obj, Handle<JSObject*> pobj, Shape *shape,
+              unsigned getHow, Value *vp)
+@@ -4646,17 +4646,17 @@ js_NativeSet(JSContext *cx, Handle<JSObj
+         return false;
+ 
+     /*
+      * Update any slot for the shape with the value produced by the setter,
+      * unless the setter deleted the shape.
+      */
+     if (shapeRoot->hasSlot() &&
+         (JS_LIKELY(cx->runtime->propertyRemovals == sample) ||
+-         obj->nativeContains(cx, shapeRoot))) {
++         obj->nativeContains(cx, (HandleShape)shapeRoot))) {
+         AddTypePropertyId(cx, obj, shape->propid(), *vp);
+         obj->setSlot(shapeRoot->slot(), *vp);
+     }
+ 
+     return true;
+ }
+ 
+ static JS_ALWAYS_INLINE JSBool

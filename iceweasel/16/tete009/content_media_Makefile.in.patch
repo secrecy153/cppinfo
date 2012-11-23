@@ -1,0 +1,24 @@
+diff -r 6a3897dad583 content/media/Makefile.in
+--- a/content/media/Makefile.in	Sat Oct 06 15:30:41 2012 +0900
++++ b/content/media/Makefile.in	Sat Oct 06 16:08:18 2012 +0900
+@@ -90,8 +90,20 @@ TEST_DIRS += test
+ 
+ FORCE_STATIC_LIB = 1
+ 
+ include $(topsrcdir)/config/config.mk
+ include $(topsrcdir)/ipc/chromium/chromium-config.mk
+ include $(topsrcdir)/config/rules.mk
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++# Optimizer bug with MSVC PGO
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++nsMediaCache.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++endif
++
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif

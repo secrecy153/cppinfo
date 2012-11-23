@@ -1,0 +1,56 @@
+diff -r d11d02c2e023 xpcom/idl-parser/header.py
+--- a/xpcom/idl-parser/header.py	Sat Aug 25 20:31:37 2012 +0900
++++ b/xpcom/idl-parser/header.py	Sat Aug 25 23:06:05 2012 +0900
+@@ -2,17 +2,17 @@
+ # header.py - Generate C++ header files from IDL.
+ #
+ # This Source Code Form is subject to the terms of the Mozilla Public
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ """Print a C++ header file for the IDL files specified on the command line"""
+ 
+-import sys, os.path, re, xpidl, itertools, glob
++import sys, os.path, re, xpidl, itertools
+ 
+ printdoccomments = False
+ 
+ if printdoccomments:
+     def printComments(fd, clist, indent):
+         for c in clist:
+             fd.write("%s%s\n" % (indent, c))
+ else:
+@@ -461,30 +461,23 @@ if __name__ == '__main__':
+     options, args = o.parse_args()
+     file = args[0] if args else None
+ 
+     if options.cachedir is not None:
+         if not os.path.isdir(options.cachedir):
+             os.mkdir(options.cachedir)
+         sys.path.append(options.cachedir)
+ 
++    # Instantiate the parser.
++    p = xpidl.IDLParser(outputdir=options.cachedir)
++
+     # The only thing special about a regen is that there are no input files.
+     if options.regen:
+         if options.cachedir is None:
+             print >>sys.stderr, "--regen useless without --cachedir"
+-        # Delete the lex/yacc files.  Ply is too stupid to regenerate them
+-        # properly
+-        for fileglobs in [os.path.join(options.cachedir, f) for f in ["xpidllex.py*", "xpidlyacc.py*"]]:
+-            for filename in glob.glob(fileglobs):
+-                os.remove(filename)
+-
+-    # Instantiate the parser.
+-    p = xpidl.IDLParser(outputdir=options.cachedir)
+-
+-    if options.regen:
+         sys.exit(0)
+ 
+     if options.depfile is not None and options.outfile is None:
+         print >>sys.stderr, "-d requires -o"
+         sys.exit(1)
+ 
+     if options.outfile is not None:
+         outfd = open(options.outfile, 'w')

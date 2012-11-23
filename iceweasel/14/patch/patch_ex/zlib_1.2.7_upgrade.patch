@@ -1,0 +1,1416 @@
+diff -r 10b7f6c9be4f modules/zlib/Makefile.in
+--- a/modules/zlib/Makefile.in	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/Makefile.in	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,39 +1,7 @@
+ #
+-# ***** BEGIN LICENSE BLOCK *****
+-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
+-#
+-# The contents of this file are subject to the Mozilla Public License Version
+-# 1.1 (the "License"); you may not use this file except in compliance with
+-# the License. You may obtain a copy of the License at
+-# http://www.mozilla.org/MPL/
+-#
+-# Software distributed under the License is distributed on an "AS IS" basis,
+-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+-# for the specific language governing rights and limitations under the
+-# License.
+-#
+-# The Original Code is mozilla.org code.
+-#
+-# The Initial Developer of the Original Code is
+-# Netscape Communications Corporation.
+-# Portions created by the Initial Developer are Copyright (C) 1998
+-# the Initial Developer. All Rights Reserved.
+-#
+-# Contributor(s):
+-#
+-# Alternatively, the contents of this file may be used under the terms of
+-# either the GNU General Public License Version 2 or later (the "GPL"), or
+-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+-# in which case the provisions of the GPL or the LGPL are applicable instead
+-# of those above. If you wish to allow use of your version of this file only
+-# under the terms of either the GPL or the LGPL, and not to allow others to
+-# use your version of this file under the terms of the MPL, indicate your
+-# decision by deleting the provisions above and replace them with the notice
+-# and other provisions required by the GPL or the LGPL. If you do not delete
+-# the provisions above, a recipient may use your version of this file under
+-# the terms of any one of the MPL, the GPL or the LGPL.
+-#
+-# ***** END LICENSE BLOCK *****
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ DEPTH		= ../..
+ topsrcdir	= @top_srcdir@
+diff -r 10b7f6c9be4f modules/zlib/src/ChangeLog
+--- a/modules/zlib/src/ChangeLog	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/ChangeLog	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,6 +1,68 @@
+ 
+                 ChangeLog file for zlib
+ 
++Changes in 1.2.7 (2 May 2012)
++- Replace use of memmove() with a simple copy for portability
++- Test for existence of strerror
++- Restore gzgetc_ for backward compatibility with 1.2.6
++- Fix build with non-GNU make on Solaris
++- Require gcc 4.0 or later on Mac OS X to use the hidden attribute
++- Include unistd.h for Watcom C
++- Use __WATCOMC__ instead of __WATCOM__
++- Do not use the visibility attribute if NO_VIZ defined
++- Improve the detection of no hidden visibility attribute
++- Avoid using __int64 for gcc or solo compilation
++- Cast to char * in gzprintf to avoid warnings [Zinser]
++- Fix make_vms.com for VAX [Zinser]
++- Don't use library or built-in byte swaps
++- Simplify test and use of gcc hidden attribute
++- Fix bug in gzclose_w() when gzwrite() fails to allocate memory
++- Add "x" (O_EXCL) and "e" (O_CLOEXEC) modes support to gzopen()
++- Fix bug in test/minigzip.c for configure --solo
++- Fix contrib/vstudio project link errors [Mohanathas]
++- Add ability to choose the builder in make_vms.com [Schweda]
++- Add DESTDIR support to mingw32 win32/Makefile.gcc
++- Fix comments in win32/Makefile.gcc for proper usage
++- Allow overriding the default install locations for cmake
++- Generate and install the pkg-config file with cmake
++- Build both a static and a shared version of zlib with cmake
++- Include version symbols for cmake builds
++- If using cmake with MSVC, add the source directory to the includes
++- Remove unneeded EXTRA_CFLAGS from win32/Makefile.gcc [Truta]
++- Move obsolete emx makefile to old [Truta]
++- Allow the use of -Wundef when compiling or using zlib
++- Avoid the use of the -u option with mktemp
++- Improve inflate() documentation on the use of Z_FINISH
++- Recognize clang as gcc
++- Add gzopen_w() in Windows for wide character path names
++- Rename zconf.h in CMakeLists.txt to move it out of the way
++- Add source directory in CMakeLists.txt for building examples
++- Look in build directory for zlib.pc in CMakeLists.txt
++- Remove gzflags from zlibvc.def in vc9 and vc10
++- Fix contrib/minizip compilation in the MinGW environment
++- Update ./configure for Solaris, support --64 [Mooney]
++- Remove -R. from Solaris shared build (possible security issue)
++- Avoid race condition for parallel make (-j) running example
++- Fix type mismatch between get_crc_table() and crc_table
++- Fix parsing of version with "-" in CMakeLists.txt [Snider, Ziegler]
++- Fix the path to zlib.map in CMakeLists.txt
++- Force the native libtool in Mac OS X to avoid GNU libtool [Beebe]
++- Add instructions to win32/Makefile.gcc for shared install [Torri]
++
++Changes in 1.2.6.1 (12 Feb 2012)
++- Avoid the use of the Objective-C reserved name "id"
++- Include io.h in gzguts.h for Microsoft compilers
++- Fix problem with ./configure --prefix and gzgetc macro
++- Include gz_header definition when compiling zlib solo
++- Put gzflags() functionality back in zutil.c
++- Avoid library header include in crc32.c for Z_SOLO
++- Use name in GCC_CLASSIC as C compiler for coverage testing, if set
++- Minor cleanup in contrib/minizip/zip.c [Vollant]
++- Update make_vms.com [Zinser]
++- Remove unnecessary gzgetc_ function
++- Use optimized byte swap operations for Microsoft and GNU [Snyder]
++- Fix minor typo in zlib.h comments [Rzesniowiecki]
++
+ Changes in 1.2.6 (29 Jan 2012)
+ - Update the Pascal interface in contrib/pascal
+ - Fix function numbers for gzgetc_ in zlibvc.def files
+diff -r 10b7f6c9be4f modules/zlib/src/ChangeLog.moz
+--- a/modules/zlib/src/ChangeLog.moz	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/ChangeLog.moz	Sun Jun 03 04:35:00 2012 +0900
+@@ -52,3 +52,9 @@
+   Sync'ed with 1.2.6 release
+   (keeping '#include "mozzconf.h"' in zconf.h)
+   See bug #722391
++  
++- 4 May 2012
++  Sync'ed with 1.2.7 release
++  (keeping '#include "mozzconf.h"' in zconf.h)
++  See bug #751697
++  
+\ No newline at end of file
+diff -r 10b7f6c9be4f modules/zlib/src/INDEX
+--- a/modules/zlib/src/INDEX	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/INDEX	Sun Jun 03 04:35:00 2012 +0900
+@@ -17,6 +17,7 @@
+ zlib.3.pdf      Man page in PDF format
+ zlib.map        Linux symbol information
+ zlib.pc.in      Template for pkg-config descriptor
++zlib.pc.cmakein zlib.pc template for cmake
+ zlib2ansi       perl script to convert source files for C++ compilation
+ 
+ amiga/          makefiles for Amiga SAS C
+diff -r 10b7f6c9be4f modules/zlib/src/Makefile.in
+--- a/modules/zlib/src/Makefile.in	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/Makefile.in	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,39 +1,7 @@
+ #
+-# ***** BEGIN LICENSE BLOCK *****
+-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
+-#
+-# The contents of this file are subject to the Mozilla Public License Version
+-# 1.1 (the "License"); you may not use this file except in compliance with
+-# the License. You may obtain a copy of the License at
+-# http://www.mozilla.org/MPL/
+-#
+-# Software distributed under the License is distributed on an "AS IS" basis,
+-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+-# for the specific language governing rights and limitations under the
+-# License.
+-#
+-# The Original Code is mozilla.org code.
+-#
+-# The Initial Developer of the Original Code is
+-# Netscape Communications Corporation.
+-# Portions created by the Initial Developer are Copyright (C) 1998
+-# the Initial Developer. All Rights Reserved.
+-#
+-# Contributor(s):
+-#
+-# Alternatively, the contents of this file may be used under the terms of
+-# either the GNU General Public License Version 2 or later (the "GPL"), or
+-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+-# in which case the provisions of the GPL or the LGPL are applicable instead
+-# of those above. If you wish to allow use of your version of this file only
+-# under the terms of either the GPL or the LGPL, and not to allow others to
+-# use your version of this file under the terms of the MPL, indicate your
+-# decision by deleting the provisions above and replace them with the notice
+-# and other provisions required by the GPL or the LGPL. If you do not delete
+-# the provisions above, a recipient may use your version of this file under
+-# the terms of any one of the MPL, the GPL or the LGPL.
+-#
+-# ***** END LICENSE BLOCK *****
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ DEPTH		= ../../..
+ topsrcdir	= @top_srcdir@
+diff -r 10b7f6c9be4f modules/zlib/src/README
+--- a/modules/zlib/src/README	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/README	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,6 +1,6 @@
+ ZLIB DATA COMPRESSION LIBRARY
+ 
+-zlib 1.2.6 is a general purpose data compression library.  All the code is
++zlib 1.2.7 is a general purpose data compression library.  All the code is
+ thread safe.  The data format used by the zlib library is described by RFCs
+ (Request for Comments) 1950 to 1952 in the files
+ http://tools.ietf.org/html/rfc1950 (zlib format), rfc1951 (deflate format) and
+@@ -31,7 +31,7 @@
+ issue of Dr.  Dobb's Journal; a copy of the article is available at
+ http://marknelson.us/1997/01/01/zlib-engine/ .
+ 
+-The changes made in version 1.2.6 are documented in the file ChangeLog.
++The changes made in version 1.2.7 are documented in the file ChangeLog.
+ 
+ Unsupported third party contributions are provided in directory contrib/ .
+ 
+diff -r 10b7f6c9be4f modules/zlib/src/crc32.c
+--- a/modules/zlib/src/crc32.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/crc32.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,5 +1,5 @@
+ /* crc32.c -- compute the CRC-32 of a data stream
+- * Copyright (C) 1995-2006, 2010, 2011 Mark Adler
++ * Copyright (C) 1995-2006, 2010, 2011, 2012 Mark Adler
+  * For conditions of distribution and use, see copyright notice in zlib.h
+  *
+  * Thanks to Rodney Brown <rbrown64@csc.com.au> for his contribution of faster
+@@ -32,39 +32,17 @@
+ 
+ #define local static
+ 
+-/* Find a four-byte integer type for crc32_little() and crc32_big(). */
+-#ifndef NOBYFOUR
+-#  ifdef STDC           /* need ANSI C limits.h to determine sizes */
+-#    include <limits.h>
+-#    define BYFOUR
+-#    if (UINT_MAX == 0xffffffffUL)
+-       typedef unsigned int u4;
+-#    else
+-#      if (ULONG_MAX == 0xffffffffUL)
+-         typedef unsigned long u4;
+-#      else
+-#        if (USHRT_MAX == 0xffffffffUL)
+-           typedef unsigned short u4;
+-#        else
+-#          undef BYFOUR     /* can't find a four-byte integer type! */
+-#        endif
+-#      endif
+-#    endif
+-#  endif /* STDC */
+-#endif /* !NOBYFOUR */
+-
+ /* Definitions for doing the crc four data bytes at a time. */
++#if !defined(NOBYFOUR) && defined(Z_U4)
++#  define BYFOUR
++#endif
+ #ifdef BYFOUR
+-   typedef u4 crc_table_t;
+-#  define REV(w) ((((w)>>24)&0xff)+(((w)>>8)&0xff00)+ \
+-                (((w)&0xff00)<<8)+(((w)&0xff)<<24))
+    local unsigned long crc32_little OF((unsigned long,
+                         const unsigned char FAR *, unsigned));
+    local unsigned long crc32_big OF((unsigned long,
+                         const unsigned char FAR *, unsigned));
+ #  define TBLS 8
+ #else
+-   typedef unsigned long crc_table_t;
+ #  define TBLS 1
+ #endif /* BYFOUR */
+ 
+@@ -78,10 +56,10 @@
+ #ifdef DYNAMIC_CRC_TABLE
+ 
+ local volatile int crc_table_empty = 1;
+-local crc_table_t FAR crc_table[TBLS][256];
++local z_crc_t FAR crc_table[TBLS][256];
+ local void make_crc_table OF((void));
+ #ifdef MAKECRCH
+-   local void write_table OF((FILE *, const crc_table_t FAR *));
++   local void write_table OF((FILE *, const z_crc_t FAR *));
+ #endif /* MAKECRCH */
+ /*
+   Generate tables for a byte-wise 32-bit CRC calculation on the polynomial:
+@@ -111,9 +89,9 @@
+ */
+ local void make_crc_table()
+ {
+-    crc_table_t c;
++    z_crc_t c;
+     int n, k;
+-    crc_table_t poly;                   /* polynomial exclusive-or pattern */
++    z_crc_t poly;                       /* polynomial exclusive-or pattern */
+     /* terms of polynomial defining this crc (except x^32): */
+     static volatile int first = 1;      /* flag to limit concurrent making */
+     static const unsigned char p[] = {0,1,2,4,5,7,8,10,11,12,16,22,23,26};
+@@ -127,11 +105,11 @@
+         /* make exclusive-or pattern from polynomial (0xedb88320UL) */
+         poly = 0;
+         for (n = 0; n < (int)(sizeof(p)/sizeof(unsigned char)); n++)
+-            poly |= (crc_table_t)1 << (31 - p[n]);
++            poly |= (z_crc_t)1 << (31 - p[n]);
+ 
+         /* generate a crc for every 8-bit value */
+         for (n = 0; n < 256; n++) {
+-            c = (crc_table_t)n;
++            c = (z_crc_t)n;
+             for (k = 0; k < 8; k++)
+                 c = c & 1 ? poly ^ (c >> 1) : c >> 1;
+             crc_table[0][n] = c;
+@@ -142,11 +120,11 @@
+            and then the byte reversal of those as well as the first table */
+         for (n = 0; n < 256; n++) {
+             c = crc_table[0][n];
+-            crc_table[4][n] = REV(c);
++            crc_table[4][n] = ZSWAP32(c);
+             for (k = 1; k < 4; k++) {
+                 c = crc_table[0][c & 0xff] ^ (c >> 8);
+                 crc_table[k][n] = c;
+-                crc_table[k + 4][n] = REV(c);
++                crc_table[k + 4][n] = ZSWAP32(c);
+             }
+         }
+ #endif /* BYFOUR */
+@@ -168,7 +146,7 @@
+         if (out == NULL) return;
+         fprintf(out, "/* crc32.h -- tables for rapid CRC calculation\n");
+         fprintf(out, " * Generated automatically by crc32.c\n */\n\n");
+-        fprintf(out, "local const crc_table_t FAR ");
++        fprintf(out, "local const z_crc_t FAR ");
+         fprintf(out, "crc_table[TBLS][256] =\n{\n  {\n");
+         write_table(out, crc_table[0]);
+ #  ifdef BYFOUR
+@@ -188,7 +166,7 @@
+ #ifdef MAKECRCH
+ local void write_table(out, table)
+     FILE *out;
+-    const crc_table_t FAR *table;
++    const z_crc_t FAR *table;
+ {
+     int n;
+ 
+@@ -209,13 +187,13 @@
+ /* =========================================================================
+  * This function can be used by asm versions of crc32()
+  */
+-const unsigned long FAR * ZEXPORT get_crc_table()
++const z_crc_t FAR * ZEXPORT get_crc_table()
+ {
+ #ifdef DYNAMIC_CRC_TABLE
+     if (crc_table_empty)
+         make_crc_table();
+ #endif /* DYNAMIC_CRC_TABLE */
+-    return (const unsigned long FAR *)crc_table;
++    return (const z_crc_t FAR *)crc_table;
+ }
+ 
+ /* ========================================================================= */
+@@ -237,7 +215,7 @@
+ 
+ #ifdef BYFOUR
+     if (sizeof(void *) == sizeof(ptrdiff_t)) {
+-        u4 endian;
++        z_crc_t endian;
+ 
+         endian = 1;
+         if (*((unsigned char *)(&endian)))
+@@ -271,17 +249,17 @@
+     const unsigned char FAR *buf;
+     unsigned len;
+ {
+-    register u4 c;
+-    register const u4 FAR *buf4;
++    register z_crc_t c;
++    register const z_crc_t FAR *buf4;
+ 
+-    c = (u4)crc;
++    c = (z_crc_t)crc;
+     c = ~c;
+     while (len && ((ptrdiff_t)buf & 3)) {
+         c = crc_table[0][(c ^ *buf++) & 0xff] ^ (c >> 8);
+         len--;
+     }
+ 
+-    buf4 = (const u4 FAR *)(const void FAR *)buf;
++    buf4 = (const z_crc_t FAR *)(const void FAR *)buf;
+     while (len >= 32) {
+         DOLIT32;
+         len -= 32;
+@@ -311,17 +289,17 @@
+     const unsigned char FAR *buf;
+     unsigned len;
+ {
+-    register u4 c;
+-    register const u4 FAR *buf4;
++    register z_crc_t c;
++    register const z_crc_t FAR *buf4;
+ 
+-    c = REV((u4)crc);
++    c = ZSWAP32((z_crc_t)crc);
+     c = ~c;
+     while (len && ((ptrdiff_t)buf & 3)) {
+         c = crc_table[4][(c >> 24) ^ *buf++] ^ (c << 8);
+         len--;
+     }
+ 
+-    buf4 = (const u4 FAR *)(const void FAR *)buf;
++    buf4 = (const z_crc_t FAR *)(const void FAR *)buf;
+     buf4--;
+     while (len >= 32) {
+         DOBIG32;
+@@ -338,7 +316,7 @@
+         c = crc_table[4][(c >> 24) ^ *buf++] ^ (c << 8);
+     } while (--len);
+     c = ~c;
+-    return (unsigned long)(REV(c));
++    return (unsigned long)(ZSWAP32(c));
+ }
+ 
+ #endif /* BYFOUR */
+diff -r 10b7f6c9be4f modules/zlib/src/crc32.h
+--- a/modules/zlib/src/crc32.h	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/crc32.h	Sun Jun 03 04:35:00 2012 +0900
+@@ -2,7 +2,7 @@
+  * Generated automatically by crc32.c
+  */
+ 
+-local const crc_table_t FAR crc_table[TBLS][256] =
++local const z_crc_t FAR crc_table[TBLS][256] =
+ {
+   {
+     0x00000000UL, 0x77073096UL, 0xee0e612cUL, 0x990951baUL, 0x076dc419UL,
+diff -r 10b7f6c9be4f modules/zlib/src/deflate.c
+--- a/modules/zlib/src/deflate.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/deflate.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -52,7 +52,7 @@
+ #include "deflate.h"
+ 
+ const char deflate_copyright[] =
+-   " deflate 1.2.6 Copyright 1995-2012 Jean-loup Gailly and Mark Adler ";
++   " deflate 1.2.7 Copyright 1995-2012 Jean-loup Gailly and Mark Adler ";
+ /*
+   If you use the zlib library in a product, an acknowledgment is welcome
+   in the documentation of your product. If for some reason you cannot
+diff -r 10b7f6c9be4f modules/zlib/src/gzguts.h
+--- a/modules/zlib/src/gzguts.h	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/gzguts.h	Sun Jun 03 04:35:00 2012 +0900
+@@ -12,7 +12,7 @@
+ #  endif
+ #endif
+ 
+-#if ((__GNUC__-0) * 10 + __GNUC_MINOR__-0 >= 33) && !defined(NO_VIZ)
++#ifdef HAVE_HIDDEN
+ #  define ZLIB_INTERNAL __attribute__((visibility ("hidden")))
+ #else
+ #  define ZLIB_INTERNAL
+@@ -27,7 +27,11 @@
+ #endif
+ #include <fcntl.h>
+ 
+-#if defined(__TURBOC__) || defined(_MSC_VER)
++#ifdef _WIN32
++#  include <stddef.h>
++#endif
++
++#if defined(__TURBOC__) || defined(_MSC_VER) || defined(_WIN32)
+ #  include <io.h>
+ #endif
+ 
+@@ -100,7 +104,7 @@
+ #  include <windows.h>
+ #  define zstrerror() gz_strwinerror((DWORD)GetLastError())
+ #else
+-#  ifdef STDC
++#  ifndef NO_STRERROR
+ #    include <errno.h>
+ #    define zstrerror() strerror(errno)
+ #  else
+diff -r 10b7f6c9be4f modules/zlib/src/gzlib.c
+--- a/modules/zlib/src/gzlib.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/gzlib.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,5 +1,5 @@
+ /* gzlib.c -- zlib functions common to reading and writing gzip files
+- * Copyright (C) 2004, 2010, 2011 Mark Adler
++ * Copyright (C) 2004, 2010, 2011, 2012 Mark Adler
+  * For conditions of distribution and use, see copyright notice in zlib.h
+  */
+ 
+@@ -17,7 +17,7 @@
+ 
+ /* Local functions */
+ local void gz_reset OF((gz_statep));
+-local gzFile gz_open OF((const char *, int, const char *));
++local gzFile gz_open OF((const void *, int, const char *));
+ 
+ #if defined UNDER_CE
+ 
+@@ -89,11 +89,19 @@
+ 
+ /* Open a gzip file either by name or file descriptor. */
+ local gzFile gz_open(path, fd, mode)
+-    const char *path;
++    const void *path;
+     int fd;
+     const char *mode;
+ {
+     gz_statep state;
++    size_t len;
++    int oflag;
++#ifdef O_CLOEXEC
++    int cloexec = 0;
++#endif
++#ifdef O_EXCL
++    int exclusive = 0;
++#endif
+ 
+     /* check input */
+     if (path == NULL)
+@@ -133,6 +141,16 @@
+                 return NULL;
+             case 'b':       /* ignore -- will request binary anyway */
+                 break;
++#ifdef O_CLOEXEC
++            case 'e':
++                cloexec = 1;
++                break;
++#endif
++#ifdef O_EXCL
++            case 'x':
++                exclusive = 1;
++                break;
++#endif
+             case 'f':
+                 state->strategy = Z_FILTERED;
+                 break;
+@@ -168,29 +186,57 @@
+     }
+ 
+     /* save the path name for error messages */
+-    state->path = malloc(strlen(path) + 1);
++#ifdef _WIN32
++    if (fd == -2) {
++        len = wcstombs(NULL, path, 0);
++        if (len == (size_t)-1)
++            len = 0;
++    }
++    else
++#endif
++        len = strlen(path);
++    state->path = malloc(len + 1);
+     if (state->path == NULL) {
+         free(state);
+         return NULL;
+     }
+-    strcpy(state->path, path);
++#ifdef _WIN32
++    if (fd == -2)
++        if (len)
++            wcstombs(state->path, path, len + 1);
++        else
++            *(state->path) = 0;
++    else
++#endif
++        strcpy(state->path, path);
+ 
+-    /* open the file with the appropriate mode (or just use fd) */
+-    state->fd = fd != -1 ? fd :
+-        open(path,
++    /* compute the flags for open() */
++    oflag =
+ #ifdef O_LARGEFILE
+-            O_LARGEFILE |
++        O_LARGEFILE |
+ #endif
+ #ifdef O_BINARY
+-            O_BINARY |
++        O_BINARY |
+ #endif
+-            (state->mode == GZ_READ ?
+-                O_RDONLY :
+-                (O_WRONLY | O_CREAT | (
+-                    state->mode == GZ_WRITE ?
+-                        O_TRUNC :
+-                        O_APPEND))),
+-            0666);
++#ifdef O_CLOEXEC
++        (cloexec ? O_CLOEXEC : 0) |
++#endif
++        (state->mode == GZ_READ ?
++         O_RDONLY :
++         (O_WRONLY | O_CREAT |
++#ifdef O_EXCL
++          (exclusive ? O_EXCL : 0) |
++#endif
++          (state->mode == GZ_WRITE ?
++           O_TRUNC :
++           O_APPEND)));
++
++    /* open the file with the appropriate flags (or just use fd) */
++    state->fd = fd > -1 ? fd : (
++#ifdef _WIN32
++        fd == -2 ? _wopen(path, oflag, 0666) :
++#endif
++        open(path, oflag, 0666));
+     if (state->fd == -1) {
+         free(state->path);
+         free(state);
+@@ -245,6 +291,16 @@
+ }
+ 
+ /* -- see zlib.h -- */
++#ifdef _WIN32
++gzFile ZEXPORT gzopen_w(path, mode)
++    const wchar_t *path;
++    const char *mode;
++{
++    return gz_open(path, -2, mode);
++}
++#endif
++
++/* -- see zlib.h -- */
+ int ZEXPORT gzbuffer(file, size)
+     gzFile file;
+     unsigned size;
+diff -r 10b7f6c9be4f modules/zlib/src/gzread.c
+--- a/modules/zlib/src/gzread.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/gzread.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,5 +1,5 @@
+ /* gzread.c -- zlib functions for reading gzip files
+- * Copyright (C) 2004, 2005, 2010, 2011 Mark Adler
++ * Copyright (C) 2004, 2005, 2010, 2011, 2012 Mark Adler
+  * For conditions of distribution and use, see copyright notice in zlib.h
+  */
+ 
+@@ -57,8 +57,13 @@
+     if (state->err != Z_OK && state->err != Z_BUF_ERROR)
+         return -1;
+     if (state->eof == 0) {
+-        if (strm->avail_in)
+-            memmove(state->in, strm->next_in, strm->avail_in);
++        if (strm->avail_in) {       /* copy what's there to the start */
++            unsigned char *p = state->in, *q = strm->next_in;
++            unsigned n = strm->avail_in;
++            do {
++                *p++ = *q++;
++            } while (--n);
++        }
+         if (gz_load(state, state->in + strm->avail_in,
+                     state->size - strm->avail_in, &got) == -1)
+             return -1;
+@@ -340,7 +345,7 @@
+             /* get more output, looking for header if required */
+             if (gz_fetch(state) == -1)
+                 return -1;
+-            continue;       /* no progress yet -- go back to memcpy() above */
++            continue;       /* no progress yet -- go back to copy above */
+             /* the copy above assures that we will leave with space in the
+                output buffer, allowing at least one gzungetc() to succeed */
+         }
+@@ -373,7 +378,8 @@
+ }
+ 
+ /* -- see zlib.h -- */
+-int ZEXPORT gzgetc_(file)
++#undef gzgetc
++int ZEXPORT gzgetc(file)
+     gzFile file;
+ {
+     int ret;
+@@ -402,12 +408,11 @@
+     return ret < 1 ? -1 : buf[0];
+ }
+ 
+-#undef gzgetc
+-int ZEXPORT gzgetc(file)
++int ZEXPORT gzgetc_(file)
+ gzFile file;
+ {
+-    return gzgetc_(file);
+-}    
++    return gzgetc(file);
++}
+ 
+ /* -- see zlib.h -- */
+ int ZEXPORT gzungetc(c, file)
+diff -r 10b7f6c9be4f modules/zlib/src/gzwrite.c
+--- a/modules/zlib/src/gzwrite.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/gzwrite.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -338,19 +338,19 @@
+     va_start(va, format);
+ #ifdef NO_vsnprintf
+ #  ifdef HAS_vsprintf_void
+-    (void)vsprintf(state->in, format, va);
++    (void)vsprintf((char *)(state->in), format, va);
+     va_end(va);
+     for (len = 0; len < size; len++)
+         if (state->in[len] == 0) break;
+ #  else
+-    len = vsprintf(state->in, format, va);
++    len = vsprintf((char *)(state->in), format, va);
+     va_end(va);
+ #  endif
+ #else
+ #  ifdef HAS_vsnprintf_void
+-    (void)vsnprintf(state->in, size, format, va);
++    (void)vsnprintf((char *)(state->in), size, format, va);
+     va_end(va);
+-    len = strlen(state->in);
++    len = strlen((char *)(state->in));
+ #  else
+     len = vsnprintf((char *)(state->in), size, format, va);
+     va_end(va);
+@@ -416,22 +416,23 @@
+     state->in[size - 1] = 0;
+ #ifdef NO_snprintf
+ #  ifdef HAS_sprintf_void
+-    sprintf(state->in, format, a1, a2, a3, a4, a5, a6, a7, a8,
++    sprintf((char *)(state->in), format, a1, a2, a3, a4, a5, a6, a7, a8,
+             a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+     for (len = 0; len < size; len++)
+         if (state->in[len] == 0) break;
+ #  else
+-    len = sprintf(state->in, format, a1, a2, a3, a4, a5, a6, a7, a8,
+-                a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
++    len = sprintf((char *)(state->in), format, a1, a2, a3, a4, a5, a6, a7, a8,
++                  a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+ #  endif
+ #else
+ #  ifdef HAS_snprintf_void
+-    snprintf(state->in, size, format, a1, a2, a3, a4, a5, a6, a7, a8,
++    snprintf((char *)(state->in), size, format, a1, a2, a3, a4, a5, a6, a7, a8,
+              a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+-    len = strlen(state->in);
++    len = strlen((char *)(state->in));
+ #  else
+-    len = snprintf(state->in, size, format, a1, a2, a3, a4, a5, a6, a7, a8,
+-                 a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
++    len = snprintf((char *)(state->in), size, format, a1, a2, a3, a4, a5, a6,
++                   a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18,
++                   a19, a20);
+ #  endif
+ #endif
+ 
+@@ -546,13 +547,15 @@
+     }
+ 
+     /* flush, free memory, and close file */
+-    if (gz_comp(state, Z_FINISH) == -1)
+-        ret = state->err;
+-    if (!state->direct) {
+-        (void)deflateEnd(&(state->strm));
+-        free(state->out);
++    if (state->size) {
++        if (gz_comp(state, Z_FINISH) == -1)
++            ret = state->err;
++        if (!state->direct) {
++            (void)deflateEnd(&(state->strm));
++            free(state->out);
++        }
++        free(state->in);
+     }
+-    free(state->in);
+     gz_error(state, Z_OK, NULL);
+     free(state->path);
+     if (close(state->fd) == -1)
+@@ -560,34 +563,3 @@
+     free(state);
+     return ret;
+ }
+-
+-/* used by zlibVersion() to get the vsnprintf story from the horse's mouth */
+-unsigned long ZEXPORT gzflags()
+-{
+-    unsigned long flags = 0;
+-#if defined(STDC) || defined(Z_HAVE_STDARG_H)
+-#  ifdef NO_vsnprintf
+-    flags += 1L << 25;
+-#    ifdef HAS_vsprintf_void
+-    flags += 1L << 26;
+-#    endif
+-#  else
+-#    ifdef HAS_vsnprintf_void
+-    flags += 1L << 26;
+-#    endif
+-#  endif
+-#else
+-    flags += 1L << 24;
+-#  ifdef NO_snprintf
+-    flags += 1L << 25;
+-#    ifdef HAS_sprintf_void
+-    flags += 1L << 26;
+-#    endif
+-#  else
+-#    ifdef HAS_snprintf_void
+-    flags += 1L << 26;
+-#    endif
+-#  endif
+-#endif
+-    return flags;
+-}
+diff -r 10b7f6c9be4f modules/zlib/src/inflate.c
+--- a/modules/zlib/src/inflate.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/inflate.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,5 +1,5 @@
+ /* inflate.c -- zlib decompression
+- * Copyright (C) 1995-2011 Mark Adler
++ * Copyright (C) 1995-2012 Mark Adler
+  * For conditions of distribution and use, see copyright notice in zlib.h
+  */
+ 
+@@ -519,11 +519,6 @@
+         bits -= bits & 7; \
+     } while (0)
+ 
+-/* Reverse the bytes in a 32-bit value */
+-#define REVERSE(q) \
+-    ((((q) >> 24) & 0xff) + (((q) >> 8) & 0xff00) + \
+-     (((q) & 0xff00) << 8) + (((q) & 0xff) << 24))
+-
+ /*
+    inflate() uses a state machine to process as much input data and generate as
+    much output data as possible before returning.  The state machine is
+@@ -817,7 +812,7 @@
+ #endif
+         case DICTID:
+             NEEDBITS(32);
+-            strm->adler = state->check = REVERSE(hold);
++            strm->adler = state->check = ZSWAP32(hold);
+             INITBITS();
+             state->mode = DICT;
+         case DICT:
+@@ -1189,7 +1184,7 @@
+ #ifdef GUNZIP
+                      state->flags ? hold :
+ #endif
+-                     REVERSE(hold)) != state->check) {
++                     ZSWAP32(hold)) != state->check) {
+                     strm->msg = (char *)"incorrect data check";
+                     state->mode = BAD;
+                     break;
+@@ -1275,7 +1270,7 @@
+ uInt dictLength;
+ {
+     struct inflate_state FAR *state;
+-    unsigned long id;
++    unsigned long dictid;
+     unsigned char *next;
+     unsigned avail;
+     int ret;
+@@ -1286,11 +1281,11 @@
+     if (state->wrap != 0 && state->mode != DICT)
+         return Z_STREAM_ERROR;
+ 
+-    /* check for correct dictionary id */
++    /* check for correct dictionary identifier */
+     if (state->mode == DICT) {
+-        id = adler32(0L, Z_NULL, 0);
+-        id = adler32(id, dictionary, dictLength);
+-        if (id != state->check)
++        dictid = adler32(0L, Z_NULL, 0);
++        dictid = adler32(dictid, dictionary, dictLength);
++        if (dictid != state->check)
+             return Z_DATA_ERROR;
+     }
+ 
+diff -r 10b7f6c9be4f modules/zlib/src/inftrees.c
+--- a/modules/zlib/src/inftrees.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/inftrees.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -9,7 +9,7 @@
+ #define MAXBITS 15
+ 
+ const char inflate_copyright[] =
+-   " inflate 1.2.6 Copyright 1995-2012 Mark Adler ";
++   " inflate 1.2.7 Copyright 1995-2012 Mark Adler ";
+ /*
+   If you use the zlib library in a product, an acknowledgment is welcome
+   in the documentation of your product. If for some reason you cannot
+@@ -62,7 +62,7 @@
+         35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0, 0};
+     static const unsigned short lext[31] = { /* Length codes 257..285 extra */
+         16, 16, 16, 16, 16, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 18,
+-        19, 19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 21, 16, 203, 69};
++        19, 19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 21, 16, 78, 68};
+     static const unsigned short dbase[32] = { /* Distance codes 0..29 base */
+         1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
+         257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145,
+diff -r 10b7f6c9be4f modules/zlib/src/mozzconf.h
+--- a/modules/zlib/src/mozzconf.h	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/mozzconf.h	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,38 +1,7 @@
+ /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+-/* ***** BEGIN LICENSE BLOCK *****
+- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+- *
+- * The contents of this file are subject to the Mozilla Public License Version
+- * 1.1 (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- * http://www.mozilla.org/MPL/
+- *
+- * Software distributed under the License is distributed on an "AS IS" basis,
+- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+- * for the specific language governing rights and limitations under the
+- * License.
+- *
+- * The Original Code is the mozilla zlib configuration.
+- *
+- * The Initial Developer of the Original Code is IBM Corporation.
+- * Portions created by the Initial Developer are Copyright (C) 2004
+- * the Initial Developer. All Rights Reserved.
+- *
+- * Contributor(s):
+- *
+- * Alternatively, the contents of this file may be used under the terms of
+- * either of the GNU General Public License Version 2 or later (the "GPL"),
+- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+- * in which case the provisions of the GPL or the LGPL are applicable instead
+- * of those above. If you wish to allow use of your version of this file only
+- * under the terms of either the GPL or the LGPL, and not to allow others to
+- * use your version of this file under the terms of the MPL, indicate your
+- * decision by deleting the provisions above and replace them with the notice
+- * and other provisions required by the GPL or the LGPL. If you do not delete
+- * the provisions above, a recipient may use your version of this file under
+- * the terms of any one of the MPL, the GPL or the LGPL.
+- *
+- * ***** END LICENSE BLOCK ***** */
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #ifndef MOZZCONF_H
+ #define MOZZCONF_H
+@@ -73,6 +42,7 @@
+ #define gzputs MOZ_Z_gzputs
+ #define gzgets MOZ_Z_gzgets
+ #define gzputc MOZ_Z_gzputc
++#define gzgetc MOZ_Z_gzgetc
+ #define gzungetc MOZ_Z_gzungetc
+ #define gzflush MOZ_Z_gzflush
+ #define gzseek MOZ_Z_gzseek
+@@ -144,7 +114,9 @@
+ #define deflatePending MOZ_Z_deflatePending
+ #define deflateResetKeep MOZ_Z_deflateResetKeep
+ #define inflateResetKeep MOZ_Z_inflateResetKeep
+-#define gzflags MOZ_Z_gzflags
+ #define gzgetc_ MOZ_Z_gzgetc_
+ 
++/* New as of zlib-1.2.7 */
++#define gzopen_w MOZ_Z_gzopen_w
++
+ #endif
+diff -r 10b7f6c9be4f modules/zlib/src/objs.mk
+--- a/modules/zlib/src/objs.mk	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/objs.mk	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,39 +1,6 @@
+-#
+-# ***** BEGIN LICENSE BLOCK *****
+-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
+-#
+-# The contents of this file are subject to the Mozilla Public License Version
+-# 1.1 (the "License"); you may not use this file except in compliance with
+-# the License. You may obtain a copy of the License at
+-# http://www.mozilla.org/MPL/
+-#
+-# Software distributed under the License is distributed on an "AS IS" basis,
+-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+-# for the specific language governing rights and limitations under the
+-# License.
+-#
+-# The Original Code is mozilla.org code.
+-#
+-# The Initial Developer of the Original Code is
+-# Netscape Communications Corporation.
+-# Portions created by the Initial Developer are Copyright (C) 2000
+-# the Initial Developer. All Rights Reserved.
+-#
+-# Contributor(s):
+-#
+-# Alternatively, the contents of this file may be used under the terms of
+-# either the GNU General Public License Version 2 or later (the "GPL"), or
+-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+-# in which case the provisions of the GPL or the LGPL are applicable instead
+-# of those above. If you wish to allow use of your version of this file only
+-# under the terms of either the GPL or the LGPL, and not to allow others to
+-# use your version of this file under the terms of the MPL, indicate your
+-# decision by deleting the provisions above and replace them with the notice
+-# and other provisions required by the GPL or the LGPL. If you do not delete
+-# the provisions above, a recipient may use your version of this file under
+-# the terms of any one of the MPL, the GPL or the LGPL.
+-#
+-# ***** END LICENSE BLOCK *****
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ MODULES_ZLIB_SRC_LCSRCS = \
+ 		adler32.c \
+diff -r 10b7f6c9be4f modules/zlib/src/zconf.h
+--- a/modules/zlib/src/zconf.h	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/zconf.h	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,5 +1,5 @@
+ /* zconf.h -- configuration of the zlib compression library
+- * Copyright (C) 1995-2011 Jean-loup Gailly.
++ * Copyright (C) 1995-2012 Jean-loup Gailly.
+  * For conditions of distribution and use, see copyright notice in zlib.h
+  */
+ 
+@@ -68,7 +68,6 @@
+ #    define gzdopen               z_gzdopen
+ #    define gzeof                 z_gzeof
+ #    define gzerror               z_gzerror
+-#    define gzflags               z_gzflags
+ #    define gzflush               z_gzflush
+ #    define gzgetc                z_gzgetc
+ #    define gzgetc_               z_gzgetc_
+@@ -77,6 +76,9 @@
+ #    define gzoffset64            z_gzoffset64
+ #    define gzopen                z_gzopen
+ #    define gzopen64              z_gzopen64
++#    ifdef _WIN32
++#      define gzopen_w              z_gzopen_w
++#    endif
+ #    define gzprintf              z_gzprintf
+ #    define gzputc                z_gzputc
+ #    define gzputs                z_gzputs
+@@ -130,9 +132,9 @@
+ #  define free_func             z_free_func
+ #  ifndef Z_SOLO
+ #    define gzFile                z_gzFile
+-#    define gz_header             z_gz_header
+-#    define gz_headerp            z_gz_headerp
+ #  endif
++#  define gz_header             z_gz_header
++#  define gz_headerp            z_gz_headerp
+ #  define in_func               z_in_func
+ #  define intf                  z_intf
+ #  define out_func              z_out_func
+@@ -145,9 +147,7 @@
+ #  define voidpf                z_voidpf
+ 
+ /* all zlib structs in zlib.h and zconf.h */
+-#  ifndef Z_SOLO
+-#    define gz_header_s           z_gz_header_s
+-#  endif
++#  define gz_header_s           z_gz_header_s
+ #  define internal_state        z_internal_state
+ 
+ #endif
+@@ -338,7 +338,7 @@
+ #  endif
+ #endif
+ 
+-#if defined (__BEOS__)
++#if defined (__BEOS__) || (defined(__OS2__) && defined(__declspec))
+ #  ifdef ZLIB_DLL
+ #    ifdef ZLIB_INTERNAL
+ #      define ZEXPORT   __declspec(dllexport)
+@@ -391,6 +391,29 @@
+    typedef Byte       *voidp;
+ #endif
+ 
++/* ./configure may #define Z_U4 here */
++
++#if !defined(Z_U4) && !defined(Z_SOLO) && defined(STDC)
++#  include <limits.h>
++#  if (UINT_MAX == 0xffffffffUL)
++#    define Z_U4 unsigned
++#  else
++#    if (ULONG_MAX == 0xffffffffUL)
++#      define Z_U4 unsigned long
++#    else
++#      if (USHRT_MAX == 0xffffffffUL)
++#        define Z_U4 unsigned short
++#      endif
++#    endif
++#  endif
++#endif
++
++#ifdef Z_U4
++   typedef Z_U4 z_crc_t;
++#else
++   typedef unsigned long z_crc_t;
++#endif
++
+ #ifdef HAVE_UNISTD_H    /* may be set to #if 1 by ./configure */
+ #  define Z_HAVE_UNISTD_H
+ #endif
+@@ -405,28 +428,45 @@
+ #  endif
+ #endif
+ 
++#ifdef _WIN32
++#  include <stddef.h>           /* for wchar_t */
++#endif
++
+ /* a little trick to accommodate both "#define _LARGEFILE64_SOURCE" and
+  * "#define _LARGEFILE64_SOURCE 1" as requesting 64-bit operations, (even
+  * though the former does not conform to the LFS document), but considering
+  * both "#undef _LARGEFILE64_SOURCE" and "#define _LARGEFILE64_SOURCE 0" as
+  * equivalently requesting no 64-bit operations
+  */
+-#if -_LARGEFILE64_SOURCE - -1 == 1
++#if defined(LARGEFILE64_SOURCE) && -_LARGEFILE64_SOURCE - -1 == 1
+ #  undef _LARGEFILE64_SOURCE
+ #endif
+ 
+-#if defined(_LARGEFILE64_SOURCE) && _LFS64_LARGEFILE-0
+-#  define Z_LARGE
++#if defined(__WATCOMC__) && !defined(Z_HAVE_UNISTD_H)
++#  define Z_HAVE_UNISTD_H
++#endif
++#ifndef Z_SOLO
++#  if defined(Z_HAVE_UNISTD_H) || defined(LARGEFILE64_SOURCE)
++#    include <unistd.h>         /* for SEEK_*, off_t, and _LFS64_LARGEFILE */
++#    ifdef VMS
++#      include <unixio.h>       /* for off_t */
++#    endif
++#    ifndef z_off_t
++#      define z_off_t off_t
++#    endif
++#  endif
+ #endif
+ 
+-#if (defined(Z_HAVE_UNISTD_H) || defined(Z_LARGE)) && !defined(Z_SOLO)
+-#  include <unistd.h>       /* for SEEK_* and off_t */
+-#  ifdef VMS
+-#    include <unixio.h>     /* for off_t */
+-#  endif
+-#  ifndef z_off_t
+-#    define z_off_t off_t
+-#  endif
++#if defined(_LFS64_LARGEFILE) && _LFS64_LARGEFILE-0
++#  define Z_LFS64
++#endif
++
++#if defined(_LARGEFILE64_SOURCE) && defined(Z_LFS64)
++#  define Z_LARGE64
++#endif
++
++#if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS-0 == 64 && defined(Z_LFS64)
++#  define Z_WANT64
+ #endif
+ 
+ #if !defined(SEEK_SET) && !defined(Z_SOLO)
+@@ -439,14 +479,14 @@
+ #  define z_off_t long
+ #endif
+ 
+-#if !defined(_WIN32) && (defined(_LARGEFILE64_SOURCE) && _LFS64_LARGEFILE-0)
++#if !defined(_WIN32) && defined(Z_LARGE64)
+ #  define z_off64_t off64_t
+ #else
+-#  if defined(_WIN32)
++#  if defined(_WIN32) && !defined(__GNUC__) && !defined(Z_SOLO)
+ #    define z_off64_t __int64
+ #  else
+-#  define z_off64_t z_off_t
+-#endif
++#    define z_off64_t z_off_t
++#  endif
+ #endif
+ 
+ /* MVS linker does not support external names larger than 8 bytes */
+diff -r 10b7f6c9be4f modules/zlib/src/zlib.def
+--- a/modules/zlib/src/zlib.def	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/zlib.def	Sun Jun 03 04:35:00 2012 +0900
+@@ -42,6 +42,7 @@
+     MOZ_Z_gzputs
+     MOZ_Z_gzgets
+     MOZ_Z_gzputc
++    MOZ_Z_gzgetc
+     MOZ_Z_gzungetc
+     MOZ_Z_gzflush
+     MOZ_Z_gzseek
+@@ -80,4 +81,4 @@
+     MOZ_Z_inflateResetKeep
+     MOZ_Z_deflateResetKeep
+     MOZ_Z_gzgetc_
+-    MOZ_Z_gzflags
++    MOZ_Z_gzopen_w
+diff -r 10b7f6c9be4f modules/zlib/src/zlib.h
+--- a/modules/zlib/src/zlib.h	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/zlib.h	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,5 +1,5 @@
+ /* zlib.h -- interface of the 'zlib' general purpose compression library
+-  version 1.2.6, January 29th, 2012
++  version 1.2.7, May 2nd, 2012
+ 
+   Copyright (C) 1995-2012 Jean-loup Gailly and Mark Adler
+ 
+@@ -37,11 +37,11 @@
+ extern "C" {
+ #endif
+ 
+-#define ZLIB_VERSION "1.2.6"
+-#define ZLIB_VERNUM 0x1260
++#define ZLIB_VERSION "1.2.7"
++#define ZLIB_VERNUM 0x1270
+ #define ZLIB_VER_MAJOR 1
+ #define ZLIB_VER_MINOR 2
+-#define ZLIB_VER_REVISION 6
++#define ZLIB_VER_REVISION 7
+ #define ZLIB_VER_SUBREVISION 0
+ 
+ /*
+@@ -452,14 +452,17 @@
+   error.  However if all decompression is to be performed in a single step (a
+   single call of inflate), the parameter flush should be set to Z_FINISH.  In
+   this case all pending input is processed and all pending output is flushed;
+-  avail_out must be large enough to hold all the uncompressed data.  (The size
+-  of the uncompressed data may have been saved by the compressor for this
+-  purpose.) The next operation on this stream must be inflateEnd to deallocate
+-  the decompression state.  The use of Z_FINISH is not required to perform an
+-  inflation in one step.  However it may be used to inform inflate that a
+-  faster approach can be used for the single inflate() call.  Z_FINISH also
+-  informs inflate to not maintain a sliding window if the stream completes,
+-  which reduces inflate's memory footprint.
++  avail_out must be large enough to hold all of the uncompressed data for the
++  operation to complete.  (The size of the uncompressed data may have been
++  saved by the compressor for this purpose.) The use of Z_FINISH is not
++  required to perform an inflation in one step.  However it may be used to
++  inform inflate that a faster approach can be used for the single inflate()
++  call.  Z_FINISH also informs inflate to not maintain a sliding window if the
++  stream completes, which reduces inflate's memory footprint.  If the stream
++  does not complete, either because not all of the stream is provided or not
++  enough output space is provided, then a sliding window will be allocated and
++  inflate() can be called again to continue the operation as if Z_NO_FLUSH had
++  been used.
+ 
+      In this implementation, inflate() always flushes as much output as
+   possible to the output buffer, and always uses the faster approach on the
+@@ -1217,7 +1220,10 @@
+ 
+      "a" can be used instead of "w" to request that the gzip stream that will
+    be written be appended to the file.  "+" will result in an error, since
+-   reading and writing to the same gzip file is not supported.
++   reading and writing to the same gzip file is not supported.  The addition of
++   "x" when writing will create the file exclusively, which fails if the file
++   already exists.  On systems that support it, the addition of "e" when
++   reading or writing will set the flag to close the file on an execve() call.
+ 
+      These functions, as well as gzip, will read and decode a sequence of gzip
+    streams in a file.  The append function of gzopen() can be used to create
+@@ -1365,8 +1371,8 @@
+    returns the value that was written, or -1 in case of error.
+ */
+ 
++ZEXTERN int ZEXPORT gzgetc OF((gzFile file));
+ /*
+-ZEXTERN int ZEXPORT gzgetc OF((gzFile file));
+      Reads one byte from the compressed file.  gzgetc returns this byte or -1
+    in case of end of file or error.  This is implemented as a macro for speed.
+    As such, it does not do all of the checking the other functions do.  I.e.
+@@ -1578,9 +1584,8 @@
+ /*
+      Update a running CRC-32 with the bytes buf[0..len-1] and return the
+    updated CRC-32.  If buf is Z_NULL, this function returns the required
+-   initial value for the for the crc.  Pre- and post-conditioning (one's
+-   complement) is performed within this function so it shouldn't be done by the
+-   application.
++   initial value for the crc.  Pre- and post-conditioning (one's complement) is
++   performed within this function so it shouldn't be done by the application.
+ 
+    Usage example:
+ 
+@@ -1650,9 +1655,16 @@
+     unsigned char *next;
+     z_off64_t pos;
+ };
+-ZEXTERN int ZEXPORT gzgetc_ OF((gzFile file));
+-#define gzgetc(g) \
+-    ((g)->have ? ((g)->have--, (g)->pos++, *((g)->next)++) : gzgetc_(g))
++ZEXTERN int ZEXPORT gzgetc_ OF((gzFile file));  /* backward compatibility */
++#ifdef Z_PREFIX_SET
++#  undef z_gzgetc
++#  define z_gzgetc(g) \
++          ((g)->have ? ((g)->have--, (g)->pos++, *((g)->next)++) : gzgetc(g))
++#else
++#  undef gzgetc
++#  define gzgetc(g) \
++          ((g)->have ? ((g)->have--, (g)->pos++, *((g)->next)++) : gzgetc(g))
++#endif
+ 
+ /* provide 64-bit offset functions if _LARGEFILE64_SOURCE defined, and/or
+  * change the regular functions to 64 bits if _FILE_OFFSET_BITS is 64 (if
+@@ -1660,7 +1672,7 @@
+  * functions are changed to 64 bits) -- in case these are set on systems
+  * without large file support, _LFS64_LARGEFILE must also be true
+  */
+-#if defined(_LARGEFILE64_SOURCE) && _LFS64_LARGEFILE-0
++#ifdef Z_LARGE64
+    ZEXTERN gzFile ZEXPORT gzopen64 OF((const char *, const char *));
+    ZEXTERN z_off64_t ZEXPORT gzseek64 OF((gzFile, z_off64_t, int));
+    ZEXTERN z_off64_t ZEXPORT gztell64 OF((gzFile));
+@@ -1669,7 +1681,7 @@
+    ZEXTERN uLong ZEXPORT crc32_combine64 OF((uLong, uLong, z_off64_t));
+ #endif
+ 
+-#if !defined(ZLIB_INTERNAL) && _FILE_OFFSET_BITS-0 == 64 && _LFS64_LARGEFILE-0
++#if !defined(ZLIB_INTERNAL) && defined(Z_WANT64)
+ #  ifdef Z_PREFIX_SET
+ #    define z_gzopen z_gzopen64
+ #    define z_gzseek z_gzseek64
+@@ -1685,7 +1697,7 @@
+ #    define adler32_combine adler32_combine64
+ #    define crc32_combine crc32_combine64
+ #  endif
+-#  ifndef _LARGEFILE64_SOURCE
++#  ifndef Z_LARGE64
+      ZEXTERN gzFile ZEXPORT gzopen64 OF((const char *, const char *));
+      ZEXTERN z_off_t ZEXPORT gzseek64 OF((gzFile, z_off_t, int));
+      ZEXTERN z_off_t ZEXPORT gztell64 OF((gzFile));
+@@ -1717,12 +1729,13 @@
+ /* undocumented functions */
+ ZEXTERN const char   * ZEXPORT zError           OF((int));
+ ZEXTERN int            ZEXPORT inflateSyncPoint OF((z_streamp));
+-ZEXTERN const uLongf * ZEXPORT get_crc_table    OF((void));
++ZEXTERN const z_crc_t FAR * ZEXPORT get_crc_table    OF((void));
+ ZEXTERN int            ZEXPORT inflateUndermine OF((z_streamp, int));
+ ZEXTERN int            ZEXPORT inflateResetKeep OF((z_streamp));
+ ZEXTERN int            ZEXPORT deflateResetKeep OF((z_streamp));
+-#ifndef Z_SOLO
+-  ZEXTERN unsigned long  ZEXPORT gzflags          OF((void));
++#if defined(_WIN32) && !defined(Z_SOLO)
++ZEXTERN gzFile         ZEXPORT gzopen_w OF((const wchar_t *path,
++                                            const char *mode));
+ #endif
+ 
+ #ifdef __cplusplus
+diff -r 10b7f6c9be4f modules/zlib/src/zutil.c
+--- a/modules/zlib/src/zutil.c	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/zutil.c	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,11 +1,14 @@
+ /* zutil.c -- target dependent utility functions for the compression library
+- * Copyright (C) 1995-2005, 2010, 2011 Jean-loup Gailly.
++ * Copyright (C) 1995-2005, 2010, 2011, 2012 Jean-loup Gailly.
+  * For conditions of distribution and use, see copyright notice in zlib.h
+  */
+ 
+ /* @(#) $Id$ */
+ 
+ #include "zutil.h"
++#ifndef Z_SOLO
++#  include "gzguts.h"
++#endif
+ 
+ #ifndef NO_DUMMY_DECL
+ struct internal_state      {int dummy;}; /* for buggy compilers */
+@@ -85,11 +88,31 @@
+ #ifdef FASTEST
+     flags += 1L << 21;
+ #endif
+-#ifdef Z_SOLO
++#if defined(STDC) || defined(Z_HAVE_STDARG_H)
++#  ifdef NO_vsnprintf
++    flags += 1L << 25;
++#    ifdef HAS_vsprintf_void
++    flags += 1L << 26;
++#    endif
++#  else
++#    ifdef HAS_vsnprintf_void
++    flags += 1L << 26;
++#    endif
++#  endif
++#else
++    flags += 1L << 24;
++#  ifdef NO_snprintf
++    flags += 1L << 25;
++#    ifdef HAS_sprintf_void
++    flags += 1L << 26;
++#    endif
++#  else
++#    ifdef HAS_snprintf_void
++    flags += 1L << 26;
++#    endif
++#  endif
++#endif
+     return flags;
+-#else
+-    return flags + gzflags();
+-#endif
+ }
+ 
+ #ifdef DEBUG
+diff -r 10b7f6c9be4f modules/zlib/src/zutil.h
+--- a/modules/zlib/src/zutil.h	Fri May 18 15:16:50 2012 -0700
++++ b/modules/zlib/src/zutil.h	Sun Jun 03 04:35:00 2012 +0900
+@@ -1,5 +1,5 @@
+ /* zutil.h -- internal interface and configuration of the compression library
+- * Copyright (C) 1995-2011 Jean-loup Gailly.
++ * Copyright (C) 1995-2012 Jean-loup Gailly.
+  * For conditions of distribution and use, see copyright notice in zlib.h
+  */
+ 
+@@ -13,7 +13,7 @@
+ #ifndef ZUTIL_H
+ #define ZUTIL_H
+ 
+-#if ((__GNUC__-0) * 10 + __GNUC_MINOR__-0 >= 33) && !defined(NO_VIZ)
++#ifdef HAVE_HIDDEN
+ #  define ZLIB_INTERNAL __attribute__((visibility ("hidden")))
+ #else
+ #  define ZLIB_INTERNAL
+@@ -214,11 +214,11 @@
+    void ZLIB_INTERNAL zmemzero OF((Bytef* dest, uInt len));
+ #endif
+ 
+-/* Ignore the Mozilla build env's DEBUG unless ZLIB_DEBUG is also set. */   
++/* Ignore the Mozilla build env's DEBUG unless ZLIB_DEBUG is also set. */
+ #ifndef ZLIB_DEBUG
+ #undef DEBUG
+ #endif
+-   
++
+ /* Diagnostic functions */
+ #ifdef DEBUG
+ #  include <stdio.h>
+@@ -250,4 +250,8 @@
+ #define ZFREE(strm, addr)  (*((strm)->zfree))((strm)->opaque, (voidpf)(addr))
+ #define TRY_FREE(s, p) {if (p) ZFREE(s, p);}
+ 
++/* Reverse the bytes in a 32-bit value */
++#define ZSWAP32(q) ((((q) >> 24) & 0xff) + (((q) >> 8) & 0xff00) + \
++                    (((q) & 0xff00) << 8) + (((q) & 0xff) << 24))
++
+ #endif /* ZUTIL_H */

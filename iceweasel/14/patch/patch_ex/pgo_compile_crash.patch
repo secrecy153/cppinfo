@@ -1,0 +1,16 @@
+--- a/layout/base/Makefile.in	2012-07-11 03:33:05 +0800
++++ b/layout/base/Makefile.in	2012-07-07 22:02:33 +0800
+@@ -172,6 +172,13 @@
+ DEFINES += -D_IMPL_NS_LAYOUT
+ DEFINES += -DHB_DONT_DEFINE_STDINT
+ 
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++nsDisplayList.$(OBJ_SUFFIX): nsDisplayList.cpp $(GLOBAL_DEPS)
++	$(REPORT_BUILD)
++	@$(MAKE_DEPS_AUTO_CXX)
++	$(ELOG) $(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) -Ob0- $(_VPATH_SRCS)
++endif
++
+ ifndef MOZ_XUL
+ nsIBoxObject.idl: %: $(topsrcdir)/layout/xul/base/public/%
+ 	$(INSTALL) $^ .

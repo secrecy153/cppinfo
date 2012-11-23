@@ -1,0 +1,98 @@
+diff --git a/content/canvas/src/nsCanvasRenderingContext2DAzure.cpp b/content/canvas/src/nsCanvasRenderingContext2DAzure.cpp
+--- a/content/canvas/src/nsCanvasRenderingContext2DAzure.cpp
++++ b/content/canvas/src/nsCanvasRenderingContext2DAzure.cpp
+@@ -4264,39 +4264,18 @@ nsCanvasRenderingContext2DAzure::GetImag
+ 
+   // make sure sUnpremultiplyTable has been created
+   EnsureUnpremultiplyTable();
+ 
+   // NOTE! dst is the same as src, and this relies on reading
+   // from src and advancing that ptr before writing to dst.
+   uint8_t* dst = data + dstWriteRect.y * (aWidth * 4) + dstWriteRect.x * 4;
+ 
+-  for (int32_t j = 0; j < dstWriteRect.height; ++j) {
+-    for (int32_t i = 0; i < dstWriteRect.width; ++i) {
+-      // XXX Is there some useful swizzle MMX we can use here?
+-#ifdef IS_LITTLE_ENDIAN
+-      PRUint8 b = *src++;
+-      PRUint8 g = *src++;
+-      PRUint8 r = *src++;
+-      PRUint8 a = *src++;
+-#else
+-      PRUint8 a = *src++;
+-      PRUint8 r = *src++;
+-      PRUint8 g = *src++;
+-      PRUint8 b = *src++;
+-#endif
+-      // Convert to non-premultiplied color
+-      *dst++ = sUnpremultiplyTable[a][r];
+-      *dst++ = sUnpremultiplyTable[a][g];
+-      *dst++ = sUnpremultiplyTable[a][b];
+-      *dst++ = a;
+-    }
+-    src += srcStride - (dstWriteRect.width * 4);
+-    dst += (aWidth * 4) - (dstWriteRect.width * 4);
+-  }
++  GetImageData_component(src, dst, dstWriteRect.width, dstWriteRect.height,
++                         srcStride, aWidth * 4, sUnpremultiplyTable);
+ 
+   *aRetval = darray;
+   return NS_OK;
+ }
+ 
+ void
+ nsCanvasRenderingContext2DAzure::EnsurePremultiplyTable() {
+   if (sPremultiplyTable)
+@@ -4438,48 +4417,30 @@ nsCanvasRenderingContext2DAzure::PutImag
+   }
+ 
+   PRUint32 len = w * h * 4;
+   if (aDataLen != len) {
+     return NS_ERROR_DOM_SYNTAX_ERR;
+   }
+ 
+   nsRefPtr<gfxImageSurface> imgsurf = new gfxImageSurface(gfxIntSize(w, h),
+-                                                          gfxASurface::ImageFormatARGB32);
++                                                          gfxASurface::ImageFormatARGB32,
++                                                          false);
+   if (!imgsurf || imgsurf->CairoStatus()) {
+     return NS_ERROR_FAILURE;
+   }
+ 
+   // ensure premultiply table has been created
+   EnsurePremultiplyTable();
+ 
+   PRUint8 *src = aData;
+   PRUint8 *dst = imgsurf->Data();
+ 
+-  for (PRUint32 j = 0; j < h; j++) {
+-    for (PRUint32 i = 0; i < w; i++) {
+-      PRUint8 r = *src++;
+-      PRUint8 g = *src++;
+-      PRUint8 b = *src++;
+-      PRUint8 a = *src++;
+-
+-      // Convert to premultiplied color (losslessly if the input came from getImageData)
+-#ifdef IS_LITTLE_ENDIAN
+-      *dst++ = sPremultiplyTable[a][b];
+-      *dst++ = sPremultiplyTable[a][g];
+-      *dst++ = sPremultiplyTable[a][r];
+-      *dst++ = a;
+-#else
+-      *dst++ = a;
+-      *dst++ = sPremultiplyTable[a][r];
+-      *dst++ = sPremultiplyTable[a][g];
+-      *dst++ = sPremultiplyTable[a][b];
+-#endif
+-    }
+-  }
++  PutImageData_component(src, dst, w, h,
++                         w * 4, w * 4, sPremultiplyTable);
+ 
+   RefPtr<SourceSurface> sourceSurface =
+     mTarget->CreateSourceSurfaceFromData(imgsurf->Data(), IntSize(w, h), imgsurf->Stride(), FORMAT_B8G8R8A8);
+ 
+ 
+   mTarget->CopySurface(sourceSurface,
+                        IntRect(dirtyRect.x - x, dirtyRect.y - y,
+                                dirtyRect.width, dirtyRect.height),

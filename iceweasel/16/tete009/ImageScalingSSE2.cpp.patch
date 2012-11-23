@@ -1,0 +1,41 @@
+diff -r 42edc8f4c9c6 gfx/2d/ImageScalingSSE2.cpp
+--- a/gfx/2d/ImageScalingSSE2.cpp	Sat Aug 25 11:51:05 2012 +0900
++++ b/gfx/2d/ImageScalingSSE2.cpp	Sat Aug 25 17:48:42 2012 +0900
+@@ -4,16 +4,37 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "ImageScaling.h"
+ #include "mozilla/Attributes.h"
+ 
+ #include <xmmintrin.h>
+ #include <emmintrin.h>
+ 
++/* VC8 doesn't support some SSE2 built-in functions, so we define them here. */
++#if defined(_MSC_VER) && (_MSC_VER < 1500)
++static __forceinline __m128
++_mm_castsi128_ps(__m128i a)
++{
++    return *(__m128 *)&a;
++}
++
++static __forceinline __m128i
++_mm_castpd_si128(__m128d a)
++{
++    return *(__m128i *)&a;
++}
++
++static __forceinline __m128i
++_mm_castps_si128(__m128 a)
++{
++    return *(__m128i *)&a;
++}
++#endif
++
+ /* The functions below use the following system for averaging 4 pixels:
+  *
+  * The first observation is that a half-adder is implemented as follows:
+  * R = S + 2C or in the case of a and b (a ^ b) + ((a & b) << 1);
+  *
+  * This can be trivially extended to three pixels by observaring that when
+  * doing (a ^ b ^ c) as the sum, the carry is simply the bitwise-or of the
+  * carries of the individual numbers, since the sum of 3 bits can only ever

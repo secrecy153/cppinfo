@@ -1,0 +1,28 @@
+diff -r 284837bbf631 nsprpub/pr/src/io/prsocket.c
+--- a/nsprpub/pr/src/io/prsocket.c	Sat Aug 25 07:23:12 2012 +0900
++++ b/nsprpub/pr/src/io/prsocket.c	Sat Aug 25 09:43:59 2012 +0900
+@@ -283,24 +283,16 @@ static PRStatus PR_CALLBACK SocketConnec
+     if (err != 0) {
+         _PR_MD_MAP_CONNECT_ERROR(err);
+         return PR_FAILURE;
+     }
+     return PR_SUCCESS;
+ 
+ #elif defined(WIN32) || defined(WIN16)
+ 
+-#if defined(WIN32)
+-    /*
+-     * The sleep circumvents a bug in Win32 WinSock.
+-     * See Microsoft Knowledge Base article ID: Q165989.
+-     */
+-    Sleep(0);
+-#endif /* WIN32 */
+-
+     if (out_flags & PR_POLL_EXCEPT) {
+         int len = sizeof(err);
+         if (getsockopt(osfd, (int)SOL_SOCKET, SO_ERROR, (char *) &err, &len)
+                 == SOCKET_ERROR) {
+             _PR_MD_MAP_GETSOCKOPT_ERROR(WSAGetLastError());
+             return PR_FAILURE;
+         }
+         if (err != 0) {

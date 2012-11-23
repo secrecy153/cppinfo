@@ -1,0 +1,73 @@
+diff -r 00f36792c9e9 gfx/cairo/cairo/src/cairo-d2d-private.h
+--- a/gfx/cairo/cairo/src/cairo-d2d-private.h	Wed Nov 16 17:34:18 2011 +0900
++++ b/gfx/cairo/cairo/src/cairo-d2d-private.h	Sat Nov 19 16:45:23 2011 +0900
+@@ -37,16 +37,17 @@
+ #define CAIRO_D2D_PRIVATE_H
+ 
+ #ifdef CAIRO_HAS_D2D_SURFACE
+ 
+ #include <windows.h>
+ #include <d2d1.h>
+ #include <d3d10.h>
+ #include <dxgi.h>
++#include <list>
+ 
+ #include "cairoint.h"
+ #include "cairo-surface-clipper-private.h"
+ 
+ #include "cairo-win32-refptr.h"
+ #include "cairo-d2d-private-fx.h"
+ #include "cairo-win32.h"
+ #include "cairo-list-private.h"
+@@ -68,16 +69,28 @@ struct _cairo_d2d_device
+     RefPtr<ID3D10RasterizerState> mRasterizerState;
+     RefPtr<ID3D10BlendState> mBlendStates[MAX_OPERATORS];
+     /** Texture used for manual glyph rendering */
+     RefPtr<ID3D10Texture2D> mTextTexture;
+     RefPtr<ID3D10ShaderResourceView> mTextTextureView;
+     int mVRAMUsage;
+ };
+ 
++typedef struct
++{
++    RefPtr<ID2D1RadialGradientBrush> radialGradientBrush;
++    RefPtr<ID2D1GradientStopCollection> radialGradientStopCollection;
++} radial_gradient;
++
++typedef struct
++{
++    RefPtr<ID2D1LinearGradientBrush> linearGradientBrush;
++    RefPtr<ID2D1GradientStopCollection> linearGradientStopCollection;
++} linear_gradient;
++
+ const unsigned int TEXT_TEXTURE_WIDTH = 2048;
+ const unsigned int TEXT_TEXTURE_HEIGHT = 512;
+ typedef struct _cairo_d2d_device cairo_d2d_device_t;
+ 
+ struct _cairo_d2d_surface {
+     _cairo_d2d_surface() : d2d_clip(NULL), clipping(false), isDrawing(false),
+             textRenderingState(TEXT_RENDERING_UNINITIALIZED)
+     {
+@@ -125,16 +138,22 @@ struct _cairo_d2d_surface {
+      */
+     RefPtr<ID2D1Layer> helperLayer;
+     /** If this layer currently is clipping, used to prevent excessive push/pops */
+     bool clipping;
+     /** Brush used for bitmaps */
+     RefPtr<ID2D1BitmapBrush> bitmapBrush;
+     /** Brush used for solid colors */
+     RefPtr<ID2D1SolidColorBrush> solidColorBrush;
++
++    /** Brush used for radial gradients */
++    std::list<radial_gradient> mRadialGradientCache;
++    /** Brush used for linear gradients */
++    std::list<linear_gradient> mLinearGradientCache;
++
+     /** Indicates if our render target is currently in drawing mode */
+     bool isDrawing;
+     /** Indicates if text rendering is initialized */
+     enum TextRenderingState {
+         TEXT_RENDERING_UNINITIALIZED,
+         TEXT_RENDERING_NO_CLEARTYPE,
+         TEXT_RENDERING_NORMAL,
+         TEXT_RENDERING_GDI_CLASSIC

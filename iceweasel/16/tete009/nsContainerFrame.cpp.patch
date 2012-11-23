@@ -1,0 +1,45 @@
+diff -r 284837bbf631 layout/generic/nsContainerFrame.cpp
+--- a/layout/generic/nsContainerFrame.cpp	Sat Aug 25 07:23:12 2012 +0900
++++ b/layout/generic/nsContainerFrame.cpp	Sat Aug 25 10:14:36 2012 +0900
+@@ -234,16 +234,20 @@ nsContainerFrame::DestroyFrom(nsIFrame* 
+ 
+   // Destroy the frame and remove the flow pointers
+   nsSplittableFrame::DestroyFrom(aDestructRoot);
+ }
+ 
+ /////////////////////////////////////////////////////////////////////////////
+ // Child frame enumeration
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
++
+ const nsFrameList&
+ nsContainerFrame::GetChildList(ChildListID aListID) const
+ {
+   // We only know about the principal child list and the overflow lists.
+   switch (aListID) {
+     case kPrincipalList:
+       return mFrames;
+     case kOverflowList: {
+@@ -260,16 +264,20 @@ nsContainerFrame::GetChildList(ChildList
+         GetPropTableFrames(PresContext(), ExcessOverflowContainersProperty());
+       return list ? *list : nsFrameList::EmptyList();
+     }
+     default:
+       return nsSplittableFrame::GetChildList(aListID);
+   }
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
++
+ static void AppendIfNonempty(const nsIFrame* aFrame,
+                             FramePropertyTable* aPropTable,
+                             const FramePropertyDescriptor* aProperty,
+                             nsTArray<nsIFrame::ChildList>* aLists,
+                             nsIFrame::ChildListID aListID)
+ {
+   nsFrameList* list = static_cast<nsFrameList*>(
+     aPropTable->Get(aFrame, aProperty));

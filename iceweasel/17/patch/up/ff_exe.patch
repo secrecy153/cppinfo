@@ -1,0 +1,10 @@
+--- a/browser/app/Makefile.in	2012-11-21 14:08:57 +0800
++++ b/browser/app/Makefile.in	2012-11-21 17:37:50 +0800
+@@ -216,3 +216,6 @@
+ endif #} cocoa
+ endif #} SKIP_COPY_XULRUNNER
+ endif #} LIBXUL_SDK
++
++CFLAGS   += -GA
++CXXFLAGS += -GA
+\ No newline at end of file

@@ -1,0 +1,82 @@
+diff -r 6a3897dad583 layout/base/nsLayoutUtils.cpp
+--- a/layout/base/nsLayoutUtils.cpp	Sat Oct 06 15:30:41 2012 +0900
++++ b/layout/base/nsLayoutUtils.cpp	Sat Oct 06 16:06:25 2012 +0900
+@@ -3589,17 +3589,18 @@ static nsresult
+ DrawImageInternal(nsRenderingContext* aRenderingContext,
+                   imgIContainer*       aImage,
+                   GraphicsFilter       aGraphicsFilter,
+                   const nsRect&        aDest,
+                   const nsRect&        aFill,
+                   const nsPoint&       aAnchor,
+                   const nsRect&        aDirty,
+                   const nsIntSize&     aImageSize,
+-                  PRUint32             aImageFlags)
++                  PRUint32             aImageFlags,
++                  const bool           aSingleImage = false)
+ {
+   if (aDest.Contains(aFill)) {
+     aImageFlags |= imgIContainer::FLAG_CLAMP;
+   }
+   PRInt32 appUnitsPerDevPixel = aRenderingContext->AppUnitsPerDevPixel();
+   gfxContext* ctx = aRenderingContext->ThebesContext();
+ 
+   SnappedImageDrawingParameters drawingParams =
+@@ -3609,16 +3610,20 @@ DrawImageInternal(nsRenderingContext* aR
+   if (!drawingParams.mShouldDraw)
+     return NS_OK;
+ 
+   gfxContextMatrixAutoSaveRestore saveMatrix(ctx);
+   if (drawingParams.mResetCTM) {
+     ctx->IdentityMatrix();
+   }
+ 
++  if (aSingleImage) {
++    ctx->SetFlag(gfxContext::FLAG_DRAW_SINGLE_IMAGE_TT);
++  }
++
+   aImage->Draw(ctx, aGraphicsFilter, drawingParams.mUserSpaceToImageSpace,
+                drawingParams.mFillRect, drawingParams.mSubimage, aImageSize,
+                aImageFlags);
+   return NS_OK;
+ }
+ 
+ /* static */ void
+ nsLayoutUtils::DrawPixelSnapped(nsRenderingContext* aRenderingContext,
+@@ -3689,17 +3694,17 @@ nsLayoutUtils::DrawSingleUnscaledImage(n
+   nsRect dest(aDest - source.TopLeft(), size);
+   nsRect fill(aDest, source.Size());
+   // Ensure that only a single image tile is drawn. If aSourceArea extends
+   // outside the image bounds, we want to honor the aSourceArea-to-aDest
+   // translation but we don't want to actually tile the image.
+   fill.IntersectRect(fill, dest);
+   return DrawImageInternal(aRenderingContext, aImage, aGraphicsFilter,
+                            dest, fill, aDest, aDirty ? *aDirty : dest,
+-                           imageSize, aImageFlags);
++                           imageSize, aImageFlags, true);
+ }
+ 
+ /* static */ nsresult
+ nsLayoutUtils::DrawSingleImage(nsRenderingContext* aRenderingContext,
+                                imgIContainer*       aImage,
+                                GraphicsFilter       aGraphicsFilter,
+                                const nsRect&        aDest,
+                                const nsRect&        aDirty,
+@@ -3728,17 +3733,17 @@ nsLayoutUtils::DrawSingleImage(nsRenderi
+   nsRect dest = nsLayoutUtils::GetWholeImageDestination(imageSize, source,
+                                                         aDest);
+   // Ensure that only a single image tile is drawn. If aSourceArea extends
+   // outside the image bounds, we want to honor the aSourceArea-to-aDest
+   // transform but we don't want to actually tile the image.
+   nsRect fill;
+   fill.IntersectRect(aDest, dest);
+   return DrawImageInternal(aRenderingContext, aImage, aGraphicsFilter, dest, fill,
+-                           fill.TopLeft(), aDirty, imageSize, aImageFlags);
++                           fill.TopLeft(), aDirty, imageSize, aImageFlags, true);
+ }
+ 
+ /* static */ void
+ nsLayoutUtils::ComputeSizeForDrawing(imgIContainer *aImage,
+                                      nsIntSize&     aImageSize, /*outparam*/
+                                      nsSize&        aIntrinsicRatio, /*outparam*/
+                                      bool&          aGotWidth,  /*outparam*/
+                                      bool&          aGotHeight  /*outparam*/)

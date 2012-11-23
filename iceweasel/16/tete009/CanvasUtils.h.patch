@@ -1,0 +1,30 @@
+diff -r 284837bbf631 content/canvas/src/CanvasUtils.h
+--- a/content/canvas/src/CanvasUtils.h	Sat Aug 25 07:23:12 2012 +0900
++++ b/content/canvas/src/CanvasUtils.h	Sat Aug 25 11:12:07 2012 +0900
+@@ -18,16 +18,26 @@ namespace mozilla {
+ namespace gfx {
+ class Matrix;
+ }
+ 
+ namespace CanvasUtils {
+ 
+ using namespace gfx;
+ 
++void GetImageData_component(PRUint8* _src, PRUint8* _dst,
++                            PRUint32 width, PRUint32 height,
++                            PRUint32 srcStride, PRUint32 dstStride,
++                            PRUint8 (*sUnpremultiplyTable)[256]);
++
++void PutImageData_component(PRUint8* _src, PRUint8* _dst,
++                            PRUint32 width, PRUint32 height,
++                            PRUint32 srcStride, PRUint32 dstStride,
++                            PRUint8 (*sPremultiplyTable)[256]);
++
+ // Check that the rectangle [x,y,w,h] is a subrectangle of [0,0,realWidth,realHeight]
+ 
+ inline bool CheckSaneSubrectSize(PRInt32 x, PRInt32 y, PRInt32 w, PRInt32 h,
+                             PRInt32 realWidth, PRInt32 realHeight) {
+     CheckedInt32 checked_xmost  = CheckedInt32(x) + w;
+     CheckedInt32 checked_ymost  = CheckedInt32(y) + h;
+ 
+     return w >= 0 && h >= 0 && x >= 0 && y >= 0 &&

@@ -1,0 +1,45 @@
+diff -r 284837bbf631 layout/style/nsCSSDataBlock.cpp
+--- a/layout/style/nsCSSDataBlock.cpp	Sat Aug 25 07:23:12 2012 +0900
++++ b/layout/style/nsCSSDataBlock.cpp	Sat Aug 25 10:14:10 2012 +0900
+@@ -339,16 +339,20 @@ nsCSSExpandedDataBlock::ComputeNumProps(
+             if (mPropertiesImportant.HasPropertyAt(iHigh, iLow))
+                 (*aNumPropsImportant)++;
+             else
+                 (*aNumPropsNormal)++;
+         }
+     }
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
++
+ void
+ nsCSSExpandedDataBlock::Compress(nsCSSCompressedDataBlock **aNormalBlock,
+                                  nsCSSCompressedDataBlock **aImportantBlock)
+ {
+     nsAutoPtr<nsCSSCompressedDataBlock> result_normal, result_important;
+     PRUint32 i_normal = 0, i_important = 0;
+ 
+     PRUint32 numPropsNormal, numPropsImportant;
+@@ -401,16 +405,20 @@ nsCSSExpandedDataBlock::Compress(nsCSSCo
+     }
+ 
+     ClearSets();
+     AssertInitialState();
+     *aNormalBlock = result_normal.forget();
+     *aImportantBlock = result_important.forget();
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
++
+ void
+ nsCSSExpandedDataBlock::AddLonghandProperty(nsCSSProperty aProperty,
+                                             const nsCSSValue& aValue)
+ {
+     NS_ABORT_IF_FALSE(!nsCSSProps::IsShorthand(aProperty),
+                       "property out of range");
+     nsCSSValue& storage = *static_cast<nsCSSValue*>(PropertyAt(aProperty));
+     storage = aValue;

@@ -1,0 +1,85 @@
+diff --git a/layout/base/nsDisplayList.cpp b/layout/base/nsDisplayList.cpp
+--- a/layout/base/nsDisplayList.cpp
++++ b/layout/base/nsDisplayList.cpp
+@@ -5,16 +5,21 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  */
+ 
+ /*
+  * structures that represent things to be painted (ordered in z-order),
+  * used during painting and hit testing
+  */
+ 
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++#include <mmintrin.h>
++#include <emmintrin.h>
++#endif
++
+ #include "mozilla/layers/PLayers.h"
+ 
+ #include "nsDisplayList.h"
+ 
+ #include "nsCSSRendering.h"
+ #include "nsRenderingContext.h"
+ #include "nsISelectionController.h"
+ #include "nsIPresShell.h"
+@@ -629,23 +634,39 @@ nsDisplayListBuilder::GetBackgroundPaint
+   if (mIsPaintingToWindow) {
+     flags |= nsCSSRendering::PAINTBG_TO_WINDOW;
+   }
+   return flags;
+ }
+ 
+ static uint64_t RegionArea(const nsRegion& aRegion)
+ {
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++  __m64 area = _mm_setzero_si64();
++#else
+   uint64_t area = 0;
++#endif
+   nsRegionRectIterator iter(aRegion);
+   const nsRect* r;
+   while ((r = iter.Next()) != nullptr) {
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++    __m64 mw = *(__m64 *)&r->width;
++    __m64 mh = _mm_srli_si64(mw, 32);
++    area = _mm_add_si64(area, _mm_mul_su32(mw, mh));
++#else
+     area += uint64_t(r->width)*r->height;
++#endif
+   }
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++  uint64_t tmp;
++  *(__m64 *)&tmp = area;
++  return tmp;
++#else
+   return area;
++#endif
+ }
+ 
+ void
+ nsDisplayListBuilder::SubtractFromVisibleRegion(nsRegion* aVisibleRegion,
+                                                 const nsRegion& aRegion)
+ {
+   if (aRegion.IsEmpty())
+     return;
+@@ -655,16 +676,19 @@ nsDisplayListBuilder::SubtractFromVisibl
+   // Don't let *aVisibleRegion get too complex, but don't let it fluff out
+   // to its bounds either, which can be very bad (see bug 516740).
+   // Do let aVisibleRegion get more complex if by doing so we reduce its
+   // area by at least half.
+   if (GetAccurateVisibleRegions() || tmp.GetNumRects() <= 15 ||
+       RegionArea(tmp) <= RegionArea(*aVisibleRegion)/2) {
+     *aVisibleRegion = tmp;
+   }
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++  _m_empty();
++#endif
+ }
+ 
+ nsCaret *
+ nsDisplayListBuilder::GetCaret() {
+   nsRefPtr<nsCaret> caret = CurrentPresShellState()->mPresShell->GetCaret();
+   return caret;
+ }
+ 

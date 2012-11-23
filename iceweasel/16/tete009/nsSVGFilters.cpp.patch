@@ -1,0 +1,414 @@
+diff -r 6a3897dad583 content/svg/content/src/nsSVGFilters.cpp
+--- a/content/svg/content/src/nsSVGFilters.cpp	Sat Oct 06 15:30:41 2012 +0900
++++ b/content/svg/content/src/nsSVGFilters.cpp	Sat Oct 06 16:08:57 2012 +0900
+@@ -1,13 +1,17 @@
+ /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
+ #include "mozilla/Util.h"
+ 
+ #include "nsSVGElement.h"
+ #include "nsGkAtoms.h"
+ #include "nsSVGNumber2.h"
+ #include "nsSVGNumberPair.h"
+ #include "nsSVGInteger.h"
+ #include "nsSVGIntegerPair.h"
+@@ -934,16 +938,36 @@ nsSVGFEBlendElement::Filter(nsSVGFilterI
+   CopyRect(aTarget, aSources[0], rect);
+ 
+   PRUint8* sourceData = aSources[1]->mImage->Data();
+   PRUint8* targetData = aTarget->mImage->Data();
+   PRUint32 stride = aTarget->mImage->Stride();
+ 
+   PRUint16 mode = mEnumAttributes[MODE].GetAnimValue();
+ 
++  switch (mode) {
++    case nsSVGFEBlendElement::SVG_MODE_NORMAL:
++    case nsSVGFEBlendElement::SVG_MODE_MULTIPLY:
++    case nsSVGFEBlendElement::SVG_MODE_SCREEN:
++    case nsSVGFEBlendElement::SVG_MODE_DARKEN:
++    case nsSVGFEBlendElement::SVG_MODE_LIGHTEN:
++      break;
++    default:
++      return NS_ERROR_FAILURE;
++      break;
++  }
++
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, stride, targetData, sourceData, mode) \
++if (omp_thread_counts >= 2 && \
++   (rect.XMost() - rect.x) >= (PRUint32)omp_thread_counts && \
++   (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 7000)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+     for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
+       PRUint32 targIndex = y * stride + 4 * x;
+       PRUint32 qa = targetData[targIndex + GFX_ARGB32_OFFSET_A];
+       PRUint32 qb = sourceData[targIndex + GFX_ARGB32_OFFSET_A];
+       for (PRInt32 i = NS_MIN(GFX_ARGB32_OFFSET_B, GFX_ARGB32_OFFSET_R);
+            i <= NS_MAX(GFX_ARGB32_OFFSET_B, GFX_ARGB32_OFFSET_R); i++) {
+         PRUint32 ca = targetData[targIndex + i];
+@@ -962,21 +986,19 @@ nsSVGFEBlendElement::Filter(nsSVGFilterI
+           case nsSVGFEBlendElement::SVG_MODE_DARKEN:
+             val = NS_MIN((255 - qa) * cb + 255 * ca,
+                          (255 - qb) * ca + 255 * cb);
+             break;
+           case nsSVGFEBlendElement::SVG_MODE_LIGHTEN:
+             val = NS_MAX((255 - qa) * cb + 255 * ca,
+                          (255 - qb) * ca + 255 * cb);
+             break;
+-          default:
+-            return NS_ERROR_FAILURE;
+-            break;
+         }
+-        val = NS_MIN(val / 255, 255U);
++        FAST_DIVIDE_BY_255(val, val);
++        val = NS_MIN(val, 255U);
+         targetData[targIndex + i] =  static_cast<PRUint8>(val);
+       }
+       PRUint32 alpha = 255 * 255 - (255 - qa) * (255 - qb);
+       FAST_DIVIDE_BY_255(targetData[targIndex + GFX_ARGB32_OFFSET_A], alpha);
+     }
+   }
+   return NS_OK;
+ }
+@@ -1267,16 +1289,24 @@ nsSVGFEColorMatrixElement::Filter(nsSVGF
+ 
+     memcpy(colorMatrix, luminanceToAlphaMatrix, sizeof(colorMatrix));
+     break;
+ 
+   default:
+     return NS_ERROR_FAILURE;
+   }
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, stride, sourceData, colorMatrix, targetData) \
++if (omp_thread_counts >= 2 && \
++   (rect.XMost() - rect.x) >= (PRUint32)omp_thread_counts && \
++   (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 2300)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+     for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
+       PRUint32 targIndex = y * stride + 4 * x;
+ 
+       float col[4];
+       for (int i = 0, row = 0; i < 4; i++, row += 5) {
+         col[i] =
+           sourceData[targIndex + GFX_ARGB32_OFFSET_R] * colorMatrix[row + 0] +
+@@ -1528,16 +1558,25 @@ nsSVGFECompositeElement::Filter(nsSVGFil
+ 
+     PRUint8* sourceData = aSources[1]->mImage->Data();
+     PRUint8* targetData = aTarget->mImage->Data();
+     PRUint32 stride = aTarget->mImage->Stride();
+ 
+     // Blend in the second source image
+     float k1Scaled = k1 / 255.0f;
+     float k4Scaled = k4*255.0f;
++
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++    int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, targetData, sourceData, stride, k1Scaled, k2, k3, k4Scaled) \
++if (omp_thread_counts >= 2 && \
++    (rect.XMost() - rect.x) >= (PRUint32)omp_thread_counts && \
++    (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 1000)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+     for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+       for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
+         PRUint32 targIndex = y * stride + 4 * x;
+         for (PRInt32 i = 0; i < 4; i++) {
+           PRUint8 i1 = targetData[targIndex + i];
+           PRUint8 i2 = sourceData[targIndex + i];
+           float result = k1Scaled*i1*i2 + k2*i1 + k3*i2 + k4Scaled;
+           targetData[targIndex + i] =
+@@ -1819,16 +1858,24 @@ nsSVGFEComponentTransferElement::Filter(
+     nsRefPtr<nsSVGComponentTransferFunctionElement> child;
+     CallQueryInterface(childContent,
+             (nsSVGComponentTransferFunctionElement**)getter_AddRefs(child));
+     if (child) {
+       child->GenerateLookupTable(tables[child->GetChannel()]);
+     }
+   }
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, stride, targetData, sourceData, tableB, tableG, tableR, tableA) \
++if (omp_thread_counts >= 2 && \
++   (rect.YMost() - rect.y) >= (PRUint32)omp_thread_counts && \
++   (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 10000)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
+     for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+       PRInt32 targIndex = y * stride + x * 4;
+       targetData[targIndex + GFX_ARGB32_OFFSET_B] =
+         tableB[sourceData[targIndex + GFX_ARGB32_OFFSET_B]];
+       targetData[targIndex + GFX_ARGB32_OFFSET_G] =
+         tableG[sourceData[targIndex + GFX_ARGB32_OFFSET_G]];
+       targetData[targIndex + GFX_ARGB32_OFFSET_R] =
+@@ -1989,17 +2036,18 @@ nsSVGComponentTransferFunctionElement::G
+ 
+   switch (type) {
+   case nsIDOMSVGComponentTransferFunctionElement::SVG_FECOMPONENTTRANSFER_TYPE_TABLE:
+   {
+     if (tableValues.Length() <= 1)
+       break;
+ 
+     for (i = 0; i < 256; i++) {
+-      PRUint32 k = (i * (tvLength - 1)) / 255;
++      PRUint32 k;
++      FAST_DIVIDE_BY_255(k, (i * (tvLength - 1)));
+       float v1 = tableValues[k];
+       float v2 = tableValues[NS_MIN(k + 1, tvLength - 1)];
+       PRInt32 val =
+         PRInt32(255 * (v1 + (i/255.0f - k/float(tvLength-1))*(tvLength - 1)*(v2 - v1)));
+       val = NS_MIN(255, val);
+       val = NS_MAX(0, val);
+       aTable[i] = val;
+     }
+@@ -2007,17 +2055,18 @@ nsSVGComponentTransferFunctionElement::G
+   }
+ 
+   case nsIDOMSVGComponentTransferFunctionElement::SVG_FECOMPONENTTRANSFER_TYPE_DISCRETE:
+   {
+     if (tableValues.Length() <= 1)
+       break;
+ 
+     for (i = 0; i < 256; i++) {
+-      PRUint32 k = (i * tvLength) / 255;
++      PRUint32 k;
++      FAST_DIVIDE_BY_255(k, (i * tvLength));
+       k = NS_MIN(k, tvLength - 1);
+       float v = tableValues[k];
+       PRInt32 val = PRInt32(255 * v);
+       val = NS_MIN(255, val);
+       val = NS_MAX(0, val);
+       aTable[i] = val;
+     }
+     break;
+@@ -3002,16 +3051,24 @@ nsSVGFETileElement::Filter(nsSVGFilterIn
+   PRUint8* sourceData = aSources[0]->mImage->Data();
+   PRUint8* targetData = aTarget->mImage->Data();
+   PRUint32 stride = aTarget->mImage->Stride();
+ 
+   // the offset to add to our x/y coordinates (which are relative to the
+   // temporary surface data) to get coordinates relative to the origin
+   // of the tile
+   nsIntPoint offset(-tile.x + tile.width, -tile.y + tile.height);
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, tile, surfaceRect, sourceData, targetData, stride, offset) \
++if (omp_thread_counts >= 2 && \
++   (rect.YMost() - rect.y) >= (PRUint32)omp_thread_counts  && \
++   (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 10000)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
+     PRUint32 tileY = tile.y + WrapInterval(y + offset.y, tile.height);
+     if (tileY < (PRUint32)surfaceRect.height) {
+       for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+         PRUint32 tileX = tile.x + WrapInterval(x + offset.x, tile.width);
+         if (tileX < (PRUint32)surfaceRect.width) {
+           *(PRUint32*)(targetData + y * stride + 4 * x) =
+             *(PRUint32*)(sourceData + tileY * stride + 4 * tileX);
+@@ -3332,16 +3389,25 @@ nsSVGFETurbulenceElement::Filter(nsSVGFi
+ 
+     lowFreq = floor(filterHeight * fY) / filterHeight;
+     hiFreq = ceil(filterHeight * fY) / filterHeight;
+     if (fY / lowFreq < hiFreq / fY)
+       fY = lowFreq;
+     else
+       fY = hiFreq;
+   }
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, stride, instance, filterSubregion, type, doStitch, \
++  filterX, filterY, filterWidth, filterHeight, fX, fY, octaves, targetData) \
++if (omp_thread_counts >= 2 && \
++   (rect.YMost() - rect.y) >= (PRUint32)omp_thread_counts && \
++   (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 130)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
+     for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+       PRInt32 targIndex = y * stride + x * 4;
+       double point[2];
+       point[0] = filterX + (filterWidth * (x + instance->GetSurfaceRect().x)) / (filterSubregion.width - 1);
+       point[1] = filterY + (filterHeight * (y + instance->GetSurfaceRect().y)) / (filterSubregion.height - 1);
+ 
+       float col[4];
+@@ -3355,17 +3421,17 @@ nsSVGFETurbulenceElement::Filter(nsSVGFi
+                                doStitch, filterX, filterY, filterWidth, filterHeight) * 255 + 255) / 2;
+       }
+       for (int i = 0; i < 4; i++) {
+         col[i] = NS_MIN(col[i], 255.f);
+         col[i] = NS_MAX(col[i], 0.f);
+       }
+ 
+       PRUint8 r, g, b, a;
+-      a = PRUint8(col[3]);
++      a = (PRUint8)(col[3]);
+       FAST_DIVIDE_BY_255(r, unsigned(col[0]) * a);
+       FAST_DIVIDE_BY_255(g, unsigned(col[1]) * a);
+       FAST_DIVIDE_BY_255(b, unsigned(col[2]) * a);
+ 
+       targetData[targIndex + GFX_ARGB32_OFFSET_B] = b;
+       targetData[targIndex + GFX_ARGB32_OFFSET_G] = g;
+       targetData[targIndex + GFX_ARGB32_OFFSET_R] = r;
+       targetData[targIndex + GFX_ARGB32_OFFSET_A] = a;
+@@ -3820,21 +3886,29 @@ nsSVGFEMorphologyElement::Filter(nsSVGFi
+ 
+   // Clamp radii to prevent completely insane values:
+   rx = NS_MIN(rx, 100000);
+   ry = NS_MIN(ry, 100000);
+ 
+   PRUint8* sourceData = aSources[0]->mImage->Data();
+   PRUint8* targetData = aTarget->mImage->Data();
+   PRInt32 stride = aTarget->mImage->Stride();
+-  PRUint8 extrema[4];         // RGBA magnitude of extrema
+   PRUint16 op = mEnumAttributes[OPERATOR].GetAnimValue();
+ 
+   // Scan the kernel for each pixel to determine max/min RGBA values.
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, rx, ry, instance, sourceData, targetData, stride, op) \
++if (omp_thread_counts >= 2 && \
++   (rect.YMost() - rect.y) >= (PRUint32)omp_thread_counts &&\
++   (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 1800)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
++    PRUint8 extrema[4];         // RGBA magnitude of extrema
+     PRInt32 startY = NS_MAX(0, y - ry);
+     // We need to read pixels not just in 'rect', which is limited to
+     // the dirty part of our filter primitive subregion, but all pixels in
+     // the given radii from the source surface, so use the surface size here.
+     PRInt32 endY = NS_MIN(y + ry, instance->GetSurfaceHeight() - 1);
+     for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+       PRInt32 startX = NS_MAX(0, x - rx);
+       PRInt32 endX = NS_MIN(x + rx, instance->GetSurfaceWidth() - 1);
+@@ -4318,16 +4392,25 @@ nsSVGFEConvolveMatrixElement::Filter(nsS
+ 
+   const nsIntRect& dataRect = info.mDataRect;
+   PRInt32 stride = info.mSource->Stride();
+   PRInt32 width = info.mSource->GetSize().width;
+   PRInt32 height = info.mSource->GetSize().height;
+   PRUint8 *sourceData = info.mSource->Data();
+   PRUint8 *targetData = info.mTarget->Data();
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(dataRect, sourceData, targetData, width, height, stride, edgeMode, \
++  kernel, divisor, bias, preserveAlpha, orderX, orderY, targetX, targetY) \
++if (omp_thread_counts >= 2 && \
++   (dataRect.YMost() - dataRect.y) >= (PRUint32)omp_thread_counts && \
++   (dataRect.YMost() - dataRect.y) * (dataRect.XMost() - dataRect.x) >= 200)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 y = dataRect.y; y < dataRect.YMost(); y++) {
+     for (PRInt32 x = dataRect.x; x < dataRect.XMost(); x++) {
+       ConvolvePixel(sourceData, targetData,
+                     width, height, stride,
+                     x, y,
+                     edgeMode, kernel, divisor, bias, preserveAlpha,
+                     orderX, orderY, targetX, targetY);
+     }
+@@ -5038,26 +5121,26 @@ nsSVGFELightingElement::Filter(nsSVGFilt
+       break;
+   }
+ 
+   if (!distantLight && !pointLight && !spotLight)
+     return NS_ERROR_FAILURE;
+ 
+   const float radPerDeg = M_PI/180.0;
+ 
+-  float L[3];
++  float L_orig[3];
+   if (distantLight) {
+     float azimuth, elevation;
+     static_cast<nsSVGFEDistantLightElement*>
+       (distantLight.get())->GetAnimatedNumberValues(&azimuth,
+                                                     &elevation,
+                                                     nsnull);
+-    L[0] = cos(azimuth * radPerDeg) * cos(elevation * radPerDeg);
+-    L[1] = sin(azimuth * radPerDeg) * cos(elevation * radPerDeg);
+-    L[2] = sin(elevation * radPerDeg);
++    L_orig[0] = cos(azimuth * radPerDeg) * cos(elevation * radPerDeg);
++    L_orig[1] = sin(azimuth * radPerDeg) * cos(elevation * radPerDeg);
++    L_orig[2] = sin(elevation * radPerDeg);
+   }
+   float lightPos[3], pointsAt[3], specularExponent;
+   float cosConeAngle = 0;
+   if (pointLight) {
+     static_cast<nsSVGFEPointLightElement*>
+       (pointLight.get())->GetAnimatedNumberValues(lightPos,
+                                                   lightPos + 1,
+                                                   lightPos + 2,
+@@ -5090,21 +5173,31 @@ nsSVGFELightingElement::Filter(nsSVGFilt
+ 
+   const nsIntRect& dataRect = info.mDataRect;
+   PRInt32 stride = info.mSource->Stride();
+   PRUint8 *sourceData = info.mSource->Data();
+   PRUint8 *targetData = info.mTarget->Data();
+   PRInt32 surfaceWidth = info.mSource->Width();
+   PRInt32 surfaceHeight = info.mSource->Height();
+   
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(dataRect, stride, sourceData, surfaceWidth, surfaceHeight, surfaceScale, pointLight, spotLight, lightPos, L_orig, pointsAt, lightColor, targetData, cosConeAngle, specularExponent, instance) \
++if (omp_thread_counts >= 2 && \
++   (dataRect.YMost() - dataRect.y) >= (PRUint32)omp_thread_counts && \
++   (dataRect.XMost() - dataRect.x) * (dataRect.YMost() - dataRect.y) >= 200)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 y = dataRect.y; y < dataRect.YMost(); y++) {
+     for (PRInt32 x = dataRect.x; x < dataRect.XMost(); x++) {
+       PRInt32 index = y * stride + x * 4;
+ 
+       float N[3];
++      float L[3];
++      memcpy(L, L_orig, sizeof(L));
+       GenerateNormal(N, sourceData, stride, surfaceWidth, surfaceHeight,
+                      x, y, surfaceScale);
+ 
+       if (pointLight || spotLight) {
+         gfxPoint pt = instance->FilterSpaceToUserSpace(
+                 gfxPoint(x + instance->GetSurfaceRect().x,
+                          y + instance->GetSurfaceRect().y));
+         float Z = surfaceScale * sourceData[index + GFX_ARGB32_OFFSET_A] / 255;
+@@ -5998,16 +6091,25 @@ nsSVGFEDisplacementMapElement::Filter(ns
+                              GFX_ARGB32_OFFSET_B,
+                              GFX_ARGB32_OFFSET_A };
+   PRUint16 xChannel = channelMap[mEnumAttributes[CHANNEL_X].GetAnimValue()];
+   PRUint16 yChannel = channelMap[mEnumAttributes[CHANNEL_Y].GetAnimValue()];
+ 
+   double scaleOver255 = scale / 255.0;
+   double scaleAdjustment = 0.5 - 0.5 * scale;
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++#pragma omp parallel for schedule(guided) default(none) \
++shared(rect, stride, scaleOver255, displacementData, xChannel, yChannel, \
++  scaleAdjustment, width, height, targetData, sourceData, dummyData) \
++if (omp_thread_counts >= 2 && \
++   (rect.YMost() - rect.y) >= (PRUint32)omp_thread_counts && \
++   (rect.XMost() - rect.x) * (rect.YMost() - rect.y) >= 1500)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (PRInt32 y = rect.y; y < rect.YMost(); y++) {
+     for (PRInt32 x = rect.x; x < rect.XMost(); x++) {
+       PRUint32 targIndex = y * stride + 4 * x;
+       // At some point we might want to replace this with a bilinear sample.
+       PRInt32 sourceX = x +
+         NSToIntFloor(scaleOver255 * displacementData[targIndex + xChannel] +
+                 scaleAdjustment);
+       PRInt32 sourceY = y +

@@ -1,0 +1,25 @@
+diff -r 6a3897dad583 layout/base/FrameLayerBuilder.h
+--- a/layout/base/FrameLayerBuilder.h	Sat Oct 06 15:30:41 2012 +0900
++++ b/layout/base/FrameLayerBuilder.h	Sat Oct 06 16:07:11 2012 +0900
+@@ -129,16 +129,21 @@ public:
+     {}
+     ContainerParameters(float aXScale, float aYScale,
+                         const ContainerParameters& aParent) :
+       mXScale(aXScale), mYScale(aYScale),
+       mInTransformedSubtree(aParent.mInTransformedSubtree),
+       mInActiveTransformedSubtree(aParent.mInActiveTransformedSubtree),
+       mDisableSubpixelAntialiasingInDescendants(aParent.mDisableSubpixelAntialiasingInDescendants)
+     {}
++    bool Scaled()
++    {
++      return (0x3f800000 != *(PRUint32 *)&mXScale) ||
++             (0x3f800000 != *(PRUint32 *)&mYScale);
++    }
+     float mXScale, mYScale;
+     bool mInTransformedSubtree;
+     bool mInActiveTransformedSubtree;
+     bool mDisableSubpixelAntialiasingInDescendants;
+     /**
+      * When this is false, ThebesLayer coordinates are drawn to with an integer
+      * translation and the scale in mXScale/mYScale.
+      */

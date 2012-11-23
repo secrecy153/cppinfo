@@ -1,0 +1,18 @@
+diff -r 6a3897dad583 security/manager/ssl/src/Makefile.in
+--- a/security/manager/ssl/src/Makefile.in	Sat Oct 06 15:30:41 2012 +0900
++++ b/security/manager/ssl/src/Makefile.in	Sat Oct 06 16:23:11 2012 +0900
+@@ -94,8 +94,14 @@ EXPORTS += \
+   $(NULL)
+ 
+ # Use local includes because they are inserted before INCLUDES
+ # so that Mozilla's nss.h is used, not glibc's
+ LOCAL_INCLUDES += $(NSS_CFLAGS)
+ 
+ include $(topsrcdir)/config/rules.mk
+ 
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif

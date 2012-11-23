@@ -1,0 +1,25 @@
+diff -r 121aa3ff53b8 mozilla/layout/svg/base/src/Makefile.in
+--- a/mozilla/layout/svg/base/src/Makefile.in	Wed Aug 29 18:45:25 2012 +0900
++++ b/mozilla/layout/svg/base/src/Makefile.in	Wed Aug 29 20:54:23 2012 +0900
+@@ -80,8 +80,21 @@ LOCAL_INCLUDES	= \
+ libs::
+ 	$(INSTALL) $(srcdir)/svg.css $(DIST)/bin/res
+ 
+ install::
+ 	$(SYSINSTALL) $(IFLAGS1) $(srcdir)/svg.css $(DESTDIR)$(mozappdir)/res
+ 
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++ifdef _MSC_VER
++ifneq (,$(filter -DTT_MEMUTIL,$(MOZ_OPTIMIZE_FLAGS)))
++nsSVGMaskFrame.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL- -openmp
++endif
++endif
++
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif

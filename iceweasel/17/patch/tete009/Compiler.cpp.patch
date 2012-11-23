@@ -1,0 +1,86 @@
+diff --git a/js/src/methodjit/Compiler.cpp b/js/src/methodjit/Compiler.cpp
+--- a/js/src/methodjit/Compiler.cpp
++++ b/js/src/methodjit/Compiler.cpp
+@@ -926,16 +926,20 @@ MakeJITScript(JSContext *cx, JSScript *s
+     for (unsigned i = 0; i < jit->nedges; i++) {
+         CrossChunkEdge &edge = jitEdges[i];
+         edge.shimLabel = shimCode + (size_t) edge.shimLabel;
+     }
+ 
+     return jit;
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
++
+ CompileStatus
+ mjit::CanMethodJIT(JSContext *cx, JSScript *script, jsbytecode *pc,
+                    bool construct, CompileRequest request, StackFrame *frame)
+ {
+   restart:
+     if (!cx->methodJitEnabled)
+         return Compile_Abort;
+ 
+@@ -1032,16 +1036,20 @@ mjit::CanMethodJIT(JSContext *cx, JSScri
+ 
+     /* Non-OOM errors should have an associated exception. */
+     JS_ASSERT_IF(status == Compile_Error,
+                  cx->isExceptionPending() || cx->runtime->hadOutOfMemory);
+ 
+     return status;
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
++
+ CompileStatus
+ mjit::Compiler::generatePrologue()
+ {
+     fastEntryLabel = masm.label();
+ 
+     /*
+      * If there is no function, then this can only be called via JaegerShot(),
+      * which expects an existing frame to be initialized like the interpreter.
+@@ -4657,32 +4665,40 @@ mjit::Compiler::inlineScriptedFunction(u
+  * being set. This includes any API callbacks and any scripted or native call.
+  */
+ void
+ mjit::Compiler::addCallSite(const InternalCallSite &site)
+ {
+     callSites.append(site);
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
++
+ void
+ mjit::Compiler::inlineStubCall(void *stub, RejoinState rejoin, Uses uses)
+ {
+     DataLabelPtr inlinePatch;
+     Call cl = emitStubCall(stub, &inlinePatch);
+     InternalCallSite site(masm.callReturnOffset(cl), a->inlineIndex, PC,
+                           rejoin, false);
+     site.inlinePatch = inlinePatch;
+     if (loop && loop->generatingInvariants()) {
+         Jump j = masm.jump();
+         Label l = masm.label();
+         loop->addInvariantCall(j, l, false, false, callSites.length(), uses);
+     }
+     addCallSite(site);
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
++
+ bool
+ mjit::Compiler::compareTwoValues(JSContext *cx, JSOp op, const Value &lhs, const Value &rhs)
+ {
+     JS_ASSERT(lhs.isPrimitive());
+     JS_ASSERT(rhs.isPrimitive());
+ 
+     if (lhs.isString() && rhs.isString()) {
+         int32_t cmp;

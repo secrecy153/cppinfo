@@ -1,0 +1,19 @@
+diff -r 6a3897dad583 ipc/ipdl/Makefile.in
+--- a/ipc/ipdl/Makefile.in	Sat Oct 06 15:30:41 2012 +0900
++++ b/ipc/ipdl/Makefile.in	Sat Oct 06 16:22:30 2012 +0900
+@@ -93,8 +93,15 @@ export:: $(ALL_IPDLSRCS)
+ 	  --outheaders-dir=_ipdlheaders \
+ 	  --outcpp-dir=. \
+ 	  $(IPDLDIRS:%=-I$(topsrcdir)/%) \
+ 	  $^
+ 
+ # We #include some things in the dom/plugins/ directory that rely on
+ # toolkit libraries.
+ CXXFLAGS    += $(TK_CFLAGS)
++
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif

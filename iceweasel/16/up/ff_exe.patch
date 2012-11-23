@@ -1,0 +1,9 @@
+--- a/browser/app/Makefile.in	2012-10-06 07:01:58 +0800
++++ b/browser/app/Makefile.in	2012-10-09 16:42:48 +0800
+@@ -212,3 +212,6 @@
+ endif #} cocoa
+ endif #} SKIP_COPY_XULRUNNER
+ endif #} LIBXUL_SDK
++
++CFLAGS   += -GA
++CXXFLAGS += -GA

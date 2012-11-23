@@ -1,0 +1,91 @@
+diff -r 284837bbf631 layout/style/nsCSSRuleProcessor.cpp
+--- a/layout/style/nsCSSRuleProcessor.cpp	Sat Aug 25 07:23:12 2012 +0900
++++ b/layout/style/nsCSSRuleProcessor.cpp	Sat Aug 25 10:13:51 2012 +0900
+@@ -1552,21 +1552,32 @@ MOZ_STATIC_ASSERT(NS_ARRAY_LENGTH(sPseud
+                   "ePseudoClass_NotPseudoClass is no longer at the end of"
+                   "sPseudoClassStates");
+ 
+ // |aDependence| has two functions:
+ //  * when non-null, it indicates that we're processing a negation,
+ //    which is done only when SelectorMatches calls itself recursively
+ //  * what it points to should be set to true whenever a test is skipped
+ //    because of aStateMask
+-static bool SelectorMatches(Element* aElement,
+-                              nsCSSSelector* aSelector,
+-                              NodeMatchContext& aNodeMatchContext,
+-                              TreeMatchContext& aTreeMatchContext,
+-                              bool* const aDependence = nsnull)
++bool SelectorMatchesComponent(Element* aElement,
++                                nsCSSSelector* aSelector,
++                                NodeMatchContext& aNodeMatchContext,
++                                TreeMatchContext& aTreeMatchContext,
++                                bool* const aDependence);
++
++#ifdef _MSC_VER
++__forceinline
++#else
++inline
++#endif
++bool SelectorMatches(Element* aElement,
++                       nsCSSSelector* aSelector,
++                       NodeMatchContext& aNodeMatchContext,
++                       TreeMatchContext& aTreeMatchContext,
++                       bool* const aDependence = nsnull)
+ 
+ {
+   NS_PRECONDITION(!aSelector->IsPseudoElement(),
+                   "Pseudo-element snuck into SelectorMatches?");
+   NS_ABORT_IF_FALSE(aTreeMatchContext.mForStyling ||
+                     !aNodeMatchContext.mIsRelevantLink,
+                     "mIsRelevantLink should be set to false when mForStyling "
+                     "is false since we don't know how to set it correctly in "
+@@ -1582,16 +1593,31 @@ static bool SelectorMatches(Element* aEl
+     nsIAtom* selectorTag =
+       (aTreeMatchContext.mIsHTMLDocument && aElement->IsHTML()) ?
+         aSelector->mLowercaseTag : aSelector->mCasedTag;
+     if (selectorTag != aElement->Tag()) {
+       return false;
+     }
+   }
+ 
++  return SelectorMatchesComponent(aElement,
++                                  aSelector,
++                                  aNodeMatchContext,
++                                  aTreeMatchContext,
++                                  aDependence);
++}
++
++#define isNegated (aDependence != nsnull)
++
++static bool SelectorMatchesComponent(Element* aElement,
++                                       nsCSSSelector* aSelector,
++                                       NodeMatchContext& aNodeMatchContext,
++                                       TreeMatchContext& aTreeMatchContext,
++                                       bool* const aDependence)
++{
+   nsAtomList* IDList = aSelector->mIDList;
+   if (IDList) {
+     nsIAtom* id = aElement->GetID();
+     if (id) {
+       // case sensitivity: bug 93371
+       const bool isCaseSensitive =
+         aTreeMatchContext.mCompatMode != eCompatibility_NavQuirks;
+ 
+@@ -1639,17 +1665,16 @@ static bool SelectorMatches(Element* aEl
+                                     isCaseSensitive ?
+                                       eCaseMatters : eIgnoreCase)) {
+         return false;
+       }
+       classList = classList->mNext;
+     }
+   }
+ 
+-  const bool isNegated = (aDependence != nsnull);
+   // The selectors for which we set node bits are, unfortunately, early
+   // in this function (because they're pseudo-classes, which are
+   // generally quick to test, and thus earlier).  If they were later,
+   // we'd probably avoid setting those bits in more cases where setting
+   // them is unnecessary.
+   NS_ASSERTION(aNodeMatchContext.mStateMask.IsEmpty() ||
+                !aTreeMatchContext.mForStyling,
+                "mForStyling must be false if we're just testing for "

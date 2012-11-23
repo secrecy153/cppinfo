@@ -1,0 +1,907 @@
+diff -r 28eff799c22e gfx/qcms/transform.c
+--- a/gfx/qcms/transform.c	Thu Sep 06 17:23:00 2012 +0900
++++ b/gfx/qcms/transform.c	Tue Sep 25 17:55:09 2012 +0900
+@@ -30,16 +30,75 @@
+ #include "matrix.h"
+ #include "transform_util.h"
+ 
+ /* for MSVC, GCC, Intel, and Sun compilers */
+ #if defined(_M_IX86) || defined(__i386__) || defined(__i386) || defined(_M_AMD64) || defined(__x86_64__) || defined(__x86_64)
+ #define X86
+ #endif /* _M_IX86 || __i386__ || __i386 || _M_AMD64 || __x86_64__ || __x86_64 */
+ 
++#ifdef X86
++#if _MSC_VER == 1400
++#include <emmintrin.h>
++#else  /* _MSC_VER == 1400 */
++#include <smmintrin.h>
++#endif /* _MSC_VER == 1400 */
++#include "mozilla/Attributes.h"
++
++#if defined(_M_IX86) && _MSC_VER == 1400
++__declspec(naked) __declspec(noinline)
++void __fastcall floor_ps_sse4_1(const __m128 * __restrict src, __m128i * __restrict dest) {
++	__asm {
++		/* roundps  xmm0, xmmword ptr [ecx], 1 */
++		__asm _emit 0x66
++		__asm _emit 0x0F
++		__asm _emit 0x3A
++		__asm _emit 0x08
++		__asm _emit 0x01
++		__asm _emit 0x01
++		cvttps2dq   xmm0, xmm0
++		movdqa      xmmword ptr [edx], xmm0
++		ret
++	}
++}
++
++__declspec(naked) __declspec(noinline)
++void __fastcall ceil_ps_sse4_1(const __m128 * __restrict src, __m128i * __restrict dest) {
++	__asm {
++		/* roundps  xmm0, xmmword ptr [ecx], 2 */
++		__asm _emit 0x66
++		__asm _emit 0x0F
++		__asm _emit 0x3A
++		__asm _emit 0x08
++		__asm _emit 0x01
++		__asm _emit 0x02
++		cvttps2dq   xmm0, xmm0
++		movdqa      xmmword ptr [edx], xmm0
++		ret
++	}
++}
++#endif
++
++int sse_version_available(void);
++
++static const ALIGN float ps255[4]  = { 255, 255, 255, 255 };
++static const ALIGN float psZero[4] = {   0,   0,   0,   0 };
++static const ALIGN float psHalf[4] = { 0.5, 0.5, 0.5, 0.5 };
++
++MOZ_ALWAYS_INLINE
++void clamp_u8_sse2(const __m128 *src, __m128i *dest) {
++	__m128 x = *src;
++
++	x = _mm_mul_ps(x, *(__m128 *)&ps255);
++	x = _mm_min_ps(x, *(__m128 *)&ps255);
++	x = _mm_max_ps(x, *(__m128 *)&psZero);
++	*dest = _mm_cvttps_epi32(_mm_add_ps(x, *(__m128 *)&psHalf));
++}
++#endif /* X86 */
++
+ // Build a White point, primary chromas transfer matrix from RGB to CIE XYZ
+ // This is just an approximation, I am not handling all the non-linear
+ // aspects of the RGB to XYZ process, and assumming that the gamma correction
+ // has transitive property in the tranformation chain.
+ //
+ // the alghoritm:
+ //
+ //            - First I build the absolute conversion matrix using
+@@ -229,16 +288,21 @@ qcms_bool set_rgb_colorants(qcms_profile
+ 	return true;
+ }
+ 
+ #if 0
+ static void qcms_transform_data_rgb_out_pow(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
+ {
+ 	int i;
+ 	float (*mat)[4] = transform->matrix;
++#ifdef X86
++	int sse_ver = sse_version_available();
++	__m128 xm;
++	__m128i xi;
++#endif
+ 	for (i=0; i<length; i++) {
+ 		unsigned char device_r = *src++;
+ 		unsigned char device_g = *src++;
+ 		unsigned char device_b = *src++;
+ 
+ 		float linear_r = transform->input_gamma_table_r[device_r];
+ 		float linear_g = transform->input_gamma_table_g[device_g];
+ 		float linear_b = transform->input_gamma_table_b[device_b];
+@@ -246,65 +310,120 @@ static void qcms_transform_data_rgb_out_
+ 		float out_linear_r = mat[0][0]*linear_r + mat[1][0]*linear_g + mat[2][0]*linear_b;
+ 		float out_linear_g = mat[0][1]*linear_r + mat[1][1]*linear_g + mat[2][1]*linear_b;
+ 		float out_linear_b = mat[0][2]*linear_r + mat[1][2]*linear_g + mat[2][2]*linear_b;
+ 
+ 		float out_device_r = pow(out_linear_r, transform->out_gamma_r);
+ 		float out_device_g = pow(out_linear_g, transform->out_gamma_g);
+ 		float out_device_b = pow(out_linear_b, transform->out_gamma_b);
+ 
+-		*dest++ = clamp_u8(255*out_device_r);
+-		*dest++ = clamp_u8(255*out_device_g);
+-		*dest++ = clamp_u8(255*out_device_b);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = out_device_r;
++			xm.m128_f32[1] = out_device_g;
++			xm.m128_f32[2] = out_device_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			*dest++ = xi.m128i_u32[0];
++			*dest++ = xi.m128i_u32[1];
++			*dest++ = xi.m128i_u32[2];
++		} else {
++#endif
++			*dest++ = clamp_u8(255*out_device_r);
++			*dest++ = clamp_u8(255*out_device_g);
++			*dest++ = clamp_u8(255*out_device_b);
++#ifdef X86
++		}
++#endif
+ 	}
+ }
+ #endif
+ 
+ static void qcms_transform_data_gray_out_lut(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
+ {
+ 	unsigned int i;
++#ifdef X86
++	int sse_ver = sse_version_available();
++	__m128 xm;
++	__m128i xi;
++#endif
+ 	for (i = 0; i < length; i++) {
+ 		float out_device_r, out_device_g, out_device_b;
+ 		unsigned char device = *src++;
+ 
+ 		float linear = transform->input_gamma_table_gray[device];
+ 
+                 out_device_r = lut_interp_linear(linear, transform->output_gamma_lut_r, transform->output_gamma_lut_r_length);
+ 		out_device_g = lut_interp_linear(linear, transform->output_gamma_lut_g, transform->output_gamma_lut_g_length);
+ 		out_device_b = lut_interp_linear(linear, transform->output_gamma_lut_b, transform->output_gamma_lut_b_length);
+ 
+-		*dest++ = clamp_u8(out_device_r*255);
+-		*dest++ = clamp_u8(out_device_g*255);
+-		*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = out_device_r;
++			xm.m128_f32[1] = out_device_g;
++			xm.m128_f32[2] = out_device_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			*dest++ = xi.m128i_u32[0];
++			*dest++ = xi.m128i_u32[1];
++			*dest++ = xi.m128i_u32[2];
++		} else {
++#endif
++			*dest++ = clamp_u8(out_device_r*255);
++			*dest++ = clamp_u8(out_device_g*255);
++			*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		}
++#endif
+ 	}
+ }
+ 
+ /* Alpha is not corrected.
+    A rationale for this is found in Alvy Ray's "Should Alpha Be Nonlinear If
+    RGB Is?" Tech Memo 17 (December 14, 1998).
+ 	See: ftp://ftp.alvyray.com/Acrobat/17_Nonln.pdf
+ */
+ 
+ static void qcms_transform_data_graya_out_lut(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
+ {
+ 	unsigned int i;
++#ifdef X86
++	int sse_ver = sse_version_available();
++	__m128 xm;
++	__m128i xi;
++#endif
+ 	for (i = 0; i < length; i++) {
+ 		float out_device_r, out_device_g, out_device_b;
+ 		unsigned char device = *src++;
+ 		unsigned char alpha = *src++;
+ 
+ 		float linear = transform->input_gamma_table_gray[device];
+ 
+                 out_device_r = lut_interp_linear(linear, transform->output_gamma_lut_r, transform->output_gamma_lut_r_length);
+ 		out_device_g = lut_interp_linear(linear, transform->output_gamma_lut_g, transform->output_gamma_lut_g_length);
+ 		out_device_b = lut_interp_linear(linear, transform->output_gamma_lut_b, transform->output_gamma_lut_b_length);
+ 
+-		*dest++ = clamp_u8(out_device_r*255);
+-		*dest++ = clamp_u8(out_device_g*255);
+-		*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = out_device_r;
++			xm.m128_f32[1] = out_device_g;
++			xm.m128_f32[2] = out_device_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			*dest++ = xi.m128i_u32[0];
++			*dest++ = xi.m128i_u32[1];
++			*dest++ = xi.m128i_u32[2];
++		} else {
++#endif
++			*dest++ = clamp_u8(out_device_r*255);
++			*dest++ = clamp_u8(out_device_g*255);
++			*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		}
++#endif
+ 		*dest++ = alpha;
+ 	}
+ }
+ 
+ 
+ static void qcms_transform_data_gray_out_precache(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
+ {
+ 	unsigned int i;
+@@ -416,22 +535,28 @@ static void qcms_transform_data_rgba_out
+ static void qcms_transform_data_clut(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length) {
+ 	unsigned int i;
+ 	int xy_len = 1;
+ 	int x_len = transform->grid_size;
+ 	int len = x_len * x_len;
+ 	float* r_table = transform->r_clut;
+ 	float* g_table = transform->g_clut;
+ 	float* b_table = transform->b_clut;
++	float rcp255 = 1.0f / 255.0f;
++#ifdef X86
++	int sse_ver = sse_version_available();
++	__m128 xm;
++	__m128i xi;
++#endif
+   
+ 	for (i = 0; i < length; i++) {
+ 		unsigned char in_r = *src++;
+ 		unsigned char in_g = *src++;
+ 		unsigned char in_b = *src++;
+-		float linear_r = in_r/255.0f, linear_g=in_g/255.0f, linear_b = in_b/255.0f;
++		float linear_r = in_r*rcp255, linear_g=in_g*rcp255, linear_b = in_b*rcp255;
+ 
+ 		int x = floor(linear_r * (transform->grid_size-1));
+ 		int y = floor(linear_g * (transform->grid_size-1));
+ 		int z = floor(linear_b * (transform->grid_size-1));
+ 		int x_n = ceil(linear_r * (transform->grid_size-1));
+ 		int y_n = ceil(linear_g * (transform->grid_size-1));
+ 		int z_n = ceil(linear_b * (transform->grid_size-1));
+ 		float x_d = linear_r * (transform->grid_size-1) - x; 
+@@ -457,52 +582,121 @@ static void qcms_transform_data_clut(qcm
+ 		float b_x1 = lerp(CLU(b_table,x,y,z), CLU(b_table,x_n,y,z), x_d);
+ 		float b_x2 = lerp(CLU(b_table,x,y_n,z), CLU(b_table,x_n,y_n,z), x_d);
+ 		float b_y1 = lerp(b_x1, b_x2, y_d);
+ 		float b_x3 = lerp(CLU(b_table,x,y,z_n), CLU(b_table,x_n,y,z_n), x_d);
+ 		float b_x4 = lerp(CLU(b_table,x,y_n,z_n), CLU(b_table,x_n,y_n,z_n), x_d);
+ 		float b_y2 = lerp(b_x3, b_x4, y_d);
+ 		float clut_b = lerp(b_y1, b_y2, z_d);
+ 
+-		*dest++ = clamp_u8(clut_r*255.0f);
+-		*dest++ = clamp_u8(clut_g*255.0f);
+-		*dest++ = clamp_u8(clut_b*255.0f);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = clut_r;
++			xm.m128_f32[1] = clut_g;
++			xm.m128_f32[2] = clut_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			*dest++ = xi.m128i_u32[0];
++			*dest++ = xi.m128i_u32[1];
++			*dest++ = xi.m128i_u32[2];
++		} else {
++#endif
++			*dest++ = clamp_u8(clut_r*255.0f);
++			*dest++ = clamp_u8(clut_g*255.0f);
++			*dest++ = clamp_u8(clut_b*255.0f);
++#ifdef X86
++		}
++#endif
+ 	}	
+ }
+ */
+ 
+ // Using lcms' tetra interpolation algorithm.
+ static void qcms_transform_data_tetra_clut_rgba(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length) {
+ 	unsigned int i;
+ 	int xy_len = 1;
+ 	int x_len = transform->grid_size;
+ 	int len = x_len * x_len;
+ 	float* r_table = transform->r_clut;
+ 	float* g_table = transform->g_clut;
+ 	float* b_table = transform->b_clut;
+-	float c0_r, c1_r, c2_r, c3_r;
+-	float c0_g, c1_g, c2_g, c3_g;
+-	float c0_b, c1_b, c2_b, c3_b;
+-	float clut_r, clut_g, clut_b;
++	float rcp255 = 1.0f / 255.0f;
++#ifdef X86
++	int sse_ver = sse_version_available();
++#endif
++
+ 	for (i = 0; i < length; i++) {
+-		unsigned char in_r = *src++;
+-		unsigned char in_g = *src++;
+-		unsigned char in_b = *src++;
+-		unsigned char in_a = *src++;
+-		float linear_r = in_r/255.0f, linear_g=in_g/255.0f, linear_b = in_b/255.0f;
++		float c0_r, c1_r, c2_r, c3_r;
++		float c0_g, c1_g, c2_g, c3_g;
++		float c0_b, c1_b, c2_b, c3_b;
++		float clut_r, clut_g, clut_b;
++		unsigned char in_r = src[i * 4 + 0];
++		unsigned char in_g = src[i * 4 + 1];
++		unsigned char in_b = src[i * 4 + 2];
++		unsigned char in_a = src[i * 4 + 3];
++		float linear_r = in_r*rcp255, linear_g=in_g*rcp255, linear_b = in_b*rcp255;
++#ifdef X86
++		__m128 xm;
++		__m128i xi;
++#endif
+ 
+-		int x = floor(linear_r * (transform->grid_size-1));
+-		int y = floor(linear_g * (transform->grid_size-1));
+-		int z = floor(linear_b * (transform->grid_size-1));
+-		int x_n = ceil(linear_r * (transform->grid_size-1));
+-		int y_n = ceil(linear_g * (transform->grid_size-1));
+-		int z_n = ceil(linear_b * (transform->grid_size-1));
+-		float rx = linear_r * (transform->grid_size-1) - x; 
+-		float ry = linear_g * (transform->grid_size-1) - y;
+-		float rz = linear_b * (transform->grid_size-1) - z; 
++		int x;
++		int y;
++		int z;
++		int x_n;
++		int y_n;
++		int z_n;
++		float rx;
++		float ry;
++		float rz;
++		float lr = linear_r * (transform->grid_size-1);
++		float lg = linear_g * (transform->grid_size-1);
++		float lb = linear_b * (transform->grid_size-1);
++
++#if defined(X86) && !(defined(_M_AMD64) && _MSC_VER == 1400)
++		if (sse_ver >= 4) {
++			xm.m128_f32[0] = lr;
++			xm.m128_f32[1] = lg;
++			xm.m128_f32[2] = lb;
++
++#if _MSC_VER == 1400
++			floor_ps_sse4_1(&xm, &xi);
++#else
++			xi = _mm_cvttps_epi32(_mm_floor_ps(xm));
++#endif
++			x = _mm_cvtsi128_si32(xi);
++			y = _mm_cvtsi128_si32(xi = _mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++			z = _mm_cvtsi128_si32(_mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++
++#if _MSC_VER == 1400
++			ceil_ps_sse4_1(&xm, &xi);
++#else
++			xi = _mm_cvttps_epi32(_mm_ceil_ps(xm));
++#endif
++			x_n = _mm_cvtsi128_si32(xi);
++			y_n = _mm_cvtsi128_si32(xi = _mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++			z_n = _mm_cvtsi128_si32(_mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++
++			rx = lr - x; 
++			ry = lg - y;
++			rz = lb - z; 
++		} else {
++#endif /* defined(X86) && !(defined(_M_AMD64) && _MSC_VER == 1400) */
++			x = floor(lr);
++			y = floor(lg);
++			z = floor(lb);
++			x_n = ceil(lr);
++			y_n = ceil(lg);
++			z_n = ceil(lb);
++			rx = lr - x; 
++			ry = lg - y;
++			rz = lb - z; 
++#if defined(X86) && !(defined(_M_AMD64) && _MSC_VER == 1400)
++		}
++#endif
+ 
+ 		c0_r = CLU(r_table, x, y, z);
+ 		c0_g = CLU(g_table, x, y, z);
+ 		c0_b = CLU(b_table, x, y, z);
+ 
+ 		if( rx >= ry ) {
+ 			if (ry >= rz) { //rx >= ry && ry >= rz
+ 				c1_r = CLU(r_table, x_n, y, z) - c0_r;
+@@ -572,51 +766,120 @@ static void qcms_transform_data_tetra_cl
+ 				}
+ 			}
+ 		}
+ 				
+ 		clut_r = c0_r + c1_r*rx + c2_r*ry + c3_r*rz;
+ 		clut_g = c0_g + c1_g*rx + c2_g*ry + c3_g*rz;
+ 		clut_b = c0_b + c1_b*rx + c2_b*ry + c3_b*rz;
+ 
+-		*dest++ = clamp_u8(clut_r*255.0f);
+-		*dest++ = clamp_u8(clut_g*255.0f);
+-		*dest++ = clamp_u8(clut_b*255.0f);
+-		*dest++ = in_a;
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = clut_r;
++			xm.m128_f32[1] = clut_g;
++			xm.m128_f32[2] = clut_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			dest[i * 4 + 0] = _mm_cvtsi128_si32(xi);
++			dest[i * 4 + 1] = _mm_cvtsi128_si32(xi = _mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++			dest[i * 4 + 2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++		} else {
++#endif
++			dest[i * 4 + 0] = clamp_u8(clut_r*255.0f);
++			dest[i * 4 + 1] = clamp_u8(clut_g*255.0f);
++			dest[i * 4 + 2] = clamp_u8(clut_b*255.0f);
++#ifdef X86
++		}
++#endif
++		dest[i * 4 + 3] = in_a;
+ 	}	
+ }
+ 
+ // Using lcms' tetra interpolation code.
+ static void qcms_transform_data_tetra_clut(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length) {
+ 	unsigned int i;
+ 	int xy_len = 1;
+ 	int x_len = transform->grid_size;
+ 	int len = x_len * x_len;
+ 	float* r_table = transform->r_clut;
+ 	float* g_table = transform->g_clut;
+ 	float* b_table = transform->b_clut;
+-	float c0_r, c1_r, c2_r, c3_r;
+-	float c0_g, c1_g, c2_g, c3_g;
+-	float c0_b, c1_b, c2_b, c3_b;
+-	float clut_r, clut_g, clut_b;
++	float rcp255 = 1.0f / 255.0f;
++#ifdef X86
++	int sse_ver = sse_version_available();
++#endif
++
+ 	for (i = 0; i < length; i++) {
+-		unsigned char in_r = *src++;
+-		unsigned char in_g = *src++;
+-		unsigned char in_b = *src++;
+-		float linear_r = in_r/255.0f, linear_g=in_g/255.0f, linear_b = in_b/255.0f;
++		float c0_r, c1_r, c2_r, c3_r;
++		float c0_g, c1_g, c2_g, c3_g;
++		float c0_b, c1_b, c2_b, c3_b;
++		float clut_r, clut_g, clut_b;
++		unsigned char in_r = src[i * 3 + 0];
++		unsigned char in_g = src[i * 3 + 1];
++		unsigned char in_b = src[i * 3 + 2];
++		float linear_r = in_r*rcp255, linear_g=in_g*rcp255, linear_b = in_b*rcp255;
++#ifdef X86
++		__m128 xm;
++		__m128i xi;
++#endif
+ 
+-		int x = floor(linear_r * (transform->grid_size-1));
+-		int y = floor(linear_g * (transform->grid_size-1));
+-		int z = floor(linear_b * (transform->grid_size-1));
+-		int x_n = ceil(linear_r * (transform->grid_size-1));
+-		int y_n = ceil(linear_g * (transform->grid_size-1));
+-		int z_n = ceil(linear_b * (transform->grid_size-1));
+-		float rx = linear_r * (transform->grid_size-1) - x; 
+-		float ry = linear_g * (transform->grid_size-1) - y;
+-		float rz = linear_b * (transform->grid_size-1) - z; 
++		int x;
++		int y;
++		int z;
++		int x_n;
++		int y_n;
++		int z_n;
++		float rx;
++		float ry;
++		float rz;
++		float lr = linear_r * (transform->grid_size-1);
++		float lg = linear_g * (transform->grid_size-1);
++		float lb = linear_b * (transform->grid_size-1);
++
++#if defined(X86) && !(defined(_M_AMD64) && _MSC_VER == 1400)
++		if (sse_ver >= 4) {
++			xm.m128_f32[0] = lr;
++			xm.m128_f32[1] = lg;
++			xm.m128_f32[2] = lb;
++
++#if _MSC_VER == 1400
++			floor_ps_sse4_1(&xm, &xi);
++#else
++			xi = _mm_cvttps_epi32(_mm_floor_ps(xm));
++#endif
++			x = _mm_cvtsi128_si32(xi);
++			y = _mm_cvtsi128_si32(xi = _mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++			z = _mm_cvtsi128_si32(_mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++
++#if _MSC_VER == 1400
++			ceil_ps_sse4_1(&xm, &xi);
++#else
++			xi = _mm_cvttps_epi32(_mm_ceil_ps(xm));
++#endif
++			x_n = _mm_cvtsi128_si32(xi);
++			y_n = _mm_cvtsi128_si32(xi = _mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++			z_n = _mm_cvtsi128_si32(_mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++
++			rx = lr - x; 
++			ry = lg - y;
++			rz = lb - z; 
++		} else {
++#endif /* defined(X86) && !(defined(_M_AMD64) && _MSC_VER == 1400) */
++			x = floor(lr);
++			y = floor(lg);
++			z = floor(lb);
++			x_n = ceil(lr);
++			y_n = ceil(lg);
++			z_n = ceil(lb);
++			rx = lr - x; 
++			ry = lg - y;
++			rz = lb - z; 
++#if defined(X86) && !(defined(_M_AMD64) && _MSC_VER == 1400)
++		}
++#endif
+ 
+ 		c0_r = CLU(r_table, x, y, z);
+ 		c0_g = CLU(g_table, x, y, z);
+ 		c0_b = CLU(b_table, x, y, z);
+ 
+ 		if( rx >= ry ) {
+ 			if (ry >= rz) { //rx >= ry && ry >= rz
+ 				c1_r = CLU(r_table, x_n, y, z) - c0_r;
+@@ -686,26 +949,46 @@ static void qcms_transform_data_tetra_cl
+ 				}
+ 			}
+ 		}
+ 				
+ 		clut_r = c0_r + c1_r*rx + c2_r*ry + c3_r*rz;
+ 		clut_g = c0_g + c1_g*rx + c2_g*ry + c3_g*rz;
+ 		clut_b = c0_b + c1_b*rx + c2_b*ry + c3_b*rz;
+ 
+-		*dest++ = clamp_u8(clut_r*255.0f);
+-		*dest++ = clamp_u8(clut_g*255.0f);
+-		*dest++ = clamp_u8(clut_b*255.0f);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = clut_r;
++			xm.m128_f32[1] = clut_g;
++			xm.m128_f32[2] = clut_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			dest[i * 3 + 0] = _mm_cvtsi128_si32(xi);
++			dest[i * 3 + 1] = _mm_cvtsi128_si32(xi = _mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++			dest[i * 3 + 2] = _mm_cvtsi128_si32(_mm_shuffle_epi32(xi, _MM_SHUFFLE(0, 3, 2, 1)));
++		} else {
++#endif
++			dest[i * 3 + 0] = clamp_u8(clut_r*255.0f);
++			dest[i * 3 + 1] = clamp_u8(clut_g*255.0f);
++			dest[i * 3 + 2] = clamp_u8(clut_b*255.0f);
++#ifdef X86
++		}
++#endif
+ 	}	
+ }
+ 
+ static void qcms_transform_data_rgb_out_lut(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
+ {
+ 	unsigned int i;
+ 	float (*mat)[4] = transform->matrix;
++#ifdef X86
++	int sse_ver = sse_version_available();
++	__m128 xm;
++	__m128i xi;
++#endif
+ 	for (i = 0; i < length; i++) {
+ 		unsigned char device_r = *src++;
+ 		unsigned char device_g = *src++;
+ 		unsigned char device_b = *src++;
+ 		float out_device_r, out_device_g, out_device_b;
+ 
+ 		float linear_r = transform->input_gamma_table_r[device_r];
+ 		float linear_g = transform->input_gamma_table_g[device_g];
+@@ -721,26 +1004,46 @@ static void qcms_transform_data_rgb_out_
+ 
+ 		out_device_r = lut_interp_linear(out_linear_r, 
+ 				transform->output_gamma_lut_r, transform->output_gamma_lut_r_length);
+ 		out_device_g = lut_interp_linear(out_linear_g, 
+ 				transform->output_gamma_lut_g, transform->output_gamma_lut_g_length);
+ 		out_device_b = lut_interp_linear(out_linear_b, 
+ 				transform->output_gamma_lut_b, transform->output_gamma_lut_b_length);
+ 
+-		*dest++ = clamp_u8(out_device_r*255);
+-		*dest++ = clamp_u8(out_device_g*255);
+-		*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = out_device_r;
++			xm.m128_f32[1] = out_device_g;
++			xm.m128_f32[2] = out_device_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			*dest++ = xi.m128i_u32[0];
++			*dest++ = xi.m128i_u32[1];
++			*dest++ = xi.m128i_u32[2];
++		} else {
++#endif
++			*dest++ = clamp_u8(out_device_r*255);
++			*dest++ = clamp_u8(out_device_g*255);
++			*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		}
++#endif
+ 	}
+ }
+ 
+ static void qcms_transform_data_rgba_out_lut(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
+ {
+ 	unsigned int i;
+ 	float (*mat)[4] = transform->matrix;
++#ifdef X86
++	int sse_ver = sse_version_available();
++	__m128 xm;
++	__m128i xi;
++#endif
+ 	for (i = 0; i < length; i++) {
+ 		unsigned char device_r = *src++;
+ 		unsigned char device_g = *src++;
+ 		unsigned char device_b = *src++;
+ 		unsigned char alpha = *src++;
+ 		float out_device_r, out_device_g, out_device_b;
+ 
+ 		float linear_r = transform->input_gamma_table_r[device_r];
+@@ -757,44 +1060,79 @@ static void qcms_transform_data_rgba_out
+ 
+ 		out_device_r = lut_interp_linear(out_linear_r, 
+ 				transform->output_gamma_lut_r, transform->output_gamma_lut_r_length);
+ 		out_device_g = lut_interp_linear(out_linear_g, 
+ 				transform->output_gamma_lut_g, transform->output_gamma_lut_g_length);
+ 		out_device_b = lut_interp_linear(out_linear_b, 
+ 				transform->output_gamma_lut_b, transform->output_gamma_lut_b_length);
+ 
+-		*dest++ = clamp_u8(out_device_r*255);
+-		*dest++ = clamp_u8(out_device_g*255);
+-		*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = out_device_r;
++			xm.m128_f32[1] = out_device_g;
++			xm.m128_f32[2] = out_device_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			*dest++ = xi.m128i_u32[0];
++			*dest++ = xi.m128i_u32[1];
++			*dest++ = xi.m128i_u32[2];
++		} else {
++#endif
++			*dest++ = clamp_u8(out_device_r*255);
++			*dest++ = clamp_u8(out_device_g*255);
++			*dest++ = clamp_u8(out_device_b*255);
++#ifdef X86
++		}
++#endif
+ 		*dest++ = alpha;
+ 	}
+ }
+ 
+ #if 0
+ static void qcms_transform_data_rgb_out_linear(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
+ {
+ 	int i;
+ 	float (*mat)[4] = transform->matrix;
++#ifdef X86
++	int sse_ver = sse_version_available();
++	__m128 xm;
++	__m128i xi;
++#endif
+ 	for (i = 0; i < length; i++) {
+ 		unsigned char device_r = *src++;
+ 		unsigned char device_g = *src++;
+ 		unsigned char device_b = *src++;
+ 
+ 		float linear_r = transform->input_gamma_table_r[device_r];
+ 		float linear_g = transform->input_gamma_table_g[device_g];
+ 		float linear_b = transform->input_gamma_table_b[device_b];
+ 
+ 		float out_linear_r = mat[0][0]*linear_r + mat[1][0]*linear_g + mat[2][0]*linear_b;
+ 		float out_linear_g = mat[0][1]*linear_r + mat[1][1]*linear_g + mat[2][1]*linear_b;
+ 		float out_linear_b = mat[0][2]*linear_r + mat[1][2]*linear_g + mat[2][2]*linear_b;
+ 
+-		*dest++ = clamp_u8(out_linear_r*255);
+-		*dest++ = clamp_u8(out_linear_g*255);
+-		*dest++ = clamp_u8(out_linear_b*255);
++#ifdef X86
++		if (sse_ver >= 2) {
++			xm.m128_f32[0] = out_linear_r;
++			xm.m128_f32[1] = out_linear_g;
++			xm.m128_f32[2] = out_linear_b;
++			clamp_u8_sse2(&xm, &xi);
++
++			*dest++ = xi.m128i_u32[0];
++			*dest++ = xi.m128i_u32[1];
++			*dest++ = xi.m128i_u32[2];
++		} else {
++#endif
++			*dest++ = clamp_u8(out_linear_r*255);
++			*dest++ = clamp_u8(out_linear_g*255);
++			*dest++ = clamp_u8(out_linear_b*255);
++#ifdef X86
++		}
++#endif
+ 	}
+ }
+ #endif
+ 
+ static struct precache_output *precache_reference(struct precache_output *p)
+ {
+ 	p->ref_count++;
+ 	return p;
+@@ -880,96 +1218,122 @@ void qcms_transform_release(qcms_transfo
+ 
+ 	free(t->output_gamma_lut_r);
+ 	free(t->output_gamma_lut_g);
+ 	free(t->output_gamma_lut_b);
+ 
+ 	transform_free(t);
+ }
+ 
+-#ifdef X86
+-// Determine if we can build with SSE2 (this was partly copied from jmorecfg.h in
+-// mozilla/jpeg)
+- // -------------------------------------------------------------------------
+-#if defined(_M_IX86) && defined(_MSC_VER)
+-#define HAS_CPUID
+-/* Get us a CPUID function. Avoid clobbering EBX because sometimes it's the PIC
+-   register - I'm not sure if that ever happens on windows, but cpuid isn't
+-   on the critical path so we just preserve the register to be safe and to be
+-   consistent with the non-windows version. */
+-static void cpuid(uint32_t fxn, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+-       uint32_t a_, b_, c_, d_;
+-       __asm {
+-              xchg   ebx, esi
+-              mov    eax, fxn
+-              cpuid
+-              mov    a_, eax
+-              mov    b_, ebx
+-              mov    c_, ecx
+-              mov    d_, edx
+-              xchg   ebx, esi
+-       }
+-       *a = a_;
+-       *b = b_;
+-       *c = c_;
+-       *d = d_;
++// -------------------------__cpuid Detection----------------------------------
++
++// The following code was largely taken from xpcom/glue/SSE.cpp and
++// made a little simpler.
++enum CPUIDRegister { eax = 0, ebx = 1, ecx = 2, edx = 3 };
++
++#ifdef HAVE_CPUID_H
++
++// cpuid.h is available on gcc 4.3 and higher on i386 and x86_64
++#include <cpuid.h>
++
++static void
++__cpuid(int CPUInfo[4], int InfoType)
++{
++  __get_cpuid(InfoType,
++    (unsigned int*)&CPUInfo[0],
++    (unsigned int*)&CPUInfo[1],
++    (unsigned int*)&CPUInfo[2],
++    (unsigned int*)&CPUInfo[3]);
+ }
+-#elif (defined(__GNUC__) || defined(__SUNPRO_C)) && (defined(__i386__) || defined(__i386))
+-#define HAS_CPUID
+-/* Get us a CPUID function. We can't use ebx because it's the PIC register on
+-   some platforms, so we use ESI instead and save ebx to avoid clobbering it. */
+-static void cpuid(uint32_t fxn, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+ 
+-	uint32_t a_, b_, c_, d_;
+-       __asm__ __volatile__ ("xchgl %%ebx, %%esi; cpuid; xchgl %%ebx, %%esi;" 
+-                             : "=a" (a_), "=S" (b_), "=c" (c_), "=d" (d_) : "a" (fxn));
+-	   *a = a_;
+-	   *b = b_;
+-	   *c = c_;
+-	   *d = d_;
++#define HAVE_CPU_DETECTION
++#else /* HAVE_CPUID_H */
++
++#if defined(_MSC_VER) && _MSC_VER >= 1400 && (defined(_M_IX86) || defined(_M_AMD64))
++#include <intrin.h>
++
++#define HAVE_CPU_DETECTION
++#elif defined(__SUNPRO_CC) && (defined(__i386) || defined(__x86_64__))
++
++// Define a function identical to MSVC function.
++#ifdef __i386
++static void
++__cpuid(int CPUInfo[4], int InfoType)
++{
++  asm (
++    "xchg %esi, %ebx\n"
++    "cpuid\n"
++    "movl %eax, (%edi)\n"
++    "movl %ebx, 4(%edi)\n"
++    "movl %ecx, 8(%edi)\n"
++    "movl %edx, 12(%edi)\n"
++    "xchg %esi, %ebx\n"
++    :
++    : "a"(InfoType), // %eax
++      "D"(CPUInfo) // %edi
++    : "%ecx", "%edx", "%esi"
++  );
+ }
++#else
++static void
++__cpuid(int CPUInfo[4], int InfoType)
++{
++  asm (
++    "xchg %rsi, %rbx\n"
++    "cpuid\n"
++    "movl %eax, (%rdi)\n"
++    "movl %ebx, 4(%rdi)\n"
++    "movl %ecx, 8(%rdi)\n"
++    "movl %edx, 12(%rdi)\n"
++    "xchg %rsi, %rbx\n"
++    :
++    : "a"(InfoType), // %eax
++      "D"(CPUInfo) // %rdi
++    : "%ecx", "%edx", "%rsi"
++  );
++}
++
++#define HAVE_CPU_DETECTION
+ #endif
++#endif
++
++#endif /* HAVE_CPUID_H */
+ 
+ // -------------------------Runtime SSEx Detection-----------------------------
+ 
+ /* MMX is always supported per
+  *  Gecko v1.9.1 minimum CPU requirements */
+ #define SSE1_EDX_MASK (1UL << 25)
+ #define SSE2_EDX_MASK (1UL << 26)
+ #define SSE3_ECX_MASK (1UL <<  0)
++#define SSE4_ECX_MASK (1UL << 19)
+ 
+ static int sse_version_available(void)
+ {
+-#if defined(__x86_64__) || defined(__x86_64) || defined(_M_AMD64)
+-	/* we know at build time that 64-bit CPUs always have SSE2
+-	 * this tells the compiler that non-SSE2 branches will never be
+-	 * taken (i.e. OK to optimze away the SSE1 and non-SIMD code */
+-	return 2;
+-#elif defined(HAS_CPUID)
++#if defined(HAVE_CPU_DETECTION)
+ 	static int sse_version = -1;
+-	uint32_t a, b, c, d;
+-	uint32_t function = 0x00000001;
+ 
+ 	if (sse_version == -1) {
++		volatile int regs[4];
+ 		sse_version = 0;
+-		cpuid(function, &a, &b, &c, &d);
+-		if (c & SSE3_ECX_MASK)
++		__cpuid((int *)regs, 1);
++		if (regs[2] & SSE4_ECX_MASK)
++			sse_version = 4;
++		else if (regs[2] & SSE3_ECX_MASK)
+ 			sse_version = 3;
+-		else if (d & SSE2_EDX_MASK)
++		else if (regs[3] & SSE2_EDX_MASK)
+ 			sse_version = 2;
+-		else if (d & SSE1_EDX_MASK)
++		else if (regs[3] & SSE1_EDX_MASK)
+ 			sse_version = 1;
+ 	}
+-
+ 	return sse_version;
+ #else
+ 	return 0;
+ #endif
+ }
+-#endif
+ 
+ static const struct matrix bradford_matrix = {{	{ 0.8951f, 0.2664f,-0.1614f},
+ 						{-0.7502f, 1.7135f, 0.0367f},
+ 						{ 0.0389f,-0.0685f, 1.0296f}}, 
+ 						false};
+ 
+ static const struct matrix bradford_matrix_inv = {{ { 0.9869929f,-0.1470543f, 0.1599627f},
+ 						    { 0.4323053f, 0.5183603f, 0.0492912f},

@@ -1,0 +1,59 @@
+diff --git a/layout/style/nsCSSRuleProcessor.cpp b/layout/style/nsCSSRuleProcessor.cpp
+--- a/layout/style/nsCSSRuleProcessor.cpp
++++ b/layout/style/nsCSSRuleProcessor.cpp
+@@ -1566,17 +1566,24 @@ MOZ_STATIC_ASSERT(NS_ARRAY_LENGTH(sPseud
+                   "ePseudoClass_NotPseudoClass is no longer at the end of"
+                   "sPseudoClassStates");
+ 
+ // |aDependence| has two functions:
+ //  * when non-null, it indicates that we're processing a negation,
+ //    which is done only when SelectorMatches calls itself recursively
+ //  * what it points to should be set to true whenever a test is skipped
+ //    because of aNodeMatchContent.mStateMask
+-static bool SelectorMatches(Element* aElement,
++bool SelectorMatchesComponent(Element* aElement,
++                              nsCSSSelector* aSelector,
++                              NodeMatchContext& aNodeMatchContext,
++                              TreeMatchContext& aTreeMatchContext,
++                              bool* const aDependence);
++
++inline
++bool SelectorMatches(Element* aElement,
+                               nsCSSSelector* aSelector,
+                               NodeMatchContext& aNodeMatchContext,
+                               TreeMatchContext& aTreeMatchContext,
+                               bool* const aDependence = nullptr)
+ 
+ {
+   NS_PRECONDITION(!aSelector->IsPseudoElement(),
+                   "Pseudo-element snuck into SelectorMatches?");
+@@ -1596,16 +1603,29 @@ static bool SelectorMatches(Element* aEl
+     nsIAtom* selectorTag =
+       (aTreeMatchContext.mIsHTMLDocument && aElement->IsHTML()) ?
+         aSelector->mLowercaseTag : aSelector->mCasedTag;
+     if (selectorTag != aElement->Tag()) {
+       return false;
+     }
+   }
+ 
++  return SelectorMatchesComponent(aElement,
++                                  aSelector,
++                                  aNodeMatchContext,
++                                  aTreeMatchContext,
++                                  aDependence);
++}
++
++static bool SelectorMatchesComponent(Element* aElement,
++                                       nsCSSSelector* aSelector,
++                                       NodeMatchContext& aNodeMatchContext,
++                                       TreeMatchContext& aTreeMatchContext,
++                                       bool* const aDependence)
++{
+   nsAtomList* IDList = aSelector->mIDList;
+   if (IDList) {
+     nsIAtom* id = aElement->GetID();
+     if (id) {
+       // case sensitivity: bug 93371
+       const bool isCaseSensitive =
+         aTreeMatchContext.mCompatMode != eCompatibility_NavQuirks;
+ 

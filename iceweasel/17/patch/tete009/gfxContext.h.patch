@@ -1,0 +1,26 @@
+diff --git a/gfx/thebes/gfxContext.h b/gfx/thebes/gfxContext.h
+--- a/gfx/thebes/gfxContext.h
++++ b/gfx/thebes/gfxContext.h
+@@ -648,17 +648,21 @@ public:
+         /**
+          * When this flag is set, snapping to device pixels is disabled.
+          * It simply never does anything.
+          */
+         FLAG_DISABLE_SNAPPING = (1 << 1),
+         /**
+          * Disable copying of backgrounds in PushGroupAndCopyBackground.
+          */
+-        FLAG_DISABLE_COPY_BACKGROUND = (1 << 2)
++        FLAG_DISABLE_COPY_BACKGROUND = (1 << 2),
++        /**
++         * tete009 extension
++         */
++        FLAG_DRAW_SINGLE_IMAGE_TT = (1 << 20)
+     };
+ 
+     void SetFlag(int32_t aFlag) { mFlags |= aFlag; }
+     void ClearFlag(int32_t aFlag) { mFlags &= ~aFlag; }
+     int32_t GetFlags() const { return mFlags; }
+ 
+     bool IsCairo() const { return !mDT; }
+ 

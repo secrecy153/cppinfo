@@ -1,0 +1,19 @@
+diff -r 121aa3ff53b8 mozilla/dom/plugins/ipc/Makefile.in
+--- a/dom/plugins/ipc/Makefile.in	Wed Aug 29 18:45:25 2012 +0900
++++ b/dom/plugins/ipc/Makefile.in	Wed Aug 29 20:16:32 2012 +0900
+@@ -129,8 +129,15 @@ include $(topsrcdir)/ipc/chromium/chromi
+ 
+ include $(topsrcdir)/config/rules.mk
+ 
+ CXXFLAGS += $(TK_CFLAGS)
+ 
+ DEFINES += -DFORCE_PR_LOG
+ 
+ CXXFLAGS += $(MOZ_CAIRO_CFLAGS)
++
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif

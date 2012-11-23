@@ -1,0 +1,36 @@
+diff -r 284837bbf631 xpcom/glue/nsDeque.cpp
+--- a/xpcom/glue/nsDeque.cpp	Sat Aug 25 07:23:12 2012 +0900
++++ b/xpcom/glue/nsDeque.cpp	Sat Aug 25 09:43:13 2012 +0900
+@@ -103,17 +103,32 @@ void nsDeque::SetDeallocator(nsDequeFunc
+ 
+ /**
+  * Remove all items from container without destroying them.
+  *
+  * @return  *this
+  */
+ nsDeque& nsDeque::Empty() {
+   if (mSize && mData) {
++#ifdef TT_MEMUTIL
++    static const PRUint32 dwNonTemporalDataSizeMin = GetNonTemporalDataSizeMin_tt();
++    const PRUint32 dwDataSize = mCapacity*sizeof(mData);
++
++    if (dwDataSize < dwNonTemporalDataSizeMin ||
++        NON_TEMPORAL_STORES_NOT_SUPPORTED == dwNonTemporalDataSizeMin)
++    {
++        memset(mData, 0, mCapacity*sizeof(mData));
++    }
++    else
++    {
++        memset_nontemporal_tt(mData, 0, mCapacity*sizeof(mData));
++    }
++#else
+     memset(mData, 0, mCapacity*sizeof(mData));
++#endif
+   }
+   mSize=0;
+   mOrigin=0;
+   return *this;
+ }
+ 
+ /**
+  * Remove and delete all items from container

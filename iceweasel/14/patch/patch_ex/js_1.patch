@@ -1,0 +1,170 @@
+diff --git a/js/src/Makefile.in b/js/src/Makefile.in
+--- a/js/src/Makefile.in
++++ b/js/src/Makefile.in
+@@ -68,19 +68,19 @@ TEST_DIRS += tests
+ 
+ MODULE		    = js
+ LIBRARY_NAME	    = mozjs
+ STATIC_LIBRARY_NAME = js_static
+ GRE_MODULE	    = 1
+ 
+ LIBS		= $(NSPR_LIBS) 
+ 
+-ifeq ($(OS_ARCH),WINNT)
+-NO_PROFILE_GUIDED_OPTIMIZE = 1
+-endif
++# ifeq ($(OS_ARCH),WINNT)
++# NO_PROFILE_GUIDED_OPTIMIZE = 1
++# endif
+ 
+ # JavaScript must be built shared, even for static builds, as it is used by
+ # other modules which are always built shared. Failure to do so results in
+ # the js code getting copied into xpinstall and jsd as well as mozilla-bin,
+ # and then the static data cells used for locking no longer work.
+ #
+ # In fact, we now build both a static and a shared library, as the
+ # JS shell would like to link to the static library.
+@@ -873,16 +873,21 @@ endif
+ CXXFLAGS += -DUSE_SYSTEM_MALLOC=1 -DENABLE_ASSEMBLER=1
+ 
+ ifneq (,$(ENABLE_YARR_JIT)$(ENABLE_METHODJIT))
+ CXXFLAGS +=  -DENABLE_JIT=1
+ endif
+ 
+ INCLUDES +=	-I$(srcdir)/assembler -I$(srcdir)/yarr
+ 
++YarrPattern.$(OBJ_SUFFIX): YarrPattern.cpp $(GLOBAL_DEPS)
++	$(REPORT_BUILD)
++	@$(MAKE_DEPS_AUTO_CXX)
++	$(ELOG) $(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS:arch:SSE2=arch:SSE) $(_VPATH_SRCS)
++
+ ifdef ENABLE_METHODJIT
+ # Build a standalone test program that exercises the assembler
+ # sources a bit.
+ TESTMAIN_OBJS = \
+ 		Assertions.$(OBJ_SUFFIX) \
+ 		ExecutableAllocator.$(OBJ_SUFFIX) \
+ 		ARMAssembler.$(OBJ_SUFFIX) \
+ 		MacroAssemblerARM.$(OBJ_SUFFIX) \
+@@ -899,8 +899,28 @@ endif
+ TestMain$(HOST_BIN_SUFFIX): $(TESTMAIN_OBJS)
+ 	$(CXX) -o TestMain$(HOST_BIN_SUFFIX) $(TESTMAIN_OBJS)
+ endif
+ 
+ #
+ # END kludges for the Nitro assembler
+ ###############################################
+ 
++# for PGO bug 
++PolyIC.$(OBJ_SUFFIX): PolyIC.cpp $(GLOBAL_DEPS)
++	$(REPORT_BUILD)
++	@$(MAKE_DEPS_AUTO_CXX)
++	$(ELOG) $(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) -GL- $(_VPATH_SRCS)
++
++MonoIC.$(OBJ_SUFFIX): MonoIC.cpp $(GLOBAL_DEPS)
++	$(REPORT_BUILD)
++	@$(MAKE_DEPS_AUTO_CXX)
++	$(ELOG) $(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) -GL- $(_VPATH_SRCS)
++
++FrameState.$(OBJ_SUFFIX): FrameState.cpp $(GLOBAL_DEPS)
++	$(REPORT_BUILD)
++	@$(MAKE_DEPS_AUTO_CXX)
++	$(ELOG) $(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) -GL- $(_VPATH_SRCS)
++
++FastOps.$(OBJ_SUFFIX): FastOps.cpp $(GLOBAL_DEPS)
++	$(REPORT_BUILD)
++	@$(MAKE_DEPS_AUTO_CXX)
++	$(ELOG) $(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) -GL- $(_VPATH_SRCS)
+diff --git a/js/src/jsinterp.h b/js/src/jsinterp.h
+--- a/js/src/jsinterp.h
++++ b/js/src/jsinterp.h
+@@ -54,19 +54,27 @@ namespace js {
+ /*
+  * Refresh and return fp->scopeChain.  It may be stale if block scopes are
+  * active but not yet reflected by objects in the scope chain.  If a block
+  * scope contains a with, eval, XML filtering predicate, or similar such
+  * dynamically scoped construct, then compile-time block scope at fp->blocks
+  * must reflect at runtime.
+  */
+ 
++#ifdef _MSC_VER
++/* hack to avoid the bug of PGO */
++__declspec(dllexport)
++#endif
+ extern JSObject *
+ GetScopeChain(JSContext *cx);
+ 
++#ifdef _MSC_VER
++/* hack to avoid the bug of PGO */
++__declspec(dllexport)
++#endif
+ extern JSObject *
+ GetScopeChain(JSContext *cx, StackFrame *fp);
+ 
+ /*
+  * ScriptPrologue/ScriptEpilogue must be called in pairs. ScriptPrologue
+  * must be called before the script executes. ScriptEpilogue must be called
+  * after the script returns or exits via exception.
+  */
+diff --git a/js/src/jsmath.cpp b/js/src/jsmath.cpp
+--- a/js/src/jsmath.cpp
++++ b/js/src/jsmath.cpp
+@@ -54,16 +54,20 @@
+ #include "jsmath.h"
+ #include "jsnum.h"
+ #include "jslibmath.h"
+ #include "jscompartment.h"
+ 
+ #include "jsinferinlines.h"
+ #include "jsobjinlines.h"
+ 
++#if (_M_IX86_FP >= 2)
++#pragma function(floor)
++#endif
++
+ using namespace js;
+ 
+ #ifndef M_E
+ #define M_E             2.7182818284590452354
+ #endif
+ #ifndef M_LOG2E
+ #define M_LOG2E         1.4426950408889634074
+ #endif
+--- a/js/src/methodjit/Compiler.cpp	2012-06-29 19:28:43 +0800
++++ b/js/src/methodjit/Compiler.cpp	2012-07-11 21:00:01 +0800
+@@ -933,7 +933,7 @@
+ 
+     return jit;
+ }
+-
++#pragma optimize("g", off)
+ CompileStatus
+ mjit::CanMethodJIT(JSContext *cx, JSScript *script, jsbytecode *pc,
+                    bool construct, CompileRequest request)
+@@ -1006,7 +1006,7 @@
+ 
+     return status;
+ }
+-
++#pragma optimize("g", on)
+ CompileStatus
+ mjit::Compiler::generatePrologue()
+ {
+@@ -4540,7 +4540,7 @@
+ {
+     callSites.append(site);
+ }
+-
++#pragma optimize("g", off)
+ void
+ mjit::Compiler::inlineStubCall(void *stub, RejoinState rejoin, Uses uses)
+ {
+@@ -4556,7 +4556,7 @@
+     }
+     addCallSite(site);
+ }
+-
++#pragma optimize("g", on)
+ bool
+ mjit::Compiler::compareTwoValues(JSContext *cx, JSOp op, const Value &lhs, const Value &rhs)
+ {

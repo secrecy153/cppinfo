@@ -1,0 +1,26 @@
+diff --git a/gfx/2d/Makefile.in b/gfx/2d/Makefile.in
+--- a/gfx/2d/Makefile.in
++++ b/gfx/2d/Makefile.in
+@@ -99,22 +99,19 @@ endif
+ DEFINES += -DSK_A32_SHIFT=24 -DSK_R32_SHIFT=16 -DSK_G32_SHIFT=8 -DSK_B32_SHIFT=0
+ 
+ ifdef MOZ_DEBUG
+ DEFINES += -DGFX_LOG_DEBUG -DGFX_LOG_WARNING
+ endif
+ 
+ # Are we targeting x86 or x64?  If so, build SSE2 files.
+ ifneq (,$(INTEL_ARCHITECTURE))
+-# VC2005 doesn't support _mm_castsi128_ps, so SSE2 is turned off
+-ifneq (1400,$(_MSC_VER))
+ CPPSRCS += ImageScalingSSE2.cpp
+ DEFINES += -DUSE_SSE2
+ endif
+-endif
+ 
+ ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
+ CPPSRCS	+= \
+         DrawTargetD2D.cpp \
+         SourceSurfaceD2D.cpp \
+         SourceSurfaceD2DTarget.cpp \
+         PathD2D.cpp \
+         ScaledFontDWrite.cpp \

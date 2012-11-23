@@ -1,0 +1,117 @@
+diff --git a/js/src/gc/Root.h b/js/src/gc/Root.h
+--- a/js/src/gc/Root.h
++++ b/js/src/gc/Root.h
+@@ -95,18 +95,17 @@ class HandleBase {};
+  * specialization, define a HandleBase<T> specialization containing them.
+  */
+ template <typename T>
+ class Handle : public HandleBase<T>
+ {
+   public:
+     /* Creates a handle from a handle of a type convertible to T. */
+     template <typename S>
+-    Handle(Handle<S> handle,
+-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
++    Handle(Handle<S> handle)
+     {
+         ptr = reinterpret_cast<const T *>(handle.address());
+     }
+ 
+     /* Create a handle for a NULL pointer. */
+     Handle(NullPtr) {
+         typedef typename js::tl::StaticAssert<js::tl::IsPointerType<T>::result>::result _;
+         ptr = reinterpret_cast<const T *>(&NullPtr::constNullValue);
+@@ -131,24 +130,22 @@ class Handle : public HandleBase<T>
+     }
+ 
+     /*
+      * Construct a handle from an explicitly rooted location. This is the
+      * normal way to create a handle, and normally happens implicitly.
+      */
+     template <typename S>
+     inline
+-    Handle(Rooted<S> &root,
+-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
++    Handle(Rooted<S> &root);
+ 
+     /* Construct a read only handle from a mutable handle. */
+     template <typename S>
+     inline
+-    Handle(MutableHandle<S> &root,
+-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
++    Handle(MutableHandle<S> &root);
+ 
+     const T *address() const { return ptr; }
+     T get() const { return *ptr; }
+ 
+     operator T () const { return get(); }
+     T operator ->() const { return get(); }
+ 
+   private:
+@@ -178,26 +175,24 @@ class MutableHandleBase {};
+  * specialization, define a MutableHandleBase<T> specialization containing
+  * them.
+  */
+ template <typename T>
+ class MutableHandle : public MutableHandleBase<T>
+ {
+   public:
+     template <typename S>
+-    MutableHandle(MutableHandle<S> handle,
+-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
++    MutableHandle(MutableHandle<S> handle)
+     {
+         this->ptr = reinterpret_cast<const T *>(handle.address());
+     }
+ 
+     template <typename S>
+     inline
+-    MutableHandle(Rooted<S> *root,
+-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
++    MutableHandle(Rooted<S> *root);
+ 
+     void set(T v)
+     {
+         JS_ASSERT(!RootMethods<T>::poisoned(v));
+         *ptr = v;
+     }
+ 
+     /*
+@@ -355,34 +350,31 @@ class Rooted : public RootedBase<T>
+     T ptr;
+ 
+     Rooted() MOZ_DELETE;
+     Rooted(const Rooted &) MOZ_DELETE;
+ };
+ 
+ template<typename T> template <typename S>
+ inline
+-Handle<T>::Handle(Rooted<S> &root,
+-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
++Handle<T>::Handle(Rooted<S> &root)
+ {
+     ptr = reinterpret_cast<const T *>(root.address());
+ }
+ 
+ template<typename T> template <typename S>
+ inline
+-Handle<T>::Handle(MutableHandle<S> &root,
+-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
++Handle<T>::Handle(MutableHandle<S> &root)
+ {
+     ptr = reinterpret_cast<const T *>(root.address());
+ }
+ 
+ template<typename T> template <typename S>
+ inline
+-MutableHandle<T>::MutableHandle(Rooted<S> *root,
+-                                typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
++MutableHandle<T>::MutableHandle(Rooted<S> *root)
+ {
+     ptr = root->address();
+ }
+ 
+ typedef Rooted<JSObject*>    RootedObject;
+ typedef Rooted<JSFunction*>  RootedFunction;
+ typedef Rooted<JSScript*>    RootedScript;
+ typedef Rooted<JSString*>    RootedString;
