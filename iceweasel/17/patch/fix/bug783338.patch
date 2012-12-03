@@ -1,0 +1,34 @@
+diff --git a/widget/windows/nsNativeThemeWin.cpp b/widget/windows/nsNativeThemeWin.cpp
+--- a/widget/windows/nsNativeThemeWin.cpp
++++ b/widget/windows/nsNativeThemeWin.cpp
+@@ -2071,26 +2071,29 @@ nsNativeThemeWin::GetMinimumWidgetSize(n
+       AddPaddingRect(aResult, CAPTIONBUTTON_CLOSE);
+       *aIsOverridable = false;
+       return NS_OK;
+ 
+     case NS_THEME_WINDOW_TITLEBAR:
+     case NS_THEME_WINDOW_TITLEBAR_MAXIMIZED:
+       aResult->height = GetSystemMetrics(SM_CYCAPTION);
+       aResult->height += GetSystemMetrics(SM_CYFRAME);
++      if (nsUXThemeData::CheckForCompositor())
++        aResult->height += GetSystemMetrics(SM_CXPADDEDBORDER);
+       *aIsOverridable = false;
+       return NS_OK;
+ 
+     case NS_THEME_WINDOW_BUTTON_BOX:
+     case NS_THEME_WINDOW_BUTTON_BOX_MAXIMIZED:
+       if (nsUXThemeData::CheckForCompositor()) {
+         QueryForButtonData(aFrame);
+         aResult->width = nsUXThemeData::sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cx;
+         aResult->height = nsUXThemeData::sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cy
+-                          - GetSystemMetrics(SM_CYFRAME);
++                          - GetSystemMetrics(SM_CYFRAME)
++                          - GetSystemMetrics(SM_CXPADDEDBORDER);
+         if (aWidgetType == NS_THEME_WINDOW_BUTTON_BOX_MAXIMIZED) {
+           aResult->width += 1;
+           aResult->height -= 2;
+         }
+         *aIsOverridable = false;
+         return NS_OK;
+       }
+       break;

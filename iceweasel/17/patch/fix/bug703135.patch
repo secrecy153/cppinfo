@@ -1,0 +1,28 @@
+--- a/media/libtheora/lib/huffdec.c	2012-11-29 12:44:39 +0800
++++ b/media/libtheora/lib/huffdec.c	2012-11-29 21:34:04 +0800
+@@ -343,7 +343,12 @@
+     nbits=oc_huff_tree_collapse_depth(_tokens+ti,last[l]+1-ti,depth[l]);
+     node[l]=(ogg_int16_t)ntree;
+     ntree+=oc_huff_node_size(nbits);
+-    if(_tree!=NULL)_tree[node[l]++]=(ogg_int16_t)nbits;
++    if(_tree!=NULL) {
++      // Quirky fix for a VS 2012 RC compiler optimization problem.
++      // original: if(_tree!=NULL)_tree[node[l]++]=(ogg_int16_t)nbits;
++      int treeIndex = node[l]++;
++      _tree[treeIndex]=(ogg_int16_t)nbits;
++    }
+     do{
+       while(ti<=last[l]&&_tokens[ti][1]<=depth[l]+nbits){
+         if(_tree!=NULL){
+@@ -358,7 +363,10 @@
+       if(ti<=last[l]){
+         /*We need to recurse*/
+         depth[l+1]=(unsigned char)(depth[l]+nbits);
+-        if(_tree!=NULL)_tree[node[l]++]=(ogg_int16_t)ntree;
++        if(_tree!=NULL) {
++          int treeIndex = node[l]++;
++          _tree[treeIndex]=(ogg_int16_t)ntree;
++        }
+         l++;
+         last[l]=
+          (unsigned char)(ti+oc_huff_subtree_tokens(_tokens+ti,depth[l])-1);

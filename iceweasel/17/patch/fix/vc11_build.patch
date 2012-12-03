@@ -1,0 +1,76 @@
+--- a/configure.in	2012-11-29 16:33:34 +0800
++++ b/configure.in	2012-11-29 16:35:02 +0800
+@@ -2138,7 +2138,7 @@
+         MKCSHLIB='$(LD) -NOLOGO -DLL -OUT:$@ -PDB:$(LINK_PDBFILE) $(DSO_LDOPTS)'
+         MKSHLIB_FORCE_ALL=
+         MKSHLIB_UNFORCE_ALL=
+-        DSO_LDOPTS=-SUBSYSTEM:WINDOWS
++        DSO_LDOPTS=-SUBSYSTEM:WINDOWS,501
+         _USE_CPP_INCLUDE_FLAG=1
+         _DEFINES_CFLAGS='-FI $(DEPTH)/dist/include/mozilla-config.h -DMOZILLA_CLIENT'
+         _DEFINES_CXXFLAGS='-FI $(DEPTH)/dist/include/mozilla-config.h -DMOZILLA_CLIENT'
+--- a/js/src/configure.in	2012-11-29 15:55:45 +0800
++++ b/js/src/configure.in	2012-11-29 16:36:15 +0800
+@@ -1761,7 +1761,7 @@
+         MKCSHLIB='$(LD) -NOLOGO -DLL -OUT:$@ -PDB:$(LINK_PDBFILE) $(DSO_LDOPTS)'
+         MKSHLIB_FORCE_ALL=
+         MKSHLIB_UNFORCE_ALL=
+-        DSO_LDOPTS=-SUBSYSTEM:WINDOWS
++        DSO_LDOPTS=-SUBSYSTEM:WINDOWS,501
+         _USE_CPP_INCLUDE_FLAG=1
+         _DEFINES_CFLAGS='-FI $(DEPTH)/js-confdefs.h -DMOZILLA_CLIENT'
+         _DEFINES_CXXFLAGS='-FI $(DEPTH)/js-confdefs.h -DMOZILLA_CLIENT'
+--- a/config/config.mk	2012-11-29 15:54:26 +0800
++++ b/config/config.mk	2012-11-29 16:35:26 +0800
+@@ -608,7 +608,7 @@
+ ifdef GNU_CC
+ WIN32_EXE_LDFLAGS	+= -mwindows
+ else
+-WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS
++WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS,501
+ endif
+ endif
+ endif
+--- a/js/src/config/config.mk	2012-11-29 15:55:44 +0800
++++ b/js/src/config/config.mk	2012-11-29 16:37:07 +0800
+@@ -600,17 +600,17 @@ endif
+ else # MOZ_WINCONSOLE
+ ifeq ($(OS_ARCH),OS2)
+ BIN_FLAGS	+= -Zlinker -PM:PM
+ endif
+ ifeq ($(OS_ARCH),WINNT)
+ ifdef GNU_CC
+ WIN32_EXE_LDFLAGS	+= -mwindows
+ else
+-WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS
++WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS,5.01
+ endif
+ endif
+ endif
+ endif
+ 
+ # If we're building a component on MSVC, we don't want to generate an
+ # import lib, because that import lib will collide with the name of a
+ # static version of the same library.
+--- a/security/coreconf/WIN32.mk	2012-11-29 15:57:57 +0800
++++ b/security/coreconf/WIN32.mk	2012-11-29 16:36:26 +0800
+@@ -145,7 +145,7 @@
+ else # !NS_USE_GCC
+     OS_CFLAGS += -W3 -nologo -D_CRT_SECURE_NO_WARNINGS \
+ 		 -D_CRT_NONSTDC_NO_WARNINGS
+-    OS_DLLFLAGS += -nologo -DLL -SUBSYSTEM:WINDOWS
++    OS_DLLFLAGS += -nologo -DLL -SUBSYSTEM:WINDOWS,501
+     ifeq ($(_MSC_VER),$(_MSC_VER_6))
+     ifndef MOZ_DEBUG_SYMBOLS
+ 	OS_DLLFLAGS += -PDB:NONE
+--- a/nsprpub/configure.in	2012-11-29 15:57:48 +0800
++++ b/nsprpub/configure.in	2012-11-29 16:35:51 +0800
+@@ -1963,7 +1963,7 @@
+             fi
+         fi
+ 
+-        OS_DLLFLAGS="-nologo -DLL -SUBSYSTEM:WINDOWS"
++        OS_DLLFLAGS="-nologo -DLL -SUBSYSTEM:WINDOWS,501"
+         if test "$MSC_VER" -le "1200" -a -z "$MOZ_DEBUG_SYMBOLS"; then
+             OS_DLLFLAGS="$OS_DLLFLAGS -PDB:NONE"
+         fi
