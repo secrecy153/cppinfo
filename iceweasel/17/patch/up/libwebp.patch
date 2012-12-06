@@ -1,15 +1,3 @@
-diff -r c075f70f87aa browser/components/downloads/content/download.xml
---- a/browser/components/downloads/content/download.xml	Mon Nov 19 18:32:13 2012 -0500
-+++ b/browser/components/downloads/content/download.xml	Tue Nov 27 21:45:21 2012 +0900
-@@ -17,7 +17,7 @@
-            extends="chrome://global/content/bindings/richlistbox.xml#richlistitem">
-     <content orient="horizontal"
-              align="center"
--             onclick="DownloadsView.onDownloadClick(event);">
-+             ondblclick="DownloadsView.onDownloadClick(event);">
-       <xul:image class="downloadTypeIcon"
-                  validate="always"
-                  xbl:inherits="src=image"/>
 diff -r c075f70f87aa configure.in
 --- a/configure.in	Mon Nov 19 18:32:13 2012 -0500
 +++ b/configure.in	Tue Nov 27 21:45:21 2012 +0900
