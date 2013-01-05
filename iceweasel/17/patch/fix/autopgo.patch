@@ -1,5 +1,5 @@
---- a/build/pgo/Makefile.in	2012-11-21 14:10:17 +0800
-+++ b/build/pgo/Makefile.in	2012-11-21 17:40:42 +0800
+--- a/build/pgo/Makefile.in	2012-12-15 14:15:25 +0800
++++ b/build/pgo/Makefile.in	2012-12-15 14:22:17 +0800
 @@ -14,6 +14,7 @@
  DIRS = \
    blueprint \
@@ -8,9 +8,9 @@
    $(NULL)
  
  include $(topsrcdir)/config/rules.mk
---- a/build/pgo/index.html	2012-11-21 14:10:17 +0800
-+++ b/build/pgo/index.html	2012-11-21 17:42:13 +0800
-@@ -147,9 +147,81 @@
+--- a/build/pgo/index.html	2012-12-15 14:15:25 +0800
++++ b/build/pgo/index.html	2012-12-15 14:21:43 +0800
+@@ -147,9 +147,128 @@
    "js-input/string-fasta.html",
    "js-input/string-tagcloud.html",
    "js-input/string-unpack-code.html",
@@ -20,6 +20,8 @@
 +  "betterpgo/js/timer/index1.html",
 +  "betterpgo/js/The Real World/index.html",
 +  "betterpgo/js/sunspider-0.9.1/index.html",
++  "betterpgo/js/FlyingImages/index.html",
++  "betterpgo/js/timer/index1.html",
 +  "betterpgo/browseload/index-deviantart.html",
 +  "betterpgo/browseload/index-flash.html",
 +  "betterpgo/browseload/index-game.html",
@@ -30,6 +32,8 @@
 +  "betterpgo/browseload/index-sogoumap.html",
 +  "betterpgo/browseload/index-youku.html",
 +  "betterpgo/browseload/index-zuigui.html",
++  "betterpgo/browseload/index-msn.html",
++  "betterpgo/browseload/index-game.html",
 +  "betterpgo/DHTML/index1.html",
 +  "betterpgo/DHTML/index3.html",
 +  "betterpgo/DHTML/index6.html",
@@ -44,6 +48,17 @@
 +  "betterpgo/standard/index-html5.html",
 +  "betterpgo/standard/index-css3.html",
 +  "betterpgo/standard/index-acid3.html",
++  "betterpgo/standard/add/googlewebp.html",
++  "betterpgo/standard/add/cnet.html",
++  "betterpgo/standard/add/reddit.html",
++  "betterpgo/standard/add/verycd.html",
++  "betterpgo/standard/add/simplecd.html",
++  "betterpgo/standard/add/qqbuy.html",
++  "betterpgo/standard/add/t_sohu.html",
++  "betterpgo/standard/add/t_qq.html",
++  "betterpgo/standard/add/web_qq.html",
++  "betterpgo/standard/add/gif_test.html",
++  "betterpgo/standard/add/v8.html",
 +  "betterpgo/AnimationBenchmark/svg/index.html",
 +  "betterpgo/AnimationBenchmark/html/index.htm",
 +  "betterpgo/browseload/heavyload/vim/index-vim.html",
@@ -52,25 +67,39 @@
 +  "betterpgo/browseload/alexatop/China/01-baidu.html",
 +  "betterpgo/browseload/alexatop/China/02-qq.html",
 +  "betterpgo/browseload/alexatop/China/03-taobao.html",
++  "betterpgo/browseload/alexatop/China/06-weibo.html",
 +  "betterpgo/browseload/alexatop/China/07-163.html",
 +  "betterpgo/browseload/alexatop/China/08-sohu.html",
 +  "betterpgo/browseload/alexatop/China/10-youku.html",
 +  "betterpgo/browseload/alexatop/China/11-ifeng.html",
++  "betterpgo/browseload/alexatop/China/12-tudou.html",
 +  "betterpgo/browseload/alexatop/China/13-soso.html",
 +  "betterpgo/browseload/alexatop/China/14-tmall.html",
 +  "betterpgo/browseload/alexatop/China/15-alipay.html",
 +  "betterpgo/browseload/alexatop/China/17-hao123.html",
++  "betterpgo/browseload/alexatop/China/18-chinaz.html",
 +  "betterpgo/browseload/alexatop/China/20-douban.html",
 +  "betterpgo/browseload/alexatop/China/25-pengyou.html",
 +  "betterpgo/browseload/alexatop/China/29-360.html",
++  "betterpgo/browseload/alexatop/China/30-56.html",
 +  "betterpgo/browseload/alexatop/China/31-zol.html",
 +  "betterpgo/browseload/alexatop/China/32-iqiyi.html",
++  "betterpgo/browseload/alexatop/China/33-soku.html",
++  "betterpgo/browseload/alexatop/China/34-12306.html",
++  "betterpgo/browseload/alexatop/China/35-alibaba.html",
++  "betterpgo/browseload/alexatop/China/36-58.html",
 +  "betterpgo/browseload/alexatop/China/37-people.html",
 +  "betterpgo/browseload/alexatop/China/38-xinhuanet.html",
++  "betterpgo/browseload/alexatop/China/39-ku6.html",
++  "betterpgo/browseload/alexatop/China/40-ganji.html",
 +  "betterpgo/browseload/alexatop/China/41-csdn.html",
 +  "betterpgo/browseload/alexatop/China/42-mop.html",
-+  "betterpgo/browseload/alexatop/China/41-csdn.html",
++  "betterpgo/browseload/alexatop/China/43-51la.html",
++  "betterpgo/browseload/alexatop/China/44-kaixin001.html",
++  "betterpgo/browseload/alexatop/China/45-hudong.html",
 +  "betterpgo/browseload/alexatop/China/46-sofun.html",
++  "betterpgo/browseload/alexatop/China/47-live.html",
++  "betterpgo/browseload/alexatop/China/48-youdao.html",
 +  "betterpgo/browseload/alexatop/China/49-paipai.html",
 +  "betterpgo/browseload/alexatop/China/50-10086.html",
 +  "betterpgo/browseload/alexatop/China/51-kafan.html",
@@ -78,10 +107,28 @@
 +  "betterpgo/browseload/alexatop/China/53-firefoxnet.html",
 +  "betterpgo/browseload/alexatop/China/54-mydrivers.html",
 +  "betterpgo/browseload/alexatop/China/55-tun360.html",
++  "betterpgo/browseload/alexatop/China/56-cntv.html",
++  "betterpgo/browseload/alexatop/Global/06-wikipedia.html",
 +  "betterpgo/browseload/alexatop/Global/10-amazon.html",
 +  "betterpgo/browseload/alexatop/Global/17-sina.html",
-+  "betterpgo/browseload/alexatop/Global/06-wikipedia.html",
++  "betterpgo/browseload/alexatop/Global/26-bing.html",
++  "betterpgo/browseload/alexatop/Global/29-microsoft.html",
++  "betterpgo/browseload/alexatop/Global/30-apple.html",
++  "betterpgo/browseload/alexatop/Global/32-rumail.html",
++  "betterpgo/browseload/alexatop/Global/35-paypal.html",
++  "betterpgo/browseload/alexatop/Global/47-bbc.html",
 +  "betterpgo/browseload/webspeed/index-114.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-Blizzard.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-BrowserHunt.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-Canvas3D.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-CanvasVideo3D.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-CanvasVideo.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-evolve.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-FishBowl.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-google_gravity.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-GraphicsAccelebration.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-HWACCEL.html",
++  "betterpgo/HWACCEL-SpecialEffects/index-liquid-particles.html",
 +  "betterpgo/webgl/fishie/index.html",
 +  "betterpgo/webgl/mozilla/index-sample4.html",
 +  "betterpgo/webgl/mozilla/index-sample5.html",
@@ -90,7 +137,7 @@
 +  "betterpgo/webgl/index-webgl-matrix-benchmarks.html"
       ];
 - var interval = 3000; // 15000
-+ var interval = 17000; // 17000
++ var interval = 20000; // 20000
   var idx = 0;
   var w;
   

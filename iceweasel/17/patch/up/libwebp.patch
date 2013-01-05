@@ -1,15 +1,15 @@
-diff -r c075f70f87aa configure.in
---- a/configure.in	Mon Nov 19 18:32:13 2012 -0500
-+++ b/configure.in	Tue Nov 27 21:45:21 2012 +0900
-@@ -4246,6 +4246,7 @@
- MOZ_SAMPLE_TYPE_S16=
+diff -r ba252f7d3be6 configure.in
+--- a/configure.in	Fri Nov 16 09:12:49 2012 -0500
++++ b/configure.in	Tue Dec 11 23:05:19 2012 +0900
+@@ -4147,6 +4147,7 @@
+ MOZ_SAMPLE_TYPE_S16LE=
  MOZ_MEDIA=
  MOZ_OPUS=1
 +MOZ_WEBP=1
  MOZ_WEBM=1
- MOZ_DASH=
  MOZ_WEBRTC=1
-@@ -5475,6 +5476,10 @@
+ MOZ_WEBRTC_SIGNALING=
+@@ -5334,6 +5335,10 @@
  AC_SUBST(MOZ_LIBVPX_CFLAGS)
  AC_SUBST(MOZ_LIBVPX_LIBS)
  
@@ -20,17 +20,17 @@ diff -r c075f70f87aa configure.in
  if test "$MOZ_WEBM"; then
      MOZ_SYDNEYAUDIO=1
      MOZ_CUBEB=1
-@@ -8651,6 +8656,7 @@
+@@ -8538,6 +8543,7 @@
  AC_SUBST(MOZ_TREMOR)
  AC_SUBST(MOZ_OPUS)
  AC_SUBST(MOZ_WEBM)
 +AC_SUBST(MOZ_WEBP)
- AC_SUBST(MOZ_DASH)
  AC_SUBST(MOZ_MEDIA_PLUGINS)
  AC_SUBST(MOZ_OMX_PLUGIN)
-diff -r c075f70f87aa image/build/nsImageModule.cpp
---- a/image/build/nsImageModule.cpp	Mon Nov 19 18:32:13 2012 -0500
-+++ b/image/build/nsImageModule.cpp	Tue Nov 27 21:45:21 2012 +0900
+ AC_SUBST(MOZ_VP8_ERROR_CONCEALMENT)
+diff -r ba252f7d3be6 image/build/nsImageModule.cpp
+--- a/image/build/nsImageModule.cpp	Fri Nov 16 09:12:49 2012 -0500
++++ b/image/build/nsImageModule.cpp	Tue Dec 11 23:05:19 2012 +0900
 @@ -88,6 +88,7 @@
    { "Gecko-Content-Viewers", "image/icon", "@mozilla.org/content/document-loader-factory;1" },
    { "Gecko-Content-Viewers", "image/png", "@mozilla.org/content/document-loader-factory;1" },
@@ -39,9 +39,9 @@ diff -r c075f70f87aa image/build/nsImageModule.cpp
    { "content-sniffing-services", "@mozilla.org/image/loader;1", "@mozilla.org/image/loader;1" },
    { NULL }
  };
-diff -r c075f70f87aa image/decoders/Makefile.in
---- a/image/decoders/Makefile.in	Mon Nov 19 18:32:13 2012 -0500
-+++ b/image/decoders/Makefile.in	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 image/decoders/Makefile.in
+--- a/image/decoders/Makefile.in	Fri Nov 16 09:12:49 2012 -0500
++++ b/image/decoders/Makefile.in	Tue Dec 11 23:05:19 2012 +0900
 @@ -19,6 +19,7 @@
  
  CPPSRCS = nsPNGDecoder.cpp nsJPEGDecoder.cpp nsGIFDecoder2.cpp \
@@ -55,9 +55,9 @@ diff -r c075f70f87aa image/decoders/Makefile.in
  
  include $(topsrcdir)/config/rules.mk
 -
-diff -r c075f70f87aa image/decoders/nsWEBPDecoder.cpp
+diff -r ba252f7d3be6 image/decoders/nsWEBPDecoder.cpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/image/decoders/nsWEBPDecoder.cpp	Tue Nov 27 21:45:21 2012 +0900
++++ b/image/decoders/nsWEBPDecoder.cpp	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,196 @@
 +/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
 + *
@@ -255,10 +255,10 @@ diff -r c075f70f87aa image/decoders/nsWEBPDecoder.cpp
 +
 +} // namespace imagelib
 +} // namespace mozilla
-diff -r c075f70f87aa image/decoders/nsWEBPDecoder.h
+diff -r ba252f7d3be6 image/decoders/nsWEBPDecoder.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/image/decoders/nsWEBPDecoder.h	Tue Nov 27 21:45:21 2012 +0900
-@@ -0,0 +1,80 @@
++++ b/image/decoders/nsWEBPDecoder.h	Tue Dec 11 23:05:19 2012 +0900
+@@ -0,0 +1,127 @@
 +/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
 + *
 + * ***** BEGIN LICENSE BLOCK *****
@@ -310,6 +310,53 @@ diff -r c075f70f87aa image/decoders/nsWEBPDecoder.h
 +#include "webp/decode.h"
 +}
 +
++/**
++ * Fast approximate division by 255. It has the property that
++ * for all 0 <= n <= 255*255, GFX_DIVIDE_BY_255(n) == n/255.
++ * But it only uses two adds and two shifts instead of an
++ * integer division (which is expensive on many processors).
++ *
++ * equivalent to ((v)/255)
++ */
++#define GFX_DIVIDE_BY_255(v)  \
++     (((((unsigned)(v)) << 8) + ((unsigned)(v)) + 255) >> 16)
++
++/**
++ * Fast premultiply
++ *
++ * equivalent to (((c)*(a))/255)
++ */
++uint8_t MOZ_ALWAYS_INLINE gfxPreMultiply(uint8_t c, uint8_t a) {
++    return GFX_DIVIDE_BY_255((c)*(a));
++}
++
++/**
++ * Pack the 4 8-bit channels (A,R,G,B)
++ * into a 32-bit packed NON-premultiplied pixel.
++ */
++uint32_t MOZ_ALWAYS_INLINE
++gfxPackedPixelNoPreMultiply(uint8_t a, uint8_t r, uint8_t g, uint8_t b) {
++    return (((a) << 24) | ((r) << 16) | ((g) << 8) | (b));
++}
++
++/**
++ * Pack the 4 8-bit channels (A,R,G,B)
++ * into a 32-bit packed premultiplied pixel.
++ */
++uint32_t MOZ_ALWAYS_INLINE
++gfxPackedPixel(uint8_t a, uint8_t r, uint8_t g, uint8_t b) {
++    if (a == 0x00)
++        return 0x00000000;
++    else if (a == 0xFF) {
++        return gfxPackedPixelNoPreMultiply(a, r, g, b);
++    } else {
++        return  ((a) << 24) |
++                (gfxPreMultiply(r,a) << 16) |
++                (gfxPreMultiply(g,a) << 8)  |
++                (gfxPreMultiply(b,a));
++    }
++}
++
 +namespace mozilla {
 +namespace image {
 +class RasterImage;
@@ -339,9 +386,9 @@ diff -r c075f70f87aa image/decoders/nsWEBPDecoder.h
 +} // namespace mozilla
 +
 +#endif // nsWEBPDecoder_h__
-diff -r c075f70f87aa image/src/Image.cpp
---- a/image/src/Image.cpp	Mon Nov 19 18:32:13 2012 -0500
-+++ b/image/src/Image.cpp	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 image/src/Image.cpp
+--- a/image/src/Image.cpp	Fri Nov 16 09:12:49 2012 -0500
++++ b/image/src/Image.cpp	Tue Dec 11 23:05:19 2012 +0900
 @@ -57,7 +57,6 @@
    else if (!strcmp(aMimeType, "image/gif"))
      rv = eDecoderType_gif;
@@ -361,9 +408,9 @@ diff -r c075f70f87aa image/src/Image.cpp
    // BMP
    else if (!strcmp(aMimeType, "image/bmp"))
      rv = eDecoderType_bmp;
-diff -r c075f70f87aa image/src/Image.h
---- a/image/src/Image.h	Mon Nov 19 18:32:13 2012 -0500
-+++ b/image/src/Image.h	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 image/src/Image.h
+--- a/image/src/Image.h	Fri Nov 16 09:12:49 2012 -0500
++++ b/image/src/Image.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -82,7 +82,8 @@
      eDecoderType_bmp     = 3,
      eDecoderType_ico     = 4,
@@ -374,9 +421,9 @@ diff -r c075f70f87aa image/src/Image.h
    };
    static eDecoderType GetDecoderType(const char *aMimeType);
  
-diff -r c075f70f87aa image/src/RasterImage.cpp
---- a/image/src/RasterImage.cpp	Mon Nov 19 18:32:13 2012 -0500
-+++ b/image/src/RasterImage.cpp	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 image/src/RasterImage.cpp
+--- a/image/src/RasterImage.cpp	Fri Nov 16 09:12:49 2012 -0500
++++ b/image/src/RasterImage.cpp	Tue Dec 11 23:05:19 2012 +0900
 @@ -23,6 +23,7 @@
  #include "nsPNGDecoder.h"
  #include "nsGIFDecoder2.h"
@@ -395,9 +442,9 @@ diff -r c075f70f87aa image/src/RasterImage.cpp
      case eDecoderType_bmp:
        mDecoder = new nsBMPDecoder(*this, observer);
        break;
-diff -r c075f70f87aa layout/media/Makefile.in
---- a/layout/media/Makefile.in	Mon Nov 19 18:32:13 2012 -0500
-+++ b/layout/media/Makefile.in	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 layout/media/Makefile.in
+--- a/layout/media/Makefile.in	Fri Nov 16 09:12:49 2012 -0500
++++ b/layout/media/Makefile.in	Tue Dec 11 23:05:19 2012 +0900
 @@ -105,6 +105,12 @@
  	$(NULL)
  endif
@@ -411,9 +458,9 @@ diff -r c075f70f87aa layout/media/Makefile.in
  SHARED_LIBRARY_LIBS 	+= \
  	$(DEPTH)/gfx/angle/$(LIB_PREFIX)angle.$(LIB_SUFFIX) \
  	$(DEPTH)/parser/expat/lib/$(LIB_PREFIX)mozexpat_s.$(LIB_SUFFIX) \
-diff -r c075f70f87aa layout/media/symbols.def.in
---- a/layout/media/symbols.def.in	Mon Nov 19 18:32:13 2012 -0500
-+++ b/layout/media/symbols.def.in	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 layout/media/symbols.def.in
+--- a/layout/media/symbols.def.in	Fri Nov 16 09:12:49 2012 -0500
++++ b/layout/media/symbols.def.in	Tue Dec 11 23:05:19 2012 +0900
 @@ -563,3 +563,88 @@
  hb_unicode_funcs_set_general_category_func
  hb_unicode_funcs_set_mirroring_func
@@ -503,9 +550,9 @@ diff -r c075f70f87aa layout/media/symbols.def.in
 +WebPDemuxPrevChunk
 +WebPDemuxReleaseChunkIterator
 +#endif
-diff -r c075f70f87aa media/libwebp/AUTHORS
+diff -r ba252f7d3be6 media/libwebp/AUTHORS
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/AUTHORS	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/AUTHORS	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,15 @@
 +Contributors:
 +- James Zern (jzern at google dot com)
@@ -522,9 +569,9 @@ diff -r c075f70f87aa media/libwebp/AUTHORS
 +- Somnath Banerjee (somnath dot banerjee at gmail dot com)
 +- Urvang Joshi (urvang at google dot com)
 +- Vikas Arora (vikasa at google dot com)
-diff -r c075f70f87aa media/libwebp/COPYING
+diff -r ba252f7d3be6 media/libwebp/COPYING
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/COPYING	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/COPYING	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,30 @@
 +Copyright (c) 2010, Google Inc. All rights reserved.
 +
@@ -556,9 +603,9 @@ diff -r c075f70f87aa media/libwebp/COPYING
 +(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 +OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 +
-diff -r c075f70f87aa media/libwebp/Makefile.in
+diff -r ba252f7d3be6 media/libwebp/Makefile.in
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/Makefile.in	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/Makefile.in	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,17 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -577,9 +624,9 @@ diff -r c075f70f87aa media/libwebp/Makefile.in
 +DIRS = src src/webp
 +
 +include $(topsrcdir)/config/rules.mk
-diff -r c075f70f87aa media/libwebp/PATENTS
+diff -r ba252f7d3be6 media/libwebp/PATENTS
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/PATENTS	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/PATENTS	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,22 @@
 +Additional IP Rights Grant (Patents)
 +
@@ -603,9 +650,9 @@ diff -r c075f70f87aa media/libwebp/PATENTS
 +infringement, or inducement of patent infringement, then any patent
 +rights granted to you under this License for this implementation of VP8
 +shall terminate as of the date such litigation is filed.
-diff -r c075f70f87aa media/libwebp/README
+diff -r ba252f7d3be6 media/libwebp/README
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/README	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/README	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,495 @@
 +          __   __  ____  ____  ____
 +         /  \\/  \/  _ \/  _ )/  _ \
@@ -1102,9 +1149,9 @@ diff -r c075f70f87aa media/libwebp/README
 +
 +Email: webp-discuss@webmproject.org
 +Web: http://groups.google.com/a/webmproject.org/group/webp-discuss
-diff -r c075f70f87aa media/libwebp/README.mux
+diff -r ba252f7d3be6 media/libwebp/README.mux
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/README.mux	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/README.mux	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,117 @@
 +﻿          __   __  ____  ____  ____  __ __  _     __ __
 +         /  \\/  \/  _ \/  _ \/  _ \/  \  \/ \___/_ / _\
@@ -1223,10 +1270,10 @@ diff -r c075f70f87aa media/libwebp/README.mux
 +
 +Email: webp-discuss@webmproject.org
 +Web: http://groups.google.com/a/webmproject.org/group/webp-discuss
-diff -r c075f70f87aa media/libwebp/src/Makefile.in
+diff -r ba252f7d3be6 media/libwebp/src/Makefile.in
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/Makefile.in	Tue Nov 27 21:45:21 2012 +0900
-@@ -0,0 +1,94 @@
++++ b/media/libwebp/src/Makefile.in	Tue Dec 11 23:05:19 2012 +0900
+@@ -0,0 +1,95 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1301,6 +1348,7 @@ diff -r c075f70f87aa media/libwebp/src/Makefile.in
 +  picture.c \
 +  quantenc.c \
 +  syntax.c \
++  token.c \
 +  tree_enc.c \
 +  vp8lenc.c \
 +  webpenc.c \
@@ -1321,9 +1369,9 @@ diff -r c075f70f87aa media/libwebp/src/Makefile.in
 +  $(NULL)
 +
 +include $(topsrcdir)/config/rules.mk
-diff -r c075f70f87aa media/libwebp/src/dec/alpha.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/alpha.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/alpha.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/alpha.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,140 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -1465,9 +1513,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/alpha.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/buffer.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/buffer.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/buffer.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/buffer.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,215 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -1684,9 +1732,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/buffer.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/decode_vp8.h
+diff -r ba252f7d3be6 media/libwebp/src/dec/decode_vp8.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/decode_vp8.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/decode_vp8.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,182 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -1870,9 +1918,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/decode_vp8.h
 +#endif
 +
 +#endif  /* WEBP_WEBP_DECODE_VP8_H_ */
-diff -r c075f70f87aa media/libwebp/src/dec/frame.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/frame.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/frame.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/frame.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,679 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -2553,9 +2601,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/frame.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/idec.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/idec.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/idec.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/idec.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,785 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -3342,9 +3390,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/idec.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/io.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/io.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/io.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/io.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,633 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -3979,9 +4027,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/io.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/layer.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/layer.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/layer.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/layer.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,35 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -4018,9 +4066,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/layer.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/quant.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/quant.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/quant.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/quant.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,113 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -4135,9 +4183,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/quant.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/tree.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/tree.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/tree.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/tree.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,589 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -4728,10 +4776,10 @@ diff -r c075f70f87aa media/libwebp/src/dec/tree.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/vp8.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/vp8.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/vp8.c	Tue Nov 27 21:45:21 2012 +0900
-@@ -0,0 +1,787 @@
++++ b/media/libwebp/src/dec/vp8.c	Tue Dec 11 23:05:19 2012 +0900
+@@ -0,0 +1,792 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
 +// This code is licensed under the same terms as WebM:
@@ -5192,7 +5240,7 @@ diff -r c075f70f87aa media/libwebp/src/dec/vp8.c
 +//------------------------------------------------------------------------------
 +// Residual decoding (Paragraph 13.2 / 13.3)
 +
-+static const uint8_t kBands[16 + 1] = {
++static const int kBands[16 + 1] = {
 +  0, 1, 2, 3, 6, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7,
 +  0  // extra entry as sentinel
 +};
@@ -5208,6 +5256,39 @@ diff -r c075f70f87aa media/libwebp/src/dec/vp8.c
 +};
 +
 +typedef const uint8_t (*ProbaArray)[NUM_CTX][NUM_PROBAS];  // for const-casting
++typedef const uint8_t (*ProbaCtxArray)[NUM_PROBAS];
++
++// See section 13-2: http://tools.ietf.org/html/rfc6386#section-13.2
++static int GetLargeValue(VP8BitReader* const br, const uint8_t* const p) {
++  int v;
++  if (!VP8GetBit(br, p[3])) {
++    if (!VP8GetBit(br, p[4])) {
++      v = 2;
++    } else {
++      v = 3 + VP8GetBit(br, p[5]);
++    }
++  } else {
++    if (!VP8GetBit(br, p[6])) {
++      if (!VP8GetBit(br, p[7])) {
++        v = 5 + VP8GetBit(br, 159);
++      } else {
++        v = 7 + 2 * VP8GetBit(br, 165);
++        v += VP8GetBit(br, 145);
++      }
++    } else {
++      const uint8_t* tab;
++      const int bit1 = VP8GetBit(br, p[8]);
++      const int bit0 = VP8GetBit(br, p[9 + bit1]);
++      const int cat = 2 * bit1 + bit0;
++      v = 0;
++      for (tab = kCat3456[cat]; *tab; ++tab) {
++        v += v + VP8GetBit(br, *tab);
++      }
++      v += 3 + (8 << cat);
++    }
++  }
++  return v;
++}
 +
 +// Returns the position of the last non-zero coeff plus one
 +// (and 0 if there's no coeff at all)
@@ -5218,54 +5299,26 @@ diff -r c075f70f87aa media/libwebp/src/dec/vp8.c
 +  if (!VP8GetBit(br, p[0])) {   // first EOB is more a 'CBP' bit.
 +    return 0;
 +  }
-+  while (1) {
-+    ++n;
++  for (; n < 16; ++n) {
++    const ProbaCtxArray p_ctx = prob[kBands[n + 1]];
 +    if (!VP8GetBit(br, p[1])) {
-+      p = prob[kBands[n]][0];
++      p = p_ctx[0];
 +    } else {  // non zero coeff
-+      int v, j;
++      int v;
 +      if (!VP8GetBit(br, p[2])) {
-+        p = prob[kBands[n]][1];
 +        v = 1;
++        p = p_ctx[1];
 +      } else {
-+        if (!VP8GetBit(br, p[3])) {
-+          if (!VP8GetBit(br, p[4])) {
-+            v = 2;
-+          } else {
-+            v = 3 + VP8GetBit(br, p[5]);
-+          }
-+        } else {
-+          if (!VP8GetBit(br, p[6])) {
-+            if (!VP8GetBit(br, p[7])) {
-+              v = 5 + VP8GetBit(br, 159);
-+            } else {
-+              v = 7 + 2 * VP8GetBit(br, 165);
-+              v += VP8GetBit(br, 145);
-+            }
-+          } else {
-+            const uint8_t* tab;
-+            const int bit1 = VP8GetBit(br, p[8]);
-+            const int bit0 = VP8GetBit(br, p[9 + bit1]);
-+            const int cat = 2 * bit1 + bit0;
-+            v = 0;
-+            for (tab = kCat3456[cat]; *tab; ++tab) {
-+              v += v + VP8GetBit(br, *tab);
-+            }
-+            v += 3 + (8 << cat);
-+          }
-+        }
-+        p = prob[kBands[n]][2];
++        v = GetLargeValue(br, p);
++        p = p_ctx[2];
 +      }
-+      j = kZigzag[n - 1];
-+      out[j] = VP8GetSigned(br, v) * dq[j > 0];
-+      if (n == 16 || !VP8GetBit(br, p[0])) {   // EOB
-+        return n;
++      out[kZigzag[n]] = VP8GetSigned(br, v) * dq[n > 0];
++      if (n < 15 && !VP8GetBit(br, p[0])) {   // EOB
++        return n + 1;
 +      }
-+    }
-+    if (n == 16) {
-+      return 16;
 +    }
 +  }
++  return 16;
 +}
 +
 +// Alias-safe way of converting 4bytes to 32bits.
@@ -5519,9 +5572,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/vp8.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/vp8i.h
+diff -r ba252f7d3be6 media/libwebp/src/dec/vp8i.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/vp8i.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/vp8i.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,335 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -5858,9 +5911,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/vp8i.h
 +#endif
 +
 +#endif  /* WEBP_DEC_VP8I_H_ */
-diff -r c075f70f87aa media/libwebp/src/dec/vp8l.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/vp8l.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/vp8l.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/vp8l.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,1200 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -7062,9 +7115,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/vp8l.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/vp8li.h
+diff -r ba252f7d3be6 media/libwebp/src/dec/vp8li.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/vp8li.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/vp8li.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,121 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -7187,9 +7240,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/vp8li.h
 +#endif
 +
 +#endif  /* WEBP_DEC_VP8LI_H_ */
-diff -r c075f70f87aa media/libwebp/src/dec/webp.c
+diff -r ba252f7d3be6 media/libwebp/src/dec/webp.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/webp.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/webp.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,777 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -7968,9 +8021,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/webp.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dec/webpi.h
+diff -r ba252f7d3be6 media/libwebp/src/dec/webpi.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dec/webpi.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dec/webpi.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,114 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -8086,9 +8139,9 @@ diff -r c075f70f87aa media/libwebp/src/dec/webpi.h
 +#endif
 +
 +#endif  /* WEBP_DEC_WEBPI_H_ */
-diff -r c075f70f87aa media/libwebp/src/demux/demux.c
+diff -r ba252f7d3be6 media/libwebp/src/demux/demux.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/demux/demux.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/demux/demux.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,902 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -8992,9 +9045,9 @@ diff -r c075f70f87aa media/libwebp/src/demux/demux.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}  // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/cpu.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/cpu.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/cpu.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/cpu.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,85 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -9081,9 +9134,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/cpu.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/dec.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/dec.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/dec.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/dec.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,732 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -9817,9 +9870,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/dec.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/dec_neon.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/dec_neon.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/dec_neon.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/dec_neon.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,405 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -10226,9 +10279,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/dec_neon.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/dec_sse2.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/dec_sse2.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/dec_sse2.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/dec_sse2.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,908 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -11138,9 +11191,915 @@ diff -r c075f70f87aa media/libwebp/src/dsp/dec_sse2.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/dsp.h
+diff -r ba252f7d3be6 media/libwebp/src/dsp/demux.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/dsp.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/demux.c	Tue Dec 11 23:05:19 2012 +0900
+@@ -0,0 +1,902 @@
++// Copyright 2012 Google Inc. All Rights Reserved.
++//
++// This code is licensed under the same terms as WebM:
++//  Software License Agreement:  http://www.webmproject.org/license/software/
++//  Additional IP Rights Grant:  http://www.webmproject.org/license/additional/
++// -----------------------------------------------------------------------------
++//
++//  WebP container demux.
++//
++
++#include <stdlib.h>
++#include <string.h>
++
++#include "../utils/utils.h"
++#include "../webp/decode.h"  // WebPGetInfo
++#include "../webp/demux.h"
++#include "../webp/format_constants.h"
++
++#if defined(__cplusplus) || defined(c_plusplus)
++extern "C" {
++#endif
++
++typedef struct {
++  uint32_t start_;        // start location of the data
++  uint32_t end_;          // end location
++  uint32_t riff_end_;     // riff chunk end location, can be > end_.
++  uint32_t buf_size_;     // size of the buffer
++  const uint8_t* buf_;
++} MemBuffer;
++
++typedef struct {
++  uint32_t offset_;
++  uint32_t size_;
++} ChunkData;
++
++typedef struct Frame {
++  int x_offset_, y_offset_;
++  int width_, height_;
++  int duration_;
++  WebPMuxAnimDispose dispose_method_;
++  int is_fragment_;  // this is a frame fragment (and not a full frame).
++  int frame_num_;  // the referent frame number for use in assembling fragments.
++  int complete_;   // img_components_ contains a full image.
++  ChunkData img_components_[2];  // 0=VP8{,L} 1=ALPH
++  struct Frame* next_;
++} Frame;
++
++typedef struct Chunk {
++  ChunkData data_;
++  struct Chunk* next_;
++} Chunk;
++
++struct WebPDemuxer {
++  MemBuffer mem_;
++  WebPDemuxState state_;
++  int is_ext_format_;
++  uint32_t feature_flags_;
++  int canvas_width_, canvas_height_;
++  int loop_count_;
++  uint32_t bgcolor_;
++  int num_frames_;
++  Frame* frames_;
++  Chunk* chunks_;  // non-image chunks
++};
++
++typedef enum {
++  PARSE_OK,
++  PARSE_NEED_MORE_DATA,
++  PARSE_ERROR
++} ParseStatus;
++
++typedef struct ChunkParser {
++  uint8_t id[4];
++  ParseStatus (*parse)(WebPDemuxer* const dmux);
++  int (*valid)(const WebPDemuxer* const dmux);
++} ChunkParser;
++
++static ParseStatus ParseSingleImage(WebPDemuxer* const dmux);
++static ParseStatus ParseVP8X(WebPDemuxer* const dmux);
++static int IsValidSimpleFormat(const WebPDemuxer* const dmux);
++static int IsValidExtendedFormat(const WebPDemuxer* const dmux);
++
++static const ChunkParser kMasterChunks[] = {
++  { { 'V', 'P', '8', ' ' }, ParseSingleImage, IsValidSimpleFormat },
++  { { 'V', 'P', '8', 'L' }, ParseSingleImage, IsValidSimpleFormat },
++  { { 'V', 'P', '8', 'X' }, ParseVP8X,        IsValidExtendedFormat },
++  { { '0', '0', '0', '0' }, NULL,             NULL },
++};
++
++// -----------------------------------------------------------------------------
++// MemBuffer
++
++static int RemapMemBuffer(MemBuffer* const mem,
++                          const uint8_t* data, uint32_t size) {
++  if (size < mem->buf_size_) return 0;  // can't remap to a shorter buffer!
++
++  mem->buf_ = data;
++  mem->end_ = mem->buf_size_ = size;
++  return 1;
++}
++
++static int InitMemBuffer(MemBuffer* const mem,
++                         const uint8_t* data, uint32_t size) {
++  memset(mem, 0, sizeof(*mem));
++  return RemapMemBuffer(mem, data, size);
++}
++
++// Return the remaining data size available in 'mem'.
++static WEBP_INLINE uint32_t MemDataSize(const MemBuffer* const mem) {
++  return (mem->end_ - mem->start_);
++}
++
++// Return true if 'size' exceeds the end of the RIFF chunk.
++static WEBP_INLINE int SizeIsInvalid(const MemBuffer* const mem, uint32_t size) {
++  return (size > mem->riff_end_ - mem->start_);
++}
++
++static WEBP_INLINE void Skip(MemBuffer* const mem, uint32_t size) {
++  mem->start_ += size;
++}
++
++static WEBP_INLINE void Rewind(MemBuffer* const mem, uint32_t size) {
++  mem->start_ -= size;
++}
++
++static WEBP_INLINE const uint8_t* GetBuffer(MemBuffer* const mem) {
++  return mem->buf_ + mem->start_;
++}
++
++// Read from 'mem' and skip the read bytes.
++static WEBP_INLINE uint8_t ReadByte(MemBuffer* const mem) {
++  const uint8_t byte = mem->buf_[mem->start_];
++  Skip(mem, 1);
++  return byte;
++}
++
++static WEBP_INLINE int ReadLE16s(MemBuffer* const mem) {
++  const uint8_t* const data = mem->buf_ + mem->start_;
++  const int val = GetLE16(data);
++  Skip(mem, 2);
++  return val;
++}
++
++static WEBP_INLINE int ReadLE24s(MemBuffer* const mem) {
++  const uint8_t* const data = mem->buf_ + mem->start_;
++  const int val = GetLE24(data);
++  Skip(mem, 3);
++  return val;
++}
++
++static WEBP_INLINE uint32_t ReadLE32(MemBuffer* const mem) {
++  const uint8_t* const data = mem->buf_ + mem->start_;
++  const uint32_t val = GetLE32(data);
++  Skip(mem, 4);
++  return val;
++}
++
++// -----------------------------------------------------------------------------
++// Secondary chunk parsing
++
++static void AddChunk(WebPDemuxer* const dmux, Chunk* const chunk) {
++  Chunk** c = &dmux->chunks_;
++  while (*c != NULL) c = &(*c)->next_;
++  *c = chunk;
++  chunk->next_ = NULL;
++}
++
++// Add a frame to the end of the list, ensuring the last frame is complete.
++// Returns true on success, false otherwise.
++static int AddFrame(WebPDemuxer* const dmux, Frame* const frame) {
++  const Frame* last_frame = NULL;
++  Frame** f = &dmux->frames_;
++  while (*f != NULL) {
++    last_frame = *f;
++    f = &(*f)->next_;
++  }
++  if (last_frame != NULL && !last_frame->complete_) return 0;
++  *f = frame;
++  frame->next_ = NULL;
++  return 1;
++}
++
++// Store image bearing chunks to 'frame'.
++static ParseStatus StoreFrame(int frame_num, uint32_t min_size,
++                              MemBuffer* const mem, Frame* const frame) {
++  int alpha_chunks = 0;
++  int image_chunks = 0;
++  int done = (MemDataSize(mem) < min_size);
++  ParseStatus status = PARSE_OK;
++
++  if (done) return PARSE_NEED_MORE_DATA;
++
++  do {
++    const uint32_t chunk_start_offset = mem->start_;
++    const uint32_t fourcc = ReadLE32(mem);
++    const uint32_t payload_size = ReadLE32(mem);
++    const uint32_t payload_size_padded = payload_size + (payload_size & 1);
++    const uint32_t payload_available = (payload_size_padded > MemDataSize(mem))
++                                   ? MemDataSize(mem) : payload_size_padded;
++    const uint32_t chunk_size = CHUNK_HEADER_SIZE + payload_available;
++
++    if (payload_size > MAX_CHUNK_PAYLOAD) return PARSE_ERROR;
++    if (SizeIsInvalid(mem, payload_size_padded)) return PARSE_ERROR;
++    if (payload_size_padded > MemDataSize(mem)) status = PARSE_NEED_MORE_DATA;
++
++    switch (fourcc) {
++      case MKFOURCC('A', 'L', 'P', 'H'):
++        if (alpha_chunks == 0) {
++          ++alpha_chunks;
++          frame->img_components_[1].offset_ = chunk_start_offset;
++          frame->img_components_[1].size_ = chunk_size;
++          frame->frame_num_ = frame_num;
++          Skip(mem, payload_available);
++        } else {
++          goto Done;
++        }
++        break;
++      case MKFOURCC('V', 'P', '8', ' '):
++      case MKFOURCC('V', 'P', '8', 'L'):
++        if (image_chunks == 0) {
++          int width = 0, height = 0;
++          ++image_chunks;
++          frame->img_components_[0].offset_ = chunk_start_offset;
++          frame->img_components_[0].size_ = chunk_size;
++          // Extract the width and height from the bitstream, tolerating
++          // failures when the data is incomplete.
++          if (!WebPGetInfo(mem->buf_ + frame->img_components_[0].offset_,
++                           frame->img_components_[0].size_, &width, &height) &&
++              status != PARSE_NEED_MORE_DATA) {
++            return PARSE_ERROR;
++          }
++
++          frame->width_ = width;
++          frame->height_ = height;
++          frame->frame_num_ = frame_num;
++          frame->complete_ = (status == PARSE_OK);
++          Skip(mem, payload_available);
++        } else {
++          goto Done;
++        }
++        break;
++ Done:
++      default:
++        // Restore fourcc/size when moving up one level in parsing.
++        Rewind(mem, CHUNK_HEADER_SIZE);
++        done = 1;
++        break;
++    }
++
++    if (mem->start_ == mem->riff_end_) {
++      done = 1;
++    } else if (MemDataSize(mem) < CHUNK_HEADER_SIZE) {
++      status = PARSE_NEED_MORE_DATA;
++    }
++  } while (!done && status == PARSE_OK);
++
++  return status;
++}
++
++// Creates a new Frame if 'actual_size' is within bounds and 'mem' contains
++// enough data ('min_size') to parse the payload.
++// Returns PARSE_OK on success with *frame pointing to the new Frame.
++// Returns PARSE_NEED_MORE_DATA with insufficient data, PARSE_ERROR otherwise.
++static ParseStatus NewFrame(const MemBuffer* const mem,
++                            uint32_t min_size, uint32_t actual_size,
++                            Frame** frame) {
++  if (SizeIsInvalid(mem, min_size)) return PARSE_ERROR;
++  if (actual_size < min_size) return PARSE_ERROR;
++  if (MemDataSize(mem) < min_size)  return PARSE_NEED_MORE_DATA;
++
++  *frame = (Frame*)calloc(1, sizeof(**frame));
++  return (*frame == NULL) ? PARSE_ERROR : PARSE_OK;
++}
++
++// Parse a 'ANMF' chunk and any image bearing chunks that immediately follow.
++// 'frame_chunk_size' is the previously validated, padded chunk size.
++static ParseStatus ParseFrame(
++    WebPDemuxer* const dmux, uint32_t frame_chunk_size) {
++  const int has_frames = !!(dmux->feature_flags_ & ANIMATION_FLAG);
++  const uint32_t anmf_payload_size = frame_chunk_size - ANMF_CHUNK_SIZE;
++  int added_frame = 0;
++  MemBuffer* const mem = &dmux->mem_;
++  Frame* frame;
++  ParseStatus status =
++      NewFrame(mem, ANMF_CHUNK_SIZE, frame_chunk_size, &frame);
++  if (status != PARSE_OK) return status;
++
++  frame->x_offset_       = 2 * ReadLE24s(mem);
++  frame->y_offset_       = 2 * ReadLE24s(mem);
++  frame->width_          = 1 + ReadLE24s(mem);
++  frame->height_         = 1 + ReadLE24s(mem);
++  frame->duration_       = ReadLE24s(mem);
++  frame->dispose_method_ = (WebPMuxAnimDispose)(ReadByte(mem) & 1);
++  if (frame->width_ * (uint64_t)frame->height_ >= MAX_IMAGE_AREA) {
++    return PARSE_ERROR;
++  }
++
++  // Store a frame only if the animation flag is set and all data for this frame
++  // is available.
++  status = StoreFrame(dmux->num_frames_ + 1, anmf_payload_size, mem, frame);
++  if (status != PARSE_ERROR && has_frames && frame->frame_num_ > 0) {
++    added_frame = AddFrame(dmux, frame);
++    if (added_frame) {
++      ++dmux->num_frames_;
++    } else {
++      status = PARSE_ERROR;
++    }
++  }
++
++  if (!added_frame) free(frame);
++  return status;
++}
++
++// Parse a 'FRGM' chunk and any image bearing chunks that immediately follow.
++// 'fragment_chunk_size' is the previously validated, padded chunk size.
++static ParseStatus ParseFragment(WebPDemuxer* const dmux,
++                                 uint32_t fragment_chunk_size) {
++  const int has_fragments = !!(dmux->feature_flags_ & FRAGMENTS_FLAG);
++  const uint32_t frgm_payload_size = fragment_chunk_size - FRGM_CHUNK_SIZE;
++  int added_fragment = 0;
++  MemBuffer* const mem = &dmux->mem_;
++  Frame* frame;
++  ParseStatus status =
++      NewFrame(mem, FRGM_CHUNK_SIZE, fragment_chunk_size, &frame);
++  if (status != PARSE_OK) return status;
++
++  frame->is_fragment_  = 1;
++  frame->x_offset_ = 2 * ReadLE24s(mem);
++  frame->y_offset_ = 2 * ReadLE24s(mem);
++
++  // Store a fragment only if the fragments flag is set and all data for this
++  // fragment is available.
++  status = StoreFrame(dmux->num_frames_, frgm_payload_size, mem, frame);
++  if (status != PARSE_ERROR && has_fragments && frame->frame_num_ > 0) {
++    // Note num_frames_ is incremented only when all fragments have been
++    // consumed.
++    added_fragment = AddFrame(dmux, frame);
++    if (!added_fragment) status = PARSE_ERROR;
++  }
++
++  if (!added_fragment) free(frame);
++  return status;
++}
++
++// General chunk storage starting with the header at 'start_offset' allowing
++// the user to request the payload via a fourcc string. 'size' includes the
++// header and the unpadded payload size.
++// Returns true on success, false otherwise.
++static int StoreChunk(WebPDemuxer* const dmux,
++                      uint32_t start_offset, uint32_t size) {
++  Chunk* const chunk = (Chunk*)calloc(1, sizeof(*chunk));
++  if (chunk == NULL) return 0;
++
++  chunk->data_.offset_ = start_offset;
++  chunk->data_.size_ = size;
++  AddChunk(dmux, chunk);
++  return 1;
++}
++
++// -----------------------------------------------------------------------------
++// Primary chunk parsing
++
++static int ReadHeader(MemBuffer* const mem) {
++  const uint32_t min_size = RIFF_HEADER_SIZE + CHUNK_HEADER_SIZE;
++  uint32_t riff_size;
++
++  // Basic file level validation.
++  if (MemDataSize(mem) < min_size) return 0;
++  if (memcmp(GetBuffer(mem), "RIFF", CHUNK_SIZE_BYTES) ||
++      memcmp(GetBuffer(mem) + CHUNK_HEADER_SIZE, "WEBP", CHUNK_SIZE_BYTES)) {
++    return 0;
++  }
++
++  riff_size = GetLE32(GetBuffer(mem) + TAG_SIZE);
++  if (riff_size < CHUNK_HEADER_SIZE) return 0;
++  if (riff_size > MAX_CHUNK_PAYLOAD) return 0;
++
++  // There's no point in reading past the end of the RIFF chunk
++  mem->riff_end_ = riff_size + CHUNK_HEADER_SIZE;
++  if (mem->buf_size_ > mem->riff_end_) {
++    mem->buf_size_ = mem->end_ = mem->riff_end_;
++  }
++
++  Skip(mem, RIFF_HEADER_SIZE);
++  return 1;
++}
++
++static ParseStatus ParseSingleImage(WebPDemuxer* const dmux) {
++  const uint32_t min_size = CHUNK_HEADER_SIZE;
++  MemBuffer* const mem = &dmux->mem_;
++  Frame* frame;
++  ParseStatus status;
++
++  if (dmux->frames_ != NULL) return PARSE_ERROR;
++  if (SizeIsInvalid(mem, min_size)) return PARSE_ERROR;
++  if (MemDataSize(mem) < min_size) return PARSE_NEED_MORE_DATA;
++
++  frame = (Frame*)calloc(1, sizeof(*frame));
++  if (frame == NULL) return PARSE_ERROR;
++
++  // For the single image case, we allow parsing of a partial frame. But we need
++  // at least CHUNK_HEADER_SIZE for parsing.
++  status = StoreFrame(1, CHUNK_HEADER_SIZE, &dmux->mem_, frame);
++  if (status != PARSE_ERROR) {
++    const int has_alpha = !!(dmux->feature_flags_ & ALPHA_FLAG);
++    // Clear any alpha when the alpha flag is missing.
++    if (!has_alpha && frame->img_components_[1].size_ > 0) {
++      frame->img_components_[1].offset_ = 0;
++      frame->img_components_[1].size_ = 0;
++    }
++
++    // Use the frame width/height as the canvas values for non-vp8x files.
++    if (!dmux->is_ext_format_ && frame->width_ > 0 && frame->height_ > 0) {
++      dmux->state_ = WEBP_DEMUX_PARSED_HEADER;
++      dmux->canvas_width_ = frame->width_;
++      dmux->canvas_height_ = frame->height_;
++    }
++    AddFrame(dmux, frame);
++    dmux->num_frames_ = 1;
++  } else {
++    free(frame);
++  }
++
++  return status;
++}
++
++static ParseStatus ParseVP8X(WebPDemuxer* const dmux) {
++  MemBuffer* const mem = &dmux->mem_;
++  int anim_chunks = 0;
++  uint32_t vp8x_size;
++  ParseStatus status = PARSE_OK;
++
++  if (MemDataSize(mem) < CHUNK_HEADER_SIZE) return PARSE_NEED_MORE_DATA;
++
++  dmux->is_ext_format_ = 1;
++  Skip(mem, TAG_SIZE);  // VP8X
++  vp8x_size = ReadLE32(mem);
++  if (vp8x_size > MAX_CHUNK_PAYLOAD) return PARSE_ERROR;
++  if (vp8x_size < VP8X_CHUNK_SIZE) return PARSE_ERROR;
++  vp8x_size += vp8x_size & 1;
++  if (SizeIsInvalid(mem, vp8x_size)) return PARSE_ERROR;
++  if (MemDataSize(mem) < vp8x_size) return PARSE_NEED_MORE_DATA;
++
++  dmux->feature_flags_ = ReadByte(mem);
++  Skip(mem, 3);  // Reserved.
++  dmux->canvas_width_  = 1 + ReadLE24s(mem);
++  dmux->canvas_height_ = 1 + ReadLE24s(mem);
++  if (dmux->canvas_width_ * (uint64_t)dmux->canvas_height_ >= MAX_IMAGE_AREA) {
++    return PARSE_ERROR;  // image final dimension is too large
++  }
++  Skip(mem, vp8x_size - VP8X_CHUNK_SIZE);  // skip any trailing data.
++  dmux->state_ = WEBP_DEMUX_PARSED_HEADER;
++
++  if (SizeIsInvalid(mem, CHUNK_HEADER_SIZE)) return PARSE_ERROR;
++  if (MemDataSize(mem) < CHUNK_HEADER_SIZE) return PARSE_NEED_MORE_DATA;
++
++  do {
++    int store_chunk = 1;
++    const uint32_t chunk_start_offset = mem->start_;
++    const uint32_t fourcc = ReadLE32(mem);
++    const uint32_t chunk_size = ReadLE32(mem);
++    const uint32_t chunk_size_padded = chunk_size + (chunk_size & 1);
++
++    if (chunk_size > MAX_CHUNK_PAYLOAD) return PARSE_ERROR;
++    if (SizeIsInvalid(mem, chunk_size_padded)) return PARSE_ERROR;
++
++    switch (fourcc) {
++      case MKFOURCC('V', 'P', '8', 'X'): {
++        return PARSE_ERROR;
++      }
++      case MKFOURCC('A', 'L', 'P', 'H'):
++      case MKFOURCC('V', 'P', '8', ' '):
++      case MKFOURCC('V', 'P', '8', 'L'): {
++        Rewind(mem, CHUNK_HEADER_SIZE);
++        status = ParseSingleImage(dmux);
++        break;
++      }
++      case MKFOURCC('A', 'N', 'I', 'M'): {
++        if (chunk_size_padded < ANIM_CHUNK_SIZE) return PARSE_ERROR;
++
++        if (MemDataSize(mem) < chunk_size_padded) {
++          status = PARSE_NEED_MORE_DATA;
++        } else if (anim_chunks == 0) {
++          ++anim_chunks;
++          dmux->bgcolor_ = ReadLE32(mem);
++          dmux->loop_count_ = ReadLE16s(mem);
++          Skip(mem, chunk_size_padded - ANIM_CHUNK_SIZE);
++        } else {
++          store_chunk = 0;
++          goto Skip;
++        }
++        break;
++      }
++      case MKFOURCC('A', 'N', 'M', 'F'): {
++        status = ParseFrame(dmux, chunk_size_padded);
++        break;
++      }
++      case MKFOURCC('F', 'R', 'G', 'M'): {
++        if (dmux->num_frames_ == 0) dmux->num_frames_ = 1;
++        status = ParseFragment(dmux, chunk_size_padded);
++        break;
++      }
++      case MKFOURCC('I', 'C', 'C', 'P'): {
++        store_chunk = !!(dmux->feature_flags_ & ICCP_FLAG);
++        goto Skip;
++      }
++      case MKFOURCC('X', 'M', 'P', ' '): {
++        store_chunk = !!(dmux->feature_flags_ & XMP_FLAG);
++        goto Skip;
++      }
++      case MKFOURCC('E', 'X', 'I', 'F'): {
++        store_chunk = !!(dmux->feature_flags_ & EXIF_FLAG);
++        goto Skip;
++      }
++ Skip:
++      default: {
++        if (chunk_size_padded <= MemDataSize(mem)) {
++          if (store_chunk) {
++            // Store only the chunk header and unpadded size as only the payload
++            // will be returned to the user.
++            if (!StoreChunk(dmux, chunk_start_offset,
++                            CHUNK_HEADER_SIZE + chunk_size)) {
++              return PARSE_ERROR;
++            }
++          }
++          Skip(mem, chunk_size_padded);
++        } else {
++          status = PARSE_NEED_MORE_DATA;
++        }
++      }
++    }
++
++    if (mem->start_ == mem->riff_end_) {
++      break;
++    } else if (MemDataSize(mem) < CHUNK_HEADER_SIZE) {
++      status = PARSE_NEED_MORE_DATA;
++    }
++  } while (status == PARSE_OK);
++
++  return status;
++}
++
++// -----------------------------------------------------------------------------
++// Format validation
++
++static int IsValidSimpleFormat(const WebPDemuxer* const dmux) {
++  const Frame* const frame = dmux->frames_;
++  if (dmux->state_ == WEBP_DEMUX_PARSING_HEADER) return 1;
++
++  if (dmux->canvas_width_ <= 0 || dmux->canvas_height_ <= 0) return 0;
++  if (dmux->state_ == WEBP_DEMUX_DONE && frame == NULL) return 0;
++
++  if (frame->width_ <= 0 || frame->height_ <= 0) return 0;
++  return 1;
++}
++
++static int IsValidExtendedFormat(const WebPDemuxer* const dmux) {
++  const int has_fragments = !!(dmux->feature_flags_ & FRAGMENTS_FLAG);
++  const int has_frames = !!(dmux->feature_flags_ & ANIMATION_FLAG);
++  const Frame* f;
++
++  if (dmux->state_ == WEBP_DEMUX_PARSING_HEADER) return 1;
++
++  if (dmux->canvas_width_ <= 0 || dmux->canvas_height_ <= 0) return 0;
++  if (dmux->loop_count_ < 0) return 0;
++  if (dmux->state_ == WEBP_DEMUX_DONE && dmux->frames_ == NULL) return 0;
++
++  for (f = dmux->frames_; f != NULL; f = f->next_) {
++    const int cur_frame_set = f->frame_num_;
++    int frame_count = 0, fragment_count = 0;
++
++    // Check frame properties and if the image is composed of fragments that
++    // each fragment came from a fragment.
++    for (; f != NULL && f->frame_num_ == cur_frame_set; f = f->next_) {
++      const ChunkData* const image = f->img_components_;
++      const ChunkData* const alpha = f->img_components_ + 1;
++
++      if (!has_fragments && f->is_fragment_) return 0;
++      if (!has_frames && f->frame_num_ > 1) return 0;
++      if (f->x_offset_ < 0 || f->y_offset_ < 0) return 0;
++      if (f->complete_) {
++        if (alpha->size_ == 0 && image->size_ == 0) return 0;
++        // Ensure alpha precedes image bitstream.
++        if (alpha->size_ > 0 && alpha->offset_ > image->offset_) {
++          return 0;
++        }
++
++        if (f->width_ <= 0 || f->height_ <= 0) return 0;
++      } else {
++        // Ensure alpha precedes image bitstream.
++        if (alpha->size_ > 0 && image->size_ > 0 &&
++            alpha->offset_ > image->offset_) {
++          return 0;
++        }
++        // There shouldn't be any frames after an incomplete one.
++        if (f->next_ != NULL) return 0;
++      }
++
++      fragment_count += f->is_fragment_;
++      ++frame_count;
++    }
++    if (!has_fragments && frame_count > 1) return 0;
++    if (fragment_count > 0 && frame_count != fragment_count) return 0;
++    if (f == NULL) break;
++  }
++  return 1;
++}
++
++// -----------------------------------------------------------------------------
++// WebPDemuxer object
++
++static void InitDemux(WebPDemuxer* const dmux, const MemBuffer* const mem) {
++  dmux->state_ = WEBP_DEMUX_PARSING_HEADER;
++  dmux->loop_count_ = 1;
++  dmux->bgcolor_ = 0xFFFFFFFF;  // White background by default.
++  dmux->canvas_width_ = -1;
++  dmux->canvas_height_ = -1;
++  dmux->mem_ = *mem;
++}
++
++WebPDemuxer* WebPDemuxInternal(const WebPData* data, int allow_partial,
++                               WebPDemuxState* state, int version) {
++  const ChunkParser* parser;
++  int partial;
++  ParseStatus status = PARSE_ERROR;
++  MemBuffer mem;
++  WebPDemuxer* dmux;
++
++  if (WEBP_ABI_IS_INCOMPATIBLE(version, WEBP_DEMUX_ABI_VERSION)) return NULL;
++  if (data == NULL || data->bytes == NULL || data->size == 0) return NULL;
++
++  if (!InitMemBuffer(&mem, data->bytes, data->size)) return NULL;
++  if (!ReadHeader(&mem)) return NULL;
++
++  partial = (mem.buf_size_ < mem.riff_end_);
++  if (!allow_partial && partial) return NULL;
++
++  dmux = (WebPDemuxer*)calloc(1, sizeof(*dmux));
++  if (dmux == NULL) return NULL;
++  InitDemux(dmux, &mem);
++
++  for (parser = kMasterChunks; parser->parse != NULL; ++parser) {
++    if (!memcmp(parser->id, GetBuffer(&dmux->mem_), TAG_SIZE)) {
++      status = parser->parse(dmux);
++      if (status == PARSE_OK) dmux->state_ = WEBP_DEMUX_DONE;
++      if (status != PARSE_ERROR && !parser->valid(dmux)) status = PARSE_ERROR;
++      break;
++    }
++  }
++  if (state) *state = dmux->state_;
++
++  if (status == PARSE_ERROR) {
++    WebPDemuxDelete(dmux);
++    return NULL;
++  }
++  return dmux;
++}
++
++void WebPDemuxDelete(WebPDemuxer* dmux) {
++  Chunk* c;
++  Frame* f;
++  if (dmux == NULL) return;
++
++  for (f = dmux->frames_; f != NULL;) {
++    Frame* const cur_frame = f;
++    f = f->next_;
++    free(cur_frame);
++  }
++  for (c = dmux->chunks_; c != NULL;) {
++    Chunk* const cur_chunk = c;
++    c = c->next_;
++    free(cur_chunk);
++  }
++  free(dmux);
++}
++
++// -----------------------------------------------------------------------------
++
++uint32_t WebPDemuxGetI(const WebPDemuxer* dmux, WebPFormatFeature feature) {
++  if (dmux == NULL) return 0;
++
++  switch (feature) {
++    case WEBP_FF_FORMAT_FLAGS:     return dmux->feature_flags_;
++    case WEBP_FF_CANVAS_WIDTH:     return (uint32_t)dmux->canvas_width_;
++    case WEBP_FF_CANVAS_HEIGHT:    return (uint32_t)dmux->canvas_height_;
++    case WEBP_FF_LOOP_COUNT:       return (uint32_t)dmux->loop_count_;
++    case WEBP_FF_BACKGROUND_COLOR: return dmux->bgcolor_;
++  }
++  return 0;
++}
++
++// -----------------------------------------------------------------------------
++// Frame iteration
++
++// Find the first 'frame_num' frame. There may be multiple such frames in a
++// fragmented frame.
++static const Frame* GetFrame(const WebPDemuxer* const dmux, int frame_num) {
++  const Frame* f;
++  for (f = dmux->frames_; f != NULL; f = f->next_) {
++    if (frame_num == f->frame_num_) break;
++  }
++  return f;
++}
++
++// Returns fragment 'fragment_num' and the total count.
++static const Frame* GetFragment(
++    const Frame* const frame_set, int fragment_num, int* const count) {
++  const int this_frame = frame_set->frame_num_;
++  const Frame* f = frame_set;
++  const Frame* fragment = NULL;
++  int total;
++
++  for (total = 0; f != NULL && f->frame_num_ == this_frame; f = f->next_) {
++    if (++total == fragment_num) fragment = f;
++  }
++  *count = total;
++  return fragment;
++}
++
++static const uint8_t* GetFramePayload(const uint8_t* const mem_buf,
++                                      const Frame* const frame,
++                                      uint32_t* const data_size) {
++  *data_size = 0;
++  if (frame != NULL) {
++    const ChunkData* const image = frame->img_components_;
++    const ChunkData* const alpha = frame->img_components_ + 1;
++    uint32_t start_offset = image->offset_;
++    *data_size = image->size_;
++
++    // if alpha exists it precedes image, update the size allowing for
++    // intervening chunks.
++    if (alpha->size_ > 0) {
++      const uint32_t inter_size = (image->offset_ > 0)
++                              ? image->offset_ - (alpha->offset_ + alpha->size_)
++                              : 0;
++      start_offset = alpha->offset_;
++      *data_size  += alpha->size_ + inter_size;
++    }
++    return mem_buf + start_offset;
++  }
++  return NULL;
++}
++
++// Create a whole 'frame' from VP8 (+ alpha) or lossless.
++static int SynthesizeFrame(const WebPDemuxer* const dmux,
++                           const Frame* const first_frame,
++                           int fragment_num, WebPIterator* const iter) {
++  const uint8_t* const mem_buf = dmux->mem_.buf_;
++  int num_fragments;
++  uint32_t payload_size = 0;
++  const Frame* const fragment =
++      GetFragment(first_frame, fragment_num, &num_fragments);
++  const uint8_t* const payload =
++      GetFramePayload(mem_buf, fragment, &payload_size);
++  if (payload == NULL) return 0;
++
++  iter->frame_num      = first_frame->frame_num_;
++  iter->num_frames     = dmux->num_frames_;
++  iter->fragment_num   = fragment_num;
++  iter->num_fragments  = num_fragments;
++  iter->x_offset       = fragment->x_offset_;
++  iter->y_offset       = fragment->y_offset_;
++  iter->width          = fragment->width_;
++  iter->height         = fragment->height_;
++  iter->duration       = fragment->duration_;
++  iter->dispose_method = fragment->dispose_method_;
++  iter->complete       = fragment->complete_;
++  iter->fragment.bytes = payload;
++  iter->fragment.size  = payload_size;
++  // TODO(jzern): adjust offsets for 'FRGM's embedded in 'ANMF's
++  return 1;
++}
++
++static int SetFrame(int frame_num, WebPIterator* const iter) {
++  const Frame* frame;
++  const WebPDemuxer* const dmux = (WebPDemuxer*)iter->private_;
++  if (dmux == NULL || frame_num < 0) return 0;
++  if (frame_num > dmux->num_frames_) return 0;
++  if (frame_num == 0) frame_num = dmux->num_frames_;
++
++  frame = GetFrame(dmux, frame_num);
++  return SynthesizeFrame(dmux, frame, 1, iter);
++}
++
++int WebPDemuxGetFrame(const WebPDemuxer* dmux, int frame, WebPIterator* iter) {
++  if (iter == NULL) return 0;
++
++  memset(iter, 0, sizeof(*iter));
++  iter->private_ = (void*)dmux;
++  return SetFrame(frame, iter);
++}
++
++int WebPDemuxNextFrame(WebPIterator* iter) {
++  if (iter == NULL) return 0;
++  return SetFrame(iter->frame_num + 1, iter);
++}
++
++int WebPDemuxPrevFrame(WebPIterator* iter) {
++  if (iter == NULL) return 0;
++  if (iter->frame_num <= 1) return 0;
++  return SetFrame(iter->frame_num - 1, iter);
++}
++
++int WebPDemuxSelectFragment(WebPIterator* iter, int fragment_num) {
++  if (iter != NULL && iter->private_ != NULL && fragment_num > 0) {
++    const WebPDemuxer* const dmux = (WebPDemuxer*)iter->private_;
++    const Frame* const frame = GetFrame(dmux, iter->frame_num);
++    if (frame == NULL) return 0;
++
++    return SynthesizeFrame(dmux, frame, fragment_num, iter);
++  }
++  return 0;
++}
++
++void WebPDemuxReleaseIterator(WebPIterator* iter) {
++  (void)iter;
++}
++
++// -----------------------------------------------------------------------------
++// Chunk iteration
++
++static int ChunkCount(const WebPDemuxer* const dmux, const char fourcc[4]) {
++  const uint8_t* const mem_buf = dmux->mem_.buf_;
++  const Chunk* c;
++  int count = 0;
++  for (c = dmux->chunks_; c != NULL; c = c->next_) {
++    const uint8_t* const header = mem_buf + c->data_.offset_;
++    if (!memcmp(header, fourcc, TAG_SIZE)) ++count;
++  }
++  return count;
++}
++
++static const Chunk* GetChunk(const WebPDemuxer* const dmux,
++                             const char fourcc[4], int chunk_num) {
++  const uint8_t* const mem_buf = dmux->mem_.buf_;
++  const Chunk* c;
++  int count = 0;
++  for (c = dmux->chunks_; c != NULL; c = c->next_) {
++    const uint8_t* const header = mem_buf + c->data_.offset_;
++    if (!memcmp(header, fourcc, TAG_SIZE)) ++count;
++    if (count == chunk_num) break;
++  }
++  return c;
++}
++
++static int SetChunk(const char fourcc[4], int chunk_num,
++                    WebPChunkIterator* const iter) {
++  const WebPDemuxer* const dmux = (WebPDemuxer*)iter->private_;
++  int count;
++
++  if (dmux == NULL || fourcc == NULL || chunk_num < 0) return 0;
++  count = ChunkCount(dmux, fourcc);
++  if (count == 0) return 0;
++  if (chunk_num == 0) chunk_num = count;
++
++  if (chunk_num <= count) {
++    const uint8_t* const mem_buf = dmux->mem_.buf_;
++    const Chunk* const chunk = GetChunk(dmux, fourcc, chunk_num);
++    iter->chunk.bytes = mem_buf + chunk->data_.offset_ + CHUNK_HEADER_SIZE;
++    iter->chunk.size  = chunk->data_.size_ - CHUNK_HEADER_SIZE;
++    iter->num_chunks  = count;
++    iter->chunk_num   = chunk_num;
++    return 1;
++  }
++  return 0;
++}
++
++int WebPDemuxGetChunk(const WebPDemuxer* dmux,
++                      const char fourcc[4], int chunk_num,
++                      WebPChunkIterator* iter) {
++  if (iter == NULL) return 0;
++
++  memset(iter, 0, sizeof(*iter));
++  iter->private_ = (void*)dmux;
++  return SetChunk(fourcc, chunk_num, iter);
++}
++
++int WebPDemuxNextChunk(WebPChunkIterator* iter) {
++  if (iter != NULL) {
++    const char* const fourcc =
++        (const char*)iter->chunk.bytes - CHUNK_HEADER_SIZE;
++    return SetChunk(fourcc, iter->chunk_num + 1, iter);
++  }
++  return 0;
++}
++
++int WebPDemuxPrevChunk(WebPChunkIterator* iter) {
++  if (iter != NULL && iter->chunk_num > 1) {
++    const char* const fourcc =
++        (const char*)iter->chunk.bytes - CHUNK_HEADER_SIZE;
++    return SetChunk(fourcc, iter->chunk_num - 1, iter);
++  }
++  return 0;
++}
++
++void WebPDemuxReleaseChunkIterator(WebPChunkIterator* iter) {
++  (void)iter;
++}
++
++#if defined(__cplusplus) || defined(c_plusplus)
++}  // extern "C"
++#endif
+diff -r ba252f7d3be6 media/libwebp/src/dsp/dsp.h
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/media/libwebp/src/dsp/dsp.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,209 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -11351,9 +12310,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/dsp.h
 +#endif
 +
 +#endif  /* WEBP_DSP_DSP_H_ */
-diff -r c075f70f87aa media/libwebp/src/dsp/enc.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/enc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/enc.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/enc.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,728 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -12083,9 +13042,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/enc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/enc_neon.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/enc_neon.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/enc_neon.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/enc_neon.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,451 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -12538,9 +13497,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/enc_neon.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/enc_sse2.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/enc_sse2.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/enc_sse2.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/enc_sse2.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,930 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -13472,9 +14431,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/enc_sse2.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/lossless.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/lossless.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/lossless.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/lossless.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,1138 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -14614,9 +15573,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/lossless.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/lossless.h
+diff -r ba252f7d3be6 media/libwebp/src/dsp/lossless.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/lossless.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/lossless.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,82 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -14700,9 +15659,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/lossless.h
 +#endif
 +
 +#endif  // WEBP_DSP_LOSSLESS_H_
-diff -r c075f70f87aa media/libwebp/src/dsp/upsampling.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/upsampling.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/upsampling.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/upsampling.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,357 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -15061,9 +16020,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/upsampling.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/upsampling_sse2.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/upsampling_sse2.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/upsampling_sse2.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/upsampling_sse2.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,215 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -15280,9 +16239,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/upsampling_sse2.c
 +#endif
 +
 +
-diff -r c075f70f87aa media/libwebp/src/dsp/yuv.c
+diff -r ba252f7d3be6 media/libwebp/src/dsp/yuv.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/yuv.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/yuv.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,67 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -15351,9 +16310,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/yuv.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/dsp/yuv.h
+diff -r ba252f7d3be6 media/libwebp/src/dsp/yuv.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/dsp/yuv.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/dsp/yuv.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,166 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -15521,9 +16480,9 @@ diff -r c075f70f87aa media/libwebp/src/dsp/yuv.h
 +#endif
 +
 +#endif  /* WEBP_DSP_YUV_H_ */
-diff -r c075f70f87aa media/libwebp/src/enc/alphaenc.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/alphaenc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/alphaenc.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/alphaenc.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,330 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -15855,9 +16814,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/alphaenc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/analysis.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/analysis.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/analysis.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/analysis.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,400 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -16259,9 +17218,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/analysis.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/backward_references.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/backward_references.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/backward_references.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/backward_references.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,906 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -17169,9 +18128,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/backward_references.c
 +  VP8LClearBackwardRefs(&refs);
 +  return ok;
 +}
-diff -r c075f70f87aa media/libwebp/src/enc/backward_references.h
+diff -r ba252f7d3be6 media/libwebp/src/enc/backward_references.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/backward_references.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/backward_references.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,212 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -17385,9 +18344,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/backward_references.h
 +#endif
 +
 +#endif  // WEBP_ENC_BACKWARD_REFERENCES_H_
-diff -r c075f70f87aa media/libwebp/src/enc/config.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/config.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/config.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/config.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,132 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -17521,9 +18480,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/config.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/cost.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/cost.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/cost.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/cost.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,494 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -18019,9 +18978,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/cost.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/cost.h
+diff -r ba252f7d3be6 media/libwebp/src/enc/cost.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/cost.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/cost.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,48 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -18071,9 +19030,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/cost.h
 +#endif
 +
 +#endif  /* WEBP_ENC_COST_H_ */
-diff -r c075f70f87aa media/libwebp/src/enc/filter.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/filter.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/filter.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/filter.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,409 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -18484,10 +19443,10 @@ diff -r c075f70f87aa media/libwebp/src/enc/filter.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/frameenc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/frameenc.c	Tue Nov 27 21:45:21 2012 +0900
-@@ -0,0 +1,994 @@
++++ b/media/libwebp/src/enc/frameenc.c	Tue Dec 11 23:05:19 2012 +0900
+@@ -0,0 +1,869 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
 +// This code is licensed under the same terms as WebM:
@@ -18535,10 +19494,10 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +  0  // sentinel
 +};
 +
-+static const uint8_t kCat3[] = { 173, 148, 140 };
-+static const uint8_t kCat4[] = { 176, 155, 140, 135 };
-+static const uint8_t kCat5[] = { 180, 157, 141, 134, 130 };
-+static const uint8_t kCat6[] =
++const uint8_t VP8Cat3[] = { 173, 148, 140 };
++const uint8_t VP8Cat4[] = { 176, 155, 140, 135 };
++const uint8_t VP8Cat5[] = { 180, 157, 141, 134, 130 };
++const uint8_t VP8Cat6[] =
 +    { 254, 254, 243, 230, 196, 177, 153, 140, 133, 130, 129 };
 +
 +//------------------------------------------------------------------------------
@@ -18914,30 +19873,30 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +      } else {
 +        int mask;
 +        const uint8_t* tab;
-+        if (v < 3 + (8 << 1)) {          // kCat3  (3b)
++        if (v < 3 + (8 << 1)) {          // VP8Cat3  (3b)
 +          VP8PutBit(bw, 0, p[8]);
 +          VP8PutBit(bw, 0, p[9]);
 +          v -= 3 + (8 << 0);
 +          mask = 1 << 2;
-+          tab = kCat3;
-+        } else if (v < 3 + (8 << 2)) {   // kCat4  (4b)
++          tab = VP8Cat3;
++        } else if (v < 3 + (8 << 2)) {   // VP8Cat4  (4b)
 +          VP8PutBit(bw, 0, p[8]);
 +          VP8PutBit(bw, 1, p[9]);
 +          v -= 3 + (8 << 1);
 +          mask = 1 << 3;
-+          tab = kCat4;
-+        } else if (v < 3 + (8 << 3)) {   // kCat5  (5b)
++          tab = VP8Cat4;
++        } else if (v < 3 + (8 << 3)) {   // VP8Cat5  (5b)
 +          VP8PutBit(bw, 1, p[8]);
 +          VP8PutBit(bw, 0, p[10]);
 +          v -= 3 + (8 << 2);
 +          mask = 1 << 4;
-+          tab = kCat5;
-+        } else {                         // kCat6 (11b)
++          tab = VP8Cat5;
++        } else {                         // VP8Cat6 (11b)
 +          VP8PutBit(bw, 1, p[8]);
 +          VP8PutBit(bw, 1, p[10]);
 +          v -= 3 + (8 << 3);
 +          mask = 1 << 10;
-+          tab = kCat6;
++          tab = VP8Cat6;
 +        }
 +        while (mask) {
 +          VP8PutBit(bw, !!(v & mask), *tab++);
@@ -19057,134 +20016,8 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +
 +#ifdef USE_TOKEN_BUFFER
 +
-+void VP8TBufferInit(VP8TBuffer* const b) {
-+  b->rows_ = NULL;
-+  b->tokens_ = NULL;
-+  b->last_ = &b->rows_;
-+  b->left_ = 0;
-+  b->error_ = 0;
-+}
-+
-+int VP8TBufferNewPage(VP8TBuffer* const b) {
-+  VP8Tokens* const page = b->error_ ? NULL : (VP8Tokens*)malloc(sizeof(*page));
-+  if (page == NULL) {
-+    b->error_ = 1;
-+    return 0;
-+  }
-+  *b->last_ = page;
-+  b->last_ = &page->next_;
-+  b->left_ = MAX_NUM_TOKEN;
-+  b->tokens_ = page->tokens_;
-+  return 1;
-+}
-+
-+void VP8TBufferClear(VP8TBuffer* const b) {
-+  if (b != NULL) {
-+    const VP8Tokens* p = b->rows_;
-+    while (p != NULL) {
-+      const VP8Tokens* const next = p->next_;
-+      free((void*)p);
-+      p = next;
-+    }
-+    VP8TBufferInit(b);
-+  }
-+}
-+
-+int VP8EmitTokens(const VP8TBuffer* const b, VP8BitWriter* const bw,
-+                  const uint8_t* const probas) {
-+  VP8Tokens* p = b->rows_;
-+  if (b->error_) return 0;
-+  while (p != NULL) {
-+    const int N = (p->next_ == NULL) ? b->left_ : 0;
-+    int n = MAX_NUM_TOKEN;
-+    while (n-- > N) {
-+      VP8PutBit(bw, (p->tokens_[n] >> 15) & 1, probas[p->tokens_[n] & 0x7fff]);
-+    }
-+    p = p->next_;
-+  }
-+  return 1;
-+}
-+
-+#define TOKEN_ID(b, ctx, p) ((p) + NUM_PROBAS * ((ctx) + (b) * NUM_CTX))
-+
-+static int RecordCoeffTokens(int ctx, const VP8Residual* const res,
-+                             VP8TBuffer* tokens) {
-+  int n = res->first;
-+  int b = VP8EncBands[n];
-+  if (!VP8AddToken(tokens, res->last >= 0, TOKEN_ID(b, ctx, 0))) {
-+    return 0;
-+  }
-+
-+  while (n < 16) {
-+    const int c = res->coeffs[n++];
-+    const int sign = c < 0;
-+    int v = sign ? -c : c;
-+    const int base_id = TOKEN_ID(b, ctx, 0);
-+    if (!VP8AddToken(tokens, v != 0, base_id + 1)) {
-+      b = VP8EncBands[n];
-+      ctx = 0;
-+      continue;
-+    }
-+    if (!VP8AddToken(tokens, v > 1, base_id + 2)) {
-+      b = VP8EncBands[n];
-+      ctx = 1;
-+    } else {
-+      if (!VP8AddToken(tokens, v > 4, base_id + 3)) {
-+        if (VP8AddToken(tokens, v != 2, base_id + 4))
-+          VP8AddToken(tokens, v == 4, base_id + 5);
-+      } else if (!VP8AddToken(tokens, v > 10, base_id + 6)) {
-+        if (!VP8AddToken(tokens, v > 6, base_id + 7)) {
-+//          VP8AddToken(tokens, v == 6, 159);
-+        } else {
-+//          VP8AddToken(tokens, v >= 9, 165);
-+//          VP8AddToken(tokens, !(v & 1), 145);
-+        }
-+      } else {
-+        int mask;
-+        const uint8_t* tab;
-+        if (v < 3 + (8 << 1)) {          // kCat3  (3b)
-+          VP8AddToken(tokens, 0, base_id + 8);
-+          VP8AddToken(tokens, 0, base_id + 9);
-+          v -= 3 + (8 << 0);
-+          mask = 1 << 2;
-+          tab = kCat3;
-+        } else if (v < 3 + (8 << 2)) {   // kCat4  (4b)
-+          VP8AddToken(tokens, 0, base_id + 8);
-+          VP8AddToken(tokens, 1, base_id + 9);
-+          v -= 3 + (8 << 1);
-+          mask = 1 << 3;
-+          tab = kCat4;
-+        } else if (v < 3 + (8 << 3)) {   // kCat5  (5b)
-+          VP8AddToken(tokens, 1, base_id + 8);
-+          VP8AddToken(tokens, 0, base_id + 10);
-+          v -= 3 + (8 << 2);
-+          mask = 1 << 4;
-+          tab = kCat5;
-+        } else {                         // kCat6 (11b)
-+          VP8AddToken(tokens, 1, base_id + 8);
-+          VP8AddToken(tokens, 1, base_id + 10);
-+          v -= 3 + (8 << 3);
-+          mask = 1 << 10;
-+          tab = kCat6;
-+        }
-+        while (mask) {
-+          // VP8AddToken(tokens, !!(v & mask), *tab++);
-+          mask >>= 1;
-+        }
-+      }
-+      ctx = 2;
-+    }
-+    b = VP8EncBands[n];
-+    // VP8PutBitUniform(bw, sign);
-+    if (n == 16 || !VP8AddToken(tokens, n <= res->last, TOKEN_ID(b, ctx, 0))) {
-+      return 1;   // EOB
-+    }
-+  }
-+  return 1;
-+}
-+
-+static void RecordTokens(VP8EncIterator* const it,
-+                         const VP8ModeScore* const rd, VP8TBuffer tokens[2]) {
++static void RecordTokens(VP8EncIterator* const it, const VP8ModeScore* const rd,
++                         VP8TBuffer* const tokens) {
 +  int x, y, ch;
 +  VP8Residual res;
 +  VP8Encoder* const enc = it->enc_;
@@ -19194,7 +20027,8 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +    InitResidual(0, 1, enc, &res);
 +    SetResidualCoeffs(rd->y_dc_levels, &res);
 +// TODO(skal): FIX ->    it->top_nz_[8] = it->left_nz_[8] =
-+      RecordCoeffTokens(it->top_nz_[8] + it->left_nz_[8], &res, &tokens[0]);
++      VP8RecordCoeffTokens(it->top_nz_[8] + it->left_nz_[8],
++                           res.first, res.last, res.coeffs, tokens);
 +    InitResidual(1, 0, enc, &res);
 +  } else {
 +    InitResidual(0, 3, enc, &res);
@@ -19206,7 +20040,7 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +      const int ctx = it->top_nz_[x] + it->left_nz_[y];
 +      SetResidualCoeffs(rd->y_ac_levels[x + y * 4], &res);
 +      it->top_nz_[x] = it->left_nz_[y] =
-+          RecordCoeffTokens(ctx, &res, &tokens[0]);
++          VP8RecordCoeffTokens(ctx, res.first, res.last, res.coeffs, tokens);
 +    }
 +  }
 +
@@ -19218,7 +20052,7 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +        const int ctx = it->top_nz_[4 + ch + x] + it->left_nz_[4 + ch + y];
 +        SetResidualCoeffs(rd->uv_levels[ch * 2 + x + y * 2], &res);
 +        it->top_nz_[4 + ch + x] = it->left_nz_[4 + ch + y] =
-+            RecordCoeffTokens(ctx, &res, &tokens[1]);
++            VP8RecordCoeffTokens(ctx, res.first, res.last, res.coeffs, tokens);
 +      }
 +    }
 +  }
@@ -19460,7 +20294,7 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +#if DEBUG_SEARCH
 +      printf("#%d size=%d PSNR=%.2f q=%.2f\n", pass, size, PSNR, q);
 +#endif
-+      if (!size) return 0;
++      if (size == 0) return 0;
 +      if (enc->config_->target_PSNR > 0) {
 +        criterion = (PSNR < enc->config_->target_PSNR);
 +      } else {
@@ -19482,9 +20316,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/frameenc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/histogram.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/histogram.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/histogram.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/histogram.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,418 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -19904,9 +20738,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/histogram.c
 +  free(image_out);
 +  return ok;
 +}
-diff -r c075f70f87aa media/libwebp/src/enc/histogram.h
+diff -r ba252f7d3be6 media/libwebp/src/enc/histogram.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/histogram.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/histogram.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,115 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -20023,9 +20857,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/histogram.h
 +#endif
 +
 +#endif  // WEBP_ENC_HISTOGRAM_H_
-diff -r c075f70f87aa media/libwebp/src/enc/iterator.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/iterator.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/iterator.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/iterator.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,422 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -20449,9 +21283,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/iterator.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/layerenc.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/layerenc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/layerenc.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/layerenc.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,49 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -20502,9 +21336,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/layerenc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/picture.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/picture.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/picture.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/picture.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,1114 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -21620,9 +22454,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/picture.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/quantenc.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/quantenc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/quantenc.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/quantenc.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,972 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -22596,9 +23430,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/quantenc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/syntax.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/syntax.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/syntax.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/syntax.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,426 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -23026,9 +23860,242 @@ diff -r c075f70f87aa media/libwebp/src/enc/syntax.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/tree_enc.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/token.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/tree_enc.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/token.c	Tue Dec 11 23:05:19 2012 +0900
+@@ -0,0 +1,229 @@
++// Copyright 2011 Google Inc. All Rights Reserved.
++//
++// This code is licensed under the same terms as WebM:
++//  Software License Agreement:  http://www.webmproject.org/license/software/
++//  Additional IP Rights Grant:  http://www.webmproject.org/license/additional/
++// -----------------------------------------------------------------------------
++//
++// Paginated token buffer
++//
++//  A 'token' is a bit value associated with a probability, either fixed
++// or a later-to-be-determined after statistics have been collected.
++// For dynamic probability, we just record the slot id (idx) for the probability
++// value in the final probability array (uint8_t* probas in VP8EmitTokens).
++// Author: Skal (pascal.massimino@gmail.com)
++
++#include <assert.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "./vp8enci.h"
++
++
++#if defined(__cplusplus) || defined(c_plusplus)
++extern "C" {
++#endif
++
++#define MAX_NUM_TOKEN 2048          // max number of token per page
++
++struct VP8Tokens {
++  uint16_t tokens_[MAX_NUM_TOKEN];  // bit#15: bit
++                                    // bit #14: constant proba or idx
++                                    // bits 0..13: slot or constant proba
++  VP8Tokens* next_;
++};
++
++void VP8TBufferInit(VP8TBuffer* const b) {
++  b->tokens_ = NULL;
++  b->pages_ = NULL;
++  b->last_page_ = &b->pages_;
++  b->left_ = 0;
++  b->error_ = 0;
++}
++
++//------------------------------------------------------------------------------
++
++#ifdef USE_TOKEN_BUFFER
++
++void VP8TBufferClear(VP8TBuffer* const b) {
++  if (b != NULL) {
++    const VP8Tokens* p = b->rows_;
++    while (p != NULL) {
++      const VP8Tokens* const next = p->next_;
++      free((void*)p);
++      p = next;
++    }
++    VP8TBufferInit(b);
++  }
++}
++
++static int TBufferNewPage(VP8TBuffer* const b) {
++  VP8Tokens* const page = b->error_ ? NULL : (VP8Tokens*)malloc(sizeof(*page));
++  if (page == NULL) {
++    b->error_ = 1;
++    return 0;
++  }
++  *b->last_page__ = page;
++  b->last_page_ = &page->next_;
++  b->left_ = MAX_NUM_TOKEN;
++  b->tokens_ = page->tokens_;
++  page->next_ = NULL;
++  return 1;
++}
++
++//------------------------------------------------------------------------------
++
++#define TOKEN_ID(b, ctx, p) ((p) + NUM_PROBAS * ((ctx) + (b) * NUM_CTX))
++
++static WEBP_INLINE int VP8AddToken(VP8TBuffer* const b,
++                                   int bit, int proba_idx) {
++  assert(proba_idx < (1 << 14));
++  if (b->left_ > 0 || TBufferNewPage(b)) {
++    const int slot = --b->left_;
++    b->tokens_[slot] = ((!bit) << 15) | proba_idx;
++  }
++  return bit;
++}
++
++static WEBP_INLINE void VP8AddConstantToken(VP8TBuffer* const b,
++                                            int bit, int proba) {
++  assert(proba < 256);
++  if (b->left_ > 0 || TBufferNewPage(b)) {
++    const int slot = --b->left_;
++    b->tokens_[slot] = (bit << 15) | (1 << 14) | proba;
++  }
++}
++
++int VP8RecordCoeffTokens(int ctx, int first, int last,
++                         const int16_t* const coeffs, VP8TBuffer* tokens) {
++  int n = first;
++  int b = VP8EncBands[n];
++  if (!VP8AddToken(tokens, last >= 0, TOKEN_ID(b, ctx, 0))) {
++    return 0;
++  }
++
++  while (n < 16) {
++    const int c = coeffs[n++];
++    const int sign = c < 0;
++    int v = sign ? -c : c;
++    const int base_id = TOKEN_ID(b, ctx, 0);
++    if (!VP8AddToken(tokens, v != 0, base_id + 1)) {
++      b = VP8EncBands[n];
++      ctx = 0;
++      continue;
++    }
++    if (!VP8AddToken(tokens, v > 1, base_id + 2)) {
++      b = VP8EncBands[n];
++      ctx = 1;
++    } else {
++      if (!VP8AddToken(tokens, v > 4, base_id + 3)) {
++        if (VP8AddToken(tokens, v != 2, base_id + 4))
++          VP8AddToken(tokens, v == 4, base_id + 5);
++      } else if (!VP8AddToken(tokens, v > 10, base_id + 6)) {
++        if (!VP8AddToken(tokens, v > 6, base_id + 7)) {
++          VP8AddConstantToken(tokens, v == 6, 159);
++        } else {
++          VP8AddConstantToken(tokens, v >= 9, 165);
++          VP8AddConstantToken(tokens, !(v & 1), 145);
++        }
++      } else {
++        int mask;
++        const uint8_t* tab;
++        if (v < 3 + (8 << 1)) {          // VP8Cat3  (3b)
++          VP8AddToken(tokens, 0, base_id + 8);
++          VP8AddToken(tokens, 0, base_id + 9);
++          v -= 3 + (8 << 0);
++          mask = 1 << 2;
++          tab = VP8Cat3;
++        } else if (v < 3 + (8 << 2)) {   // VP8Cat4  (4b)
++          VP8AddToken(tokens, 0, base_id + 8);
++          VP8AddToken(tokens, 1, base_id + 9);
++          v -= 3 + (8 << 1);
++          mask = 1 << 3;
++          tab = VP8Cat4;
++        } else if (v < 3 + (8 << 3)) {   // VP8Cat5  (5b)
++          VP8AddToken(tokens, 1, base_id + 8);
++          VP8AddToken(tokens, 0, base_id + 10);
++          v -= 3 + (8 << 2);
++          mask = 1 << 4;
++          tab = VP8Cat5;
++        } else {                         // VP8Cat6 (11b)
++          VP8AddToken(tokens, 1, base_id + 8);
++          VP8AddToken(tokens, 1, base_id + 10);
++          v -= 3 + (8 << 3);
++          mask = 1 << 10;
++          tab = VP8Cat6;
++        }
++        while (mask) {
++          VP8AddConstantToken(tokens, !!(v & mask), *tab++);
++          mask >>= 1;
++        }
++      }
++      ctx = 2;
++    }
++    b = VP8EncBands[n];
++    VP8AddConstantToken(tokens, sign, 128);
++    if (n == 16 || !VP8AddToken(tokens, n <= last, TOKEN_ID(b, ctx, 0))) {
++      return 1;   // EOB
++    }
++  }
++  return 1;
++}
++
++#undef TOKEN_ID
++
++//------------------------------------------------------------------------------
++
++static void Record(int bit, proba_t* const stats) {
++  proba_t p = *stats;
++  if (p >= 0xffff0000u) {               // an overflow is inbound.
++    p = ((p + 1u) >> 1) & 0x7fff7fffu;  // -> divide the stats by 2.
++  }
++  // record bit count (lower 16 bits) and increment total count (upper 16 bits).
++  p += 0x00010000u + bit;
++  *stats = p;
++}
++
++void VP8TokenToStats(const VP8TBuffer* const b, proba_t* const stats) {
++  const VP8Tokens* p = b->rows_;
++  while (p != NULL) {
++    const int N = (p->next_ == NULL) ? b->left_ : 0;
++    int n = MAX_NUM_TOKEN;
++    while (n-- > N) {
++      const uint16_t token = p->tokens_[n];
++      if (!(token & (1 << 14))) {
++        Record((token >> 15) & 1, stats + (token & 0x3fffu));
++      }
++    }
++    p = p->next_;
++  }
++}
++
++int VP8EmitTokens(const VP8TBuffer* const b, VP8BitWriter* const bw,
++                  const uint8_t* const probas, int final_pass) {
++  const VP8Tokens* p = b->rows_;
++  if (b->error_) return 0;
++  while (p != NULL) {
++    const VP8Tokens* const next = p->next_;
++    const int N = (next == NULL) ? b->left_ : 0;
++    int n = MAX_NUM_TOKEN;
++    while (n-- > N) {
++      const uint16_t token = p->tokens_[n];
++      if (token & (1 << 14)) {
++        VP8PutBit(bw, (token >> 15) & 1, token & 0x3fffu);  // constant proba
++      } else {
++        VP8PutBit(bw, (token >> 15) & 1, probas[token & 0x3fffu]);
++      }
++    }
++    p = next;
++  }
++  return 1;
++}
++
++//------------------------------------------------------------------------------
++
++#endif    // USE_TOKEN_BUFFER
++
++#if defined(__cplusplus) || defined(c_plusplus)
++}    // extern "C"
++#endif
+diff -r ba252f7d3be6 media/libwebp/src/enc/tree_enc.c
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/media/libwebp/src/enc/tree_enc.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,510 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -23540,10 +24607,10 @@ diff -r c075f70f87aa media/libwebp/src/enc/tree_enc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/vp8enci.h
+diff -r ba252f7d3be6 media/libwebp/src/enc/vp8enci.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/vp8enci.h	Tue Nov 27 21:45:21 2012 +0900
-@@ -0,0 +1,530 @@
++++ b/media/libwebp/src/enc/vp8enci.h	Tue Dec 11 23:05:19 2012 +0900
+@@ -0,0 +1,526 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
 +// This code is licensed under the same terms as WebM:
@@ -23867,40 +24934,27 @@ diff -r c075f70f87aa media/libwebp/src/enc/vp8enci.h
 +
 +// WIP: #define USE_TOKEN_BUFFER
 +
-+#ifdef USE_TOKEN_BUFFER
-+
-+#define MAX_NUM_TOKEN 2048
-+
-+typedef struct VP8Tokens VP8Tokens;
-+struct VP8Tokens {
-+  uint16_t tokens_[MAX_NUM_TOKEN];  // bit#15: bit, bits 0..14: slot
-+  int left_;
-+  VP8Tokens* next_;
-+};
++typedef struct VP8Tokens VP8Tokens;  // struct details in token.c
 +
 +typedef struct {
-+  VP8Tokens* rows_;
-+  uint16_t* tokens_;    // set to (*last_)->tokens_
-+  VP8Tokens** last_;
-+  int left_;
-+  int error_;  // true in case of malloc error
++  VP8Tokens* pages_;        // first page
++  VP8Tokens** last_page_;   // last page
++  uint16_t* tokens_;        // set to (*last_page_)->tokens_
++  int left_;          // how many free tokens left before the page is full.
++  int error_;         // true in case of malloc error
 +} VP8TBuffer;
 +
 +void VP8TBufferInit(VP8TBuffer* const b);    // initialize an empty buffer
-+int VP8TBufferNewPage(VP8TBuffer* const b);  // allocate a new page
-+void VP8TBufferClear(VP8TBuffer* const b);   // de-allocate memory
++
++#ifdef USE_TOKEN_BUFFER
++
++void VP8TBufferClear(VP8TBuffer* const b);   // de-allocate pages memory
 +
 +int VP8EmitTokens(const VP8TBuffer* const b, VP8BitWriter* const bw,
-+                  const uint8_t* const probas);
-+
-+static WEBP_INLINE int VP8AddToken(VP8TBuffer* const b,
-+                                   int bit, int proba_idx) {
-+  if (b->left_ > 0 || VP8TBufferNewPage(b)) {
-+    const int slot = --b->left_;
-+    b->tokens_[slot] = (bit << 15) | proba_idx;
-+  }
-+  return bit;
-+}
++                  const uint8_t* const probas, int final_pass);
++int VP8RecordCoeffTokens(int ctx, int first, int last,
++                         const int16_t* const coeffs, VP8TBuffer* tokens);
++void VP8TokenToStats(const VP8TBuffer* const b, proba_t* const stats);
 +
 +#endif  // USE_TOKEN_BUFFER
 +
@@ -23929,6 +24983,10 @@ diff -r c075f70f87aa media/libwebp/src/enc/vp8enci.h
 +  VP8BitWriter parts_[MAX_NUM_PARTITIONS];  // token partitions
 +
 +  int percent_;                             // for progress
++
++#ifdef USE_TOKEN_BUFFER
++  VP8TBuffer tokens_;                       // token buffer
++#endif
 +
 +  // transparency blob
 +  int has_alpha_;
@@ -24006,6 +25064,11 @@ diff -r c075f70f87aa media/libwebp/src/enc/vp8enci.h
 +
 +  // in frame.c
 +extern const uint8_t VP8EncBands[16 + 1];
++extern const uint8_t VP8Cat3[];
++extern const uint8_t VP8Cat4[];
++extern const uint8_t VP8Cat5[];
++extern const uint8_t VP8Cat6[];
++
 +// Form all the four Intra16x16 predictions in the yuv_p_ cache
 +void VP8MakeLuma16Preds(const VP8EncIterator* const it);
 +// Form all the four Chroma8x8 predictions in the yuv_p_ cache
@@ -24074,9 +25137,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/vp8enci.h
 +#endif
 +
 +#endif  /* WEBP_ENC_VP8ENCI_H_ */
-diff -r c075f70f87aa media/libwebp/src/enc/vp8lenc.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/vp8lenc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/vp8lenc.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/vp8lenc.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,1150 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -25228,9 +26291,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/vp8lenc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/enc/vp8lienc.h
+diff -r ba252f7d3be6 media/libwebp/src/enc/vp8lienc.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/vp8lienc.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/vp8lienc.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,68 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -25300,9 +26363,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/vp8lienc.h
 +#endif
 +
 +#endif  /* WEBP_ENC_VP8LI_H_ */
-diff -r c075f70f87aa media/libwebp/src/enc/webpenc.c
+diff -r ba252f7d3be6 media/libwebp/src/enc/webpenc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/enc/webpenc.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/enc/webpenc.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,389 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -25693,9 +26756,9 @@ diff -r c075f70f87aa media/libwebp/src/enc/webpenc.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/mux/muxedit.c
+diff -r ba252f7d3be6 media/libwebp/src/mux/muxedit.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/mux/muxedit.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/mux/muxedit.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,680 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -26377,9 +27440,9 @@ diff -r c075f70f87aa media/libwebp/src/mux/muxedit.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/mux/muxi.h
+diff -r ba252f7d3be6 media/libwebp/src/mux/muxi.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/mux/muxi.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/mux/muxi.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,243 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -26624,9 +27687,9 @@ diff -r c075f70f87aa media/libwebp/src/mux/muxi.h
 +#endif
 +
 +#endif  /* WEBP_MUX_MUXI_H_ */
-diff -r c075f70f87aa media/libwebp/src/mux/muxinternal.c
+diff -r ba252f7d3be6 media/libwebp/src/mux/muxinternal.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/mux/muxinternal.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/mux/muxinternal.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,577 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -27205,9 +28268,9 @@ diff -r c075f70f87aa media/libwebp/src/mux/muxinternal.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/mux/muxread.c
+diff -r ba252f7d3be6 media/libwebp/src/mux/muxread.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/mux/muxread.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/mux/muxread.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,478 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -27687,9 +28750,9 @@ diff -r c075f70f87aa media/libwebp/src/mux/muxread.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/bit_reader.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/bit_reader.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/bit_reader.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/bit_reader.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,229 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -27920,9 +28983,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/bit_reader.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/bit_reader.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/bit_reader.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/bit_reader.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/bit_reader.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,219 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -28143,9 +29206,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/bit_reader.h
 +#endif
 +
 +#endif  /* WEBP_UTILS_BIT_READER_H_ */
-diff -r c075f70f87aa media/libwebp/src/utils/bit_writer.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/bit_writer.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/bit_writer.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/bit_writer.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,284 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -28431,9 +29494,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/bit_writer.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/bit_writer.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/bit_writer.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/bit_writer.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/bit_writer.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,123 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -28558,9 +29621,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/bit_writer.h
 +#endif
 +
 +#endif  /* WEBP_UTILS_BIT_WRITER_H_ */
-diff -r c075f70f87aa media/libwebp/src/utils/color_cache.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/color_cache.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/color_cache.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/color_cache.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,44 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -28606,9 +29669,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/color_cache.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/color_cache.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/color_cache.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/color_cache.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/color_cache.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,68 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -28678,9 +29741,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/color_cache.h
 +#endif
 +
 +#endif  // WEBP_UTILS_COLOR_CACHE_H_
-diff -r c075f70f87aa media/libwebp/src/utils/filters.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/filters.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/filters.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/filters.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,229 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -28911,9 +29974,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/filters.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/filters.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/filters.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/filters.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/filters.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,54 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -28969,9 +30032,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/filters.h
 +#endif
 +
 +#endif  /* WEBP_UTILS_FILTERS_H_ */
-diff -r c075f70f87aa media/libwebp/src/utils/huffman.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/huffman.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/huffman.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/huffman.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,238 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -29211,9 +30274,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/huffman.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/huffman.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/huffman.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/huffman.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/huffman.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,78 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -29293,9 +30356,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/huffman.h
 +#endif
 +
 +#endif  // WEBP_UTILS_HUFFMAN_H_
-diff -r c075f70f87aa media/libwebp/src/utils/huffman_encode.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/huffman_encode.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/huffman_encode.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/huffman_encode.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,434 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -29731,9 +30794,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/huffman_encode.c
 +  ConvertBitDepthsToSymbols(tree);
 +  return 1;
 +}
-diff -r c075f70f87aa media/libwebp/src/utils/huffman_encode.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/huffman_encode.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/huffman_encode.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/huffman_encode.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,47 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -29782,9 +30845,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/huffman_encode.h
 +#endif
 +
 +#endif  // WEBP_UTILS_HUFFMAN_ENCODE_H_
-diff -r c075f70f87aa media/libwebp/src/utils/quant_levels.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/quant_levels.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/quant_levels.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/quant_levels.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,154 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -29940,9 +31003,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/quant_levels.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/quant_levels.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/quant_levels.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/quant_levels.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/quant_levels.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,39 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -29983,9 +31046,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/quant_levels.h
 +#endif
 +
 +#endif  /* WEBP_UTILS_QUANT_LEVELS_H_ */
-diff -r c075f70f87aa media/libwebp/src/utils/rescaler.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/rescaler.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/rescaler.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/rescaler.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,152 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -30139,9 +31202,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/rescaler.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/rescaler.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/rescaler.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/rescaler.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/rescaler.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,76 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -30219,9 +31282,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/rescaler.h
 +#endif
 +
 +#endif  /* WEBP_UTILS_RESCALER_H_ */
-diff -r c075f70f87aa media/libwebp/src/utils/thread.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/thread.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/thread.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/thread.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,247 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -30470,9 +31533,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/thread.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/thread.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/thread.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/thread.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/thread.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,86 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -30560,9 +31623,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/thread.h
 +#endif
 +
 +#endif  /* WEBP_UTILS_THREAD_H_ */
-diff -r c075f70f87aa media/libwebp/src/utils/utils.c
+diff -r ba252f7d3be6 media/libwebp/src/utils/utils.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/utils.c	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/utils.c	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,44 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -30608,9 +31671,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/utils.c
 +#if defined(__cplusplus) || defined(c_plusplus)
 +}    // extern "C"
 +#endif
-diff -r c075f70f87aa media/libwebp/src/utils/utils.h
+diff -r ba252f7d3be6 media/libwebp/src/utils/utils.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/utils/utils.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/utils/utils.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,81 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -30693,9 +31756,9 @@ diff -r c075f70f87aa media/libwebp/src/utils/utils.h
 +#endif
 +
 +#endif  /* WEBP_UTILS_UTILS_H_ */
-diff -r c075f70f87aa media/libwebp/src/webp/Makefile.in
+diff -r ba252f7d3be6 media/libwebp/src/webp/Makefile.in
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/Makefile.in	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/Makefile.in	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,23 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -30720,9 +31783,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/Makefile.in
 +					$(NULL)
 +
 +include $(topsrcdir)/config/rules.mk
-diff -r c075f70f87aa media/libwebp/src/webp/decode.h
+diff -r ba252f7d3be6 media/libwebp/src/webp/decode.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/decode.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/decode.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,465 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -31189,9 +32252,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/decode.h
 +#endif
 +
 +#endif  /* WEBP_WEBP_DECODE_H_ */
-diff -r c075f70f87aa media/libwebp/src/webp/demux.h
+diff -r ba252f7d3be6 media/libwebp/src/webp/demux.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/demux.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/demux.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,171 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -31364,9 +32427,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/demux.h
 +#endif
 +
 +#endif  /* WEBP_WEBP_DEMUX_H_ */
-diff -r c075f70f87aa media/libwebp/src/webp/encode.h
+diff -r ba252f7d3be6 media/libwebp/src/webp/encode.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/encode.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/encode.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,474 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -31842,9 +32905,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/encode.h
 +#endif
 +
 +#endif  /* WEBP_WEBP_ENCODE_H_ */
-diff -r c075f70f87aa media/libwebp/src/webp/format_constants.h
+diff -r ba252f7d3be6 media/libwebp/src/webp/format_constants.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/format_constants.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/format_constants.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,96 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -31942,9 +33005,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/format_constants.h
 +#define MAX_CHUNK_PAYLOAD (~0U - CHUNK_HEADER_SIZE - 1)
 +
 +#endif  /* WEBP_WEBP_FORMAT_CONSTANTS_H_ */
-diff -r c075f70f87aa media/libwebp/src/webp/mux.h
+diff -r ba252f7d3be6 media/libwebp/src/webp/mux.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/mux.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/mux.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,350 @@
 +// Copyright 2011 Google Inc. All Rights Reserved.
 +//
@@ -32296,9 +33359,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/mux.h
 +#endif
 +
 +#endif  /* WEBP_WEBP_MUX_H_ */
-diff -r c075f70f87aa media/libwebp/src/webp/mux_types.h
+diff -r ba252f7d3be6 media/libwebp/src/webp/mux_types.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/mux_types.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/mux_types.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,78 @@
 +// Copyright 2012 Google Inc. All Rights Reserved.
 +//
@@ -32378,9 +33441,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/mux_types.h
 +#endif
 +
 +#endif  /* WEBP_WEBP_MUX_TYPES_H_ */
-diff -r c075f70f87aa media/libwebp/src/webp/types.h
+diff -r ba252f7d3be6 media/libwebp/src/webp/types.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/media/libwebp/src/webp/types.h	Tue Nov 27 21:45:21 2012 +0900
++++ b/media/libwebp/src/webp/types.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -0,0 +1,45 @@
 +// Copyright 2010 Google Inc. All Rights Reserved.
 +//
@@ -32427,9 +33490,9 @@ diff -r c075f70f87aa media/libwebp/src/webp/types.h
 +#define WEBP_ABI_IS_INCOMPATIBLE(a, b) (((a) >> 8) != ((b) >> 8))
 +
 +#endif  /* WEBP_WEBP_TYPES_H_ */
-diff -r c075f70f87aa netwerk/mime/nsMimeTypes.h
---- a/netwerk/mime/nsMimeTypes.h	Mon Nov 19 18:32:13 2012 -0500
-+++ b/netwerk/mime/nsMimeTypes.h	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 netwerk/mime/nsMimeTypes.h
+--- a/netwerk/mime/nsMimeTypes.h	Fri Nov 16 09:12:49 2012 -0500
++++ b/netwerk/mime/nsMimeTypes.h	Tue Dec 11 23:05:19 2012 +0900
 @@ -84,6 +84,7 @@
  #define IMAGE_PJPG                          "image/pjpeg"
  #define IMAGE_PNG                           "image/png"
@@ -32438,9 +33501,21 @@ diff -r c075f70f87aa netwerk/mime/nsMimeTypes.h
  #define IMAGE_XBM                           "image/x-xbitmap"
  #define IMAGE_XBM2                          "image/x-xbm"
  #define IMAGE_XBM3                          "image/xbm"
-diff -r c075f70f87aa toolkit/toolkit-makefiles.sh
---- a/toolkit/toolkit-makefiles.sh	Mon Nov 19 18:32:13 2012 -0500
-+++ b/toolkit/toolkit-makefiles.sh	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 toolkit/content/filepicker.properties
+--- a/toolkit/content/filepicker.properties	Fri Nov 16 09:12:49 2012 -0500
++++ b/toolkit/content/filepicker.properties	Tue Dec 11 23:05:19 2012 +0900
+@@ -5,7 +5,7 @@
+ allFilter=*
+ htmlFilter=*.html; *.htm; *.shtml; *.xhtml
+ textFilter=*.txt; *.text
+-imageFilter=*.jpe; *.jpg; *.jpeg; *.gif; *.png; *.bmp; *.ico; *.svg; *.svgz; *.tif; *.tiff; *.ai; *.drw; *.pct; *.psp; *.xcf; *.psd; *.raw
++imageFilter=*.jpe; *.jpg; *.jpeg; *.gif; *.png; *.bmp; *.ico; *.svg; *.svgz; *.tif; *.tiff; *.ai; *.drw; *.pct; *.psp; *.xcf; *.psd; *.raw; *.webp
+ xmlFilter=*.xml
+ xulFilter=*.xul
+ audioFilter=*.aac; *.aif; *.flac; *.iff; *.m4a; *.m4b; *.mid; *.midi; *.mp3; *.mpa; *.mpc; *.oga; *.ogg; *.ra; *.ram; *.snd; *.wav; *.wma
+diff -r ba252f7d3be6 toolkit/toolkit-makefiles.sh
+--- a/toolkit/toolkit-makefiles.sh	Fri Nov 16 09:12:49 2012 -0500
++++ b/toolkit/toolkit-makefiles.sh	Tue Dec 11 23:05:19 2012 +0900
 @@ -1587,6 +1587,12 @@
    "
  fi
@@ -32454,9 +33529,9 @@ diff -r c075f70f87aa toolkit/toolkit-makefiles.sh
  if [ "$MOZ_JPROF" ]; then
    add_makefiles "
      tools/jprof/Makefile
-diff -r c075f70f87aa toolkit/toolkit-tiers.mk
---- a/toolkit/toolkit-tiers.mk	Mon Nov 19 18:32:13 2012 -0500
-+++ b/toolkit/toolkit-tiers.mk	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 toolkit/toolkit-tiers.mk
+--- a/toolkit/toolkit-tiers.mk	Fri Nov 16 09:12:49 2012 -0500
++++ b/toolkit/toolkit-tiers.mk	Tue Dec 11 23:05:19 2012 +0900
 @@ -160,6 +160,12 @@
  		$(NULL)
  endif
@@ -32470,9 +33545,9 @@ diff -r c075f70f87aa toolkit/toolkit-tiers.mk
  ifndef MOZ_NATIVE_PNG
  tier_platform_dirs += media/libpng
  endif
-diff -r c075f70f87aa uriloader/exthandler/nsExternalHelperAppService.cpp
---- a/uriloader/exthandler/nsExternalHelperAppService.cpp	Mon Nov 19 18:32:13 2012 -0500
-+++ b/uriloader/exthandler/nsExternalHelperAppService.cpp	Tue Nov 27 21:45:21 2012 +0900
+diff -r ba252f7d3be6 uriloader/exthandler/nsExternalHelperAppService.cpp
+--- a/uriloader/exthandler/nsExternalHelperAppService.cpp	Fri Nov 16 09:12:49 2012 -0500
++++ b/uriloader/exthandler/nsExternalHelperAppService.cpp	Tue Dec 11 23:05:19 2012 +0900
 @@ -379,6 +379,7 @@
    { APPLICATION_RDF, "rdf" },
    { TEXT_XUL, "xul" },

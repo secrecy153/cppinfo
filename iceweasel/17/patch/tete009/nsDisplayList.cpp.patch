@@ -1,7 +1,7 @@
 diff --git a/layout/base/nsDisplayList.cpp b/layout/base/nsDisplayList.cpp
 --- a/layout/base/nsDisplayList.cpp
 +++ b/layout/base/nsDisplayList.cpp
-@@ -5,16 +5,21 @@
+@@ -5,16 +5,23 @@
   * file, You can obtain one at http://mozilla.org/MPL/2.0/.
   */
  
@@ -51,8 +51,10 @@ diff --git a/layout/base/nsDisplayList.cpp b/layout/base/nsDisplayList.cpp
 +#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
 +  uint64_t tmp;
 +  *(__m64 *)&tmp = area;
++  _mm_empty
 +  return tmp;
 +#else
++  _mm_empty
    return area;
 +#endif
  }
