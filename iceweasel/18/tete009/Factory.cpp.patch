@@ -1,0 +1,33 @@
+diff --git a/gfx/2d/Factory.cpp b/gfx/2d/Factory.cpp
+--- a/gfx/2d/Factory.cpp
++++ b/gfx/2d/Factory.cpp
+@@ -157,16 +157,29 @@ Factory::HasSSE2()
+   return true;
+ #elif defined(HAVE_CPU_DETECTION)
+   return HasCPUIDBit(1u, edx, (1u<<26));
+ #else
+   return false;
+ #endif
+ }
+ 
++bool
++Factory::HasSSSE3()
++{
++#if defined(__SSSE3__)
++  // gcc with -mssse3
++  return true;
++#elif defined(HAVE_CPU_DETECTION)
++  return HasCPUIDBit(1u, ecx, (1u<<9));
++#else
++  return false;
++#endif
++}
++
+ TemporaryRef<DrawTarget>
+ Factory::CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFormat aFormat)
+ {
+   RefPtr<DrawTarget> retVal;
+   switch (aBackend) {
+ #ifdef WIN32
+   case BACKEND_DIRECT2D:
+     {

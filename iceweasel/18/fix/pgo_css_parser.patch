@@ -1,0 +1,50 @@
+# HG changeset patch
+# Parent 557b9abacae90830fecf0fe6af8d34d55f7a3ab9
+# User hua.andy <hua.andy@gmail.com>
+"pgo css fix"
+
+
+diff --git a/layout/style/nsCSSParser.cpp b/layout/style/nsCSSParser.cpp
+--- a/layout/style/nsCSSParser.cpp
++++ b/layout/style/nsCSSParser.cpp
+@@ -1067,20 +1067,16 @@ CSSParserImpl::ParseRule(const nsAString
+     ParseRuleSet(AppendRuleToArray, &aResult);
+   }
+   OUTPUT_ERROR();
+   ReleaseScanner();
+   // XXX check for low-level errors
+   return NS_OK;
+ }
+ 
+-// See Bug 723197
+-#ifdef _MSC_VER
+-#pragma optimize( "", off )
+-#endif
+ nsresult
+ CSSParserImpl::ParseProperty(const nsCSSProperty aPropID,
+                              const nsAString& aPropValue,
+                              nsIURI* aSheetURI,
+                              nsIURI* aBaseURI,
+                              nsIPrincipal* aSheetPrincipal,
+                              css::Declaration* aDeclaration,
+                              bool* aChanged,
+@@ -1147,19 +1143,16 @@ CSSParserImpl::ParseProperty(const nsCSS
+     CLEAR_ERROR();
+   }
+ 
+   mTempData.AssertInitialState();
+ 
+   ReleaseScanner();
+   return NS_OK;
+ }
+-#ifdef _MSC_VER
+-#pragma optimize( "", on )
+-#endif
+ 
+ nsresult
+ CSSParserImpl::ParseMediaList(const nsSubstring& aBuffer,
+                               nsIURI* aURI, // for error reporting
+                               uint32_t aLineNumber, // for error reporting
+                               nsMediaList* aMediaList,
+                               bool aHTMLMode)
+ {

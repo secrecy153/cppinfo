@@ -1,0 +1,16 @@
+diff --git a/mozglue/build/mozglue.def.in b/mozglue/build/mozglue.def.in
+--- a/mozglue/build/mozglue.def.in
++++ b/mozglue/build/mozglue.def.in
+@@ -22,9 +22,12 @@ EXPORTS
+   je_nallocm
+ #else
+   je_malloc_good_size
+ #endif
+   jemalloc_stats
+   jemalloc_free_dirty_pages
+   ; A hack to work around the CRT (see giant comment in Makefile.in)
+   frex=je_dumb_free_thunk
++
++  floor=floor_tt
++  ceil=ceil_tt
+ #endif

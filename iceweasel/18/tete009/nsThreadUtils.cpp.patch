@@ -1,0 +1,31 @@
+diff --git a/xpcom/glue/nsThreadUtils.cpp b/xpcom/glue/nsThreadUtils.cpp
+--- a/xpcom/glue/nsThreadUtils.cpp
++++ b/xpcom/glue/nsThreadUtils.cpp
+@@ -13,16 +13,27 @@
+ # include "nsXPCOMCIDInternal.h"
+ # include "nsIThreadManager.h"
+ # include "nsServiceManagerUtils.h"
+ #endif
+ 
+ #ifdef XP_WIN
+ #include <windows.h>
+ #include "nsWindowsHelpers.h"
++#if _MSC_VER >= 1400
++#ifdef _WIN64
++unsigned __int64 __readgsqword(unsigned long Offset);
++#pragma intrinsic(__readgsqword)
++#define TlsGetValue(x) (LPVOID)(__readgsqword((x) * 8 + 0x1480))
++#else /* _WIN64 */
++unsigned long __readfsdword(unsigned long Offset);
++#pragma intrinsic(__readfsdword)
++#define TlsGetValue(x) (LPVOID)(*(unsigned long *)(__readfsdword(0x18) + (x) * 4 + 3600))
++#endif /* _WIN64 */
++#endif /* _MSC_VER >= 1400 */
+ #elif defined(XP_MACOSX)
+ #include <sys/resource.h>
+ #endif
+ 
+ #include <pratom.h>
+ #include <prthread.h>
+ 
+ #ifndef XPCOM_GLUE_AVOID_NSPR

@@ -1,0 +1,72 @@
+# HG changeset patch
+# Parent 8c52f12e8f90b63d6130874c214ad59a78f8bddc
+# User hua.andy <hua.andy@gmail.com>
+"plugins stop rendering ,in HiDPI mode"
+
+
+diff --git a/widget/cocoa/nsChildView.h b/widget/cocoa/nsChildView.h
+--- a/widget/cocoa/nsChildView.h
++++ b/widget/cocoa/nsChildView.h
+@@ -457,16 +457,17 @@ public:
+                                     const InputContextAction& aAction);
+   NS_IMETHOD_(InputContext) GetInputContext();
+   NS_IMETHOD        CancelIMEComposition();
+   NS_IMETHOD        GetToggledKeyState(uint32_t aKeyCode,
+                                        bool* aLEDState);
+   NS_IMETHOD        OnIMEFocusChange(bool aFocus);
+ 
+   // nsIPluginWidget
++  // outClipRect and outOrigin are in display pixels (not device pixels)
+   NS_IMETHOD        GetPluginClipRect(nsIntRect& outClipRect, nsIntPoint& outOrigin, bool& outWidgetVisible);
+   NS_IMETHOD        StartDrawPlugin();
+   NS_IMETHOD        EndDrawPlugin();
+   NS_IMETHOD        SetPluginInstanceOwner(nsIPluginInstanceOwner* aInstanceOwner);
+ 
+   NS_IMETHOD        SetPluginEventModel(int inEventModel);
+   NS_IMETHOD        GetPluginEventModel(int* outEventModel);
+   NS_IMETHOD        SetPluginDrawingModel(int inDrawingModel);
+diff --git a/widget/cocoa/nsChildView.mm b/widget/cocoa/nsChildView.mm
+--- a/widget/cocoa/nsChildView.mm
++++ b/widget/cocoa/nsChildView.mm
+@@ -929,16 +929,18 @@ bool nsChildView::ShowsResizeIndicator(n
+ //
+ // There's a bug in this method's code -- it currently uses the QuickDraw
+ // coordinate system for both the QuickDraw and CoreGraphics drawing modes.
+ // This bug is fixed by the patch for bug 474491.  But the Flash plugin (both
+ // version 10.0.12.36 from Adobe and version 9.0 r151 from Apple) has Mozilla-
+ // specific code to work around this bug, which breaks when we fix it (see bmo
+ // bug 477077).  So we'll need to coordinate releasing a fix for this bug with
+ // Adobe and other major plugin vendors that support the CoreGraphics mode.
++//
++// outClipRect and outOrigin are in display pixels, not device pixels.
+ NS_IMETHODIMP nsChildView::GetPluginClipRect(nsIntRect& outClipRect, nsIntPoint& outOrigin, bool& outWidgetVisible)
+ {
+   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+ 
+   NS_ASSERTION(mWindowType == eWindowType_plugin,
+                "GetPluginClipRect must only be called on a plugin widget");
+   if (mWindowType != eWindowType_plugin) return NS_ERROR_FAILURE;
+   
+@@ -966,17 +968,21 @@ NS_IMETHODIMP nsChildView::GetPluginClip
+ 
+   if (IsVisible() && [mView window] != nil) {
+     outClipRect.width  = NSToIntRound(visibleBounds.origin.x + visibleBounds.size.width) - NSToIntRound(visibleBounds.origin.x);
+     outClipRect.height = NSToIntRound(visibleBounds.origin.y + visibleBounds.size.height) - NSToIntRound(visibleBounds.origin.y);
+ 
+     if (mClipRects) {
+       nsIntRect clipBounds;
+       for (uint32_t i = 0; i < mClipRectCount; ++i) {
+-        clipBounds.UnionRect(clipBounds, mClipRects[i]);
++        NSRect cocoaPoints = DevPixelsToCocoaPoints(mClipRects[i]);
++        clipBounds.UnionRect(clipBounds, nsIntRect(NSToIntRound(cocoaPoints.origin.x),
++                                                   NSToIntRound(cocoaPoints.origin.y),
++                                                   NSToIntRound(cocoaPoints.size.width),
++                                                   NSToIntRound(cocoaPoints.size.height)));
+       }
+       outClipRect.IntersectRect(outClipRect, clipBounds - outOrigin);
+     }
+ 
+     // XXXroc should this be !outClipRect.IsEmpty()?
+     outWidgetVisible = true;
+   }
+   else {

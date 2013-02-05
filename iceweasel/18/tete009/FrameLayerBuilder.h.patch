@@ -1,0 +1,25 @@
+diff --git a/layout/base/FrameLayerBuilder.h b/layout/base/FrameLayerBuilder.h
+--- a/layout/base/FrameLayerBuilder.h
++++ b/layout/base/FrameLayerBuilder.h
+@@ -147,16 +147,21 @@ public:
+                         const nsIntPoint& aOffset,
+                         const ContainerParameters& aParent) :
+       mXScale(aXScale), mYScale(aYScale),
+       mOffset(aOffset),
+       mInTransformedSubtree(aParent.mInTransformedSubtree),
+       mInActiveTransformedSubtree(aParent.mInActiveTransformedSubtree),
+       mDisableSubpixelAntialiasingInDescendants(aParent.mDisableSubpixelAntialiasingInDescendants)
+     {}
++    bool Scaled()
++    {
++      return (0x3f800000 != *(PRUint32 *)&mXScale) ||
++             (0x3f800000 != *(PRUint32 *)&mYScale);
++    }
+     float mXScale, mYScale;
+ 
+     /**
+      * An offset to append to the transform set on all child layers created.
+      */
+     nsIntPoint mOffset;
+ 
+     bool mInTransformedSubtree;

@@ -1,0 +1,106 @@
+diff --git a/js/src/jsreflect.cpp b/js/src/jsreflect.cpp
+--- a/js/src/jsreflect.cpp
++++ b/js/src/jsreflect.cpp
+@@ -323,77 +323,77 @@ class NodeBuilder
+     }
+ 
+     bool newArray(NodeVector &elts, MutableHandleValue dst);
+ 
+     bool newNode(ASTType type, TokenPos *pos, MutableHandleObject dst);
+ 
+     bool newNode(ASTType type, TokenPos *pos, MutableHandleValue dst) {
+         RootedObject node(cx);
+-        return newNode(type, pos, &node) &&
++        return newNode(type, pos, (MutableHandleObject)&node) &&
+                setResult(node, dst);
+     }
+ 
+     bool newNode(ASTType type, TokenPos *pos,
+                  const char *childName, HandleValue child,
+                  MutableHandleValue dst) {
+         RootedObject node(cx);
+-        return newNode(type, pos, &node) &&
++        return newNode(type, pos, (MutableHandleObject)&node) &&
+                setProperty(node, childName, child) &&
+                setResult(node, dst);
+     }
+ 
+     bool newNode(ASTType type, TokenPos *pos,
+                  const char *childName1, HandleValue child1,
+                  const char *childName2, HandleValue child2,
+                  MutableHandleValue dst) {
+         RootedObject node(cx);
+-        return newNode(type, pos, &node) &&
++        return newNode(type, pos, (MutableHandleObject)&node) &&
+                setProperty(node, childName1, child1) &&
+                setProperty(node, childName2, child2) &&
+                setResult(node, dst);
+     }
+ 
+     bool newNode(ASTType type, TokenPos *pos,
+                  const char *childName1, HandleValue child1,
+                  const char *childName2, HandleValue child2,
+                  const char *childName3, HandleValue child3,
+                  MutableHandleValue dst) {
+         RootedObject node(cx);
+-        return newNode(type, pos, &node) &&
++        return newNode(type, pos, (MutableHandleObject)&node) &&
+                setProperty(node, childName1, child1) &&
+                setProperty(node, childName2, child2) &&
+                setProperty(node, childName3, child3) &&
+                setResult(node, dst);
+     }
+ 
+     bool newNode(ASTType type, TokenPos *pos,
+                  const char *childName1, HandleValue child1,
+                  const char *childName2, HandleValue child2,
+                  const char *childName3, HandleValue child3,
+                  const char *childName4, HandleValue child4,
+                  MutableHandleValue dst) {
+         RootedObject node(cx);
+-        return newNode(type, pos, &node) &&
++        return newNode(type, pos, (MutableHandleObject)&node) &&
+                setProperty(node, childName1, child1) &&
+                setProperty(node, childName2, child2) &&
+                setProperty(node, childName3, child3) &&
+                setProperty(node, childName4, child4) &&
+                setResult(node, dst);
+     }
+ 
+     bool newNode(ASTType type, TokenPos *pos,
+                  const char *childName1, HandleValue child1,
+                  const char *childName2, HandleValue child2,
+                  const char *childName3, HandleValue child3,
+                  const char *childName4, HandleValue child4,
+                  const char *childName5, HandleValue child5,
+                  MutableHandleValue dst) {
+         RootedObject node(cx);
+-        return newNode(type, pos, &node) &&
++        return newNode(type, pos, (MutableHandleObject)&node) &&
+                setProperty(node, childName1, child1) &&
+                setProperty(node, childName2, child2) &&
+                setProperty(node, childName3, child3) &&
+                setProperty(node, childName4, child4) &&
+                setProperty(node, childName5, child5) &&
+                setResult(node, dst);
+     }
+ 
+@@ -402,17 +402,17 @@ class NodeBuilder
+                  const char *childName2, HandleValue child2,
+                  const char *childName3, HandleValue child3,
+                  const char *childName4, HandleValue child4,
+                  const char *childName5, HandleValue child5,
+                  const char *childName6, HandleValue child6,
+                  const char *childName7, HandleValue child7,
+                  MutableHandleValue dst) {
+         RootedObject node(cx);
+-        return newNode(type, pos, &node) &&
++        return newNode(type, pos, (MutableHandleObject)&node) &&
+                setProperty(node, childName1, child1) &&
+                setProperty(node, childName2, child2) &&
+                setProperty(node, childName3, child3) &&
+                setProperty(node, childName4, child4) &&
+                setProperty(node, childName5, child5) &&
+                setProperty(node, childName6, child6) &&
+                setProperty(node, childName7, child7) &&
+                setResult(node, dst);

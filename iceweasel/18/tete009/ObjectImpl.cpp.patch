@@ -1,0 +1,22 @@
+diff --git a/js/src/vm/ObjectImpl.cpp b/js/src/vm/ObjectImpl.cpp
+--- a/js/src/vm/ObjectImpl.cpp
++++ b/js/src/vm/ObjectImpl.cpp
+@@ -596,17 +596,17 @@ js::GetProperty(JSContext *cx, Handle<Ob
+         MOZ_ASSERT(obj);
+ 
+         if (Downcast(current)->isProxy()) {
+             MOZ_NOT_REACHED("NYI: proxy [[GetP]]");
+             return false;
+         }
+ 
+         PropDesc desc;
+-        if (!GetOwnProperty(cx, current, pid, resolveFlags, &desc))
++        if (!GetOwnProperty(cx, current, (PropertyId)pid, resolveFlags, &desc))
+             return false;
+ 
+         /* No property?  Recur or bottom out. */
+         if (desc.isUndefined()) {
+             current = current->getProto();
+             if (current)
+                 continue;
+ 

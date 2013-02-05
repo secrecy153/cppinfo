@@ -1,0 +1,21 @@
+diff --git a/gfx/2d/2D.h b/gfx/2d/2D.h
+--- a/gfx/2d/2D.h
++++ b/gfx/2d/2D.h
+@@ -839,16 +839,17 @@ class DrawEventRecorder : public RefCoun
+ public:
+   virtual ~DrawEventRecorder() { }
+ };
+ 
+ class GFX2D_API Factory
+ {
+ public:
+   static bool HasSSE2();
++  static bool HasSSSE3();
+ 
+   static TemporaryRef<DrawTarget> CreateDrawTargetForCairoSurface(cairo_surface_t* aSurface, const IntSize& aSize);
+ 
+   static TemporaryRef<DrawTarget>
+     CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFormat aFormat);
+ 
+   static TemporaryRef<DrawTarget>
+     CreateRecordingDrawTarget(DrawEventRecorder *aRecorder, DrawTarget *aDT);

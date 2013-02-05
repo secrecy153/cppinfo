@@ -1,0 +1,52 @@
+# HG changeset patch
+# Parent f83ffa718957b5983551e2bde5e6d0f7bf4f4d64
+# User hua.andy <hua.andy@gmail.com>
+"bug 703135"
+
+
+diff --git a/media/libtheora/lib/huffdec.c b/media/libtheora/lib/huffdec.c
+--- a/media/libtheora/lib/huffdec.c
++++ b/media/libtheora/lib/huffdec.c
+@@ -338,32 +338,40 @@ static size_t oc_huff_tree_collapse(ogg_
+   ntree=0;
+   ti=0;
+   l=0;
+   do{
+     int nbits;
+     nbits=oc_huff_tree_collapse_depth(_tokens+ti,last[l]+1-ti,depth[l]);
+     node[l]=(ogg_int16_t)ntree;
+     ntree+=oc_huff_node_size(nbits);
+-    if(_tree!=NULL)_tree[node[l]++]=(ogg_int16_t)nbits;
++    if(_tree!=NULL) {
++      // Quirky fix for a VS 2012 RC compiler optimization problem.
++      // original: if(_tree!=NULL)_tree[node[l]++]=(ogg_int16_t)nbits;
++      int treeIndex = node[l]++;
++      _tree[treeIndex]=(ogg_int16_t)nbits;
++    }
+     do{
+       while(ti<=last[l]&&_tokens[ti][1]<=depth[l]+nbits){
+         if(_tree!=NULL){
+           ogg_int16_t leaf;
+           int         nentries;
+           nentries=1<<depth[l]+nbits-_tokens[ti][1];
+           leaf=(ogg_int16_t)-(_tokens[ti][1]-depth[l]<<8|_tokens[ti][0]);
+           while(nentries-->0)_tree[node[l]++]=leaf;
+         }
+         ti++;
+       }
+       if(ti<=last[l]){
+         /*We need to recurse*/
+         depth[l+1]=(unsigned char)(depth[l]+nbits);
+-        if(_tree!=NULL)_tree[node[l]++]=(ogg_int16_t)ntree;
++        if(_tree!=NULL) {
++          int treeIndex = node[l]++;
++          _tree[treeIndex]=(ogg_int16_t)ntree;
++        }
+         l++;
+         last[l]=
+          (unsigned char)(ti+oc_huff_subtree_tokens(_tokens+ti,depth[l])-1);
+         break;
+       }
+       /*Pop back up a level of recursion.*/
+       else if(l-->0)nbits=depth[l+1]-depth[l];
+     }

@@ -1,0 +1,1518 @@
+# HG changeset patch
+# Parent 8fd1aec28022818aa6062c654e9a833385c0f7f3
+# User hua.andy <hua.andy@gmail.com>
+"snappy fix"
+
+
+diff --git a/other-licenses/snappy/snappy-stubs-public.h b/other-licenses/snappy/snappy-stubs-public.h
+--- a/other-licenses/snappy/snappy-stubs-public.h
++++ b/other-licenses/snappy/snappy-stubs-public.h
+@@ -35,17 +35,17 @@
+ 
+ #ifndef UTIL_SNAPPY_OPENSOURCE_SNAPPY_STUBS_PUBLIC_H_
+ #define UTIL_SNAPPY_OPENSOURCE_SNAPPY_STUBS_PUBLIC_H_
+ 
+ #include "mozilla/StandardInteger.h"
+ 
+ #define SNAPPY_MAJOR 1
+ #define SNAPPY_MINOR 0
+-#define SNAPPY_PATCHLEVEL 4
++#define SNAPPY_PATCHLEVEL 5
+ #define SNAPPY_VERSION \
+     ((SNAPPY_MAJOR << 16) | (SNAPPY_MINOR << 8) | SNAPPY_PATCHLEVEL)
+ 
+ #include <string>
+ 
+ namespace snappy {
+ 
+ typedef int8_t int8;
+diff --git a/other-licenses/snappy/src/ChangeLog b/other-licenses/snappy/src/ChangeLog
+--- a/other-licenses/snappy/src/ChangeLog
++++ b/other-licenses/snappy/src/ChangeLog
+@@ -1,8 +1,424 @@
++------------------------------------------------------------------------
++r60 | snappy.mirrorbot@gmail.com | 2012-02-23 18:00:36 +0100 (Thu, 23 Feb 2012) | 57 lines
++
++For 32-bit platforms, do not try to accelerate multiple neighboring
++32-bit loads with a 64-bit load during compression (it's not a win).
++
++The main target for this optimization is ARM, but 32-bit x86 gets
++a small gain, too, although there is noise in the microbenchmarks.
++It's a no-op for 64-bit x86. It does not affect decompression.
++
++Microbenchmark results on a Cortex-A9 1GHz, using g++ 4.6.2 (from
++Ubuntu/Linaro), -O2 -DNDEBUG -Wa,-march=armv7a -mtune=cortex-a9
++-mthumb-interwork, minimum 1000 iterations:
++
++  Benchmark            Time(ns)    CPU(ns) Iterations
++  ---------------------------------------------------
++  BM_ZFlat/0            1158277    1160000       1000 84.2MB/s  html (23.57 %)    [ +4.3%]
++  BM_ZFlat/1           14861782   14860000       1000 45.1MB/s  urls (50.89 %)    [ +1.1%]
++  BM_ZFlat/2             393595     390000       1000 310.5MB/s  jpg (99.88 %)    [ +0.0%]
++  BM_ZFlat/3             650583     650000       1000 138.4MB/s  pdf (82.13 %)    [ +3.1%]
++  BM_ZFlat/4            4661480    4660000       1000 83.8MB/s  html4 (23.55 %)   [ +4.3%]
++  BM_ZFlat/5             491973     490000       1000 47.9MB/s  cp (48.12 %)      [ +2.0%]
++  BM_ZFlat/6             193575     192678       1038 55.2MB/s  c (42.40 %)       [ +9.0%]
++  BM_ZFlat/7              62343      62754       3187 56.5MB/s  lsp (48.37 %)     [ +2.6%]
++  BM_ZFlat/8           17708468   17710000       1000 55.5MB/s  xls (41.34 %)     [ -0.3%]
++  BM_ZFlat/9            3755345    3760000       1000 38.6MB/s  txt1 (59.81 %)    [ +8.2%]
++  BM_ZFlat/10           3324217    3320000       1000 36.0MB/s  txt2 (64.07 %)    [ +4.2%]
++  BM_ZFlat/11          10139932   10140000       1000 40.1MB/s  txt3 (57.11 %)    [ +6.4%]
++  BM_ZFlat/12          13532109   13530000       1000 34.0MB/s  txt4 (68.35 %)    [ +5.0%]
++  BM_ZFlat/13           4690847    4690000       1000 104.4MB/s  bin (18.21 %)    [ +4.1%]
++  BM_ZFlat/14            830682     830000       1000 43.9MB/s  sum (51.88 %)     [ +1.2%]
++  BM_ZFlat/15             84784      85011       2235 47.4MB/s  man (59.36 %)     [ +1.1%]
++  BM_ZFlat/16           1293254    1290000       1000 87.7MB/s  pb (23.15 %)      [ +2.3%]
++  BM_ZFlat/17           2775155    2780000       1000 63.2MB/s  gaviota (38.27 %) [+12.2%]
++
++Core i7 in 32-bit mode (only one run and 100 iterations, though, so noisy):
++
++  Benchmark            Time(ns)    CPU(ns) Iterations
++  ---------------------------------------------------
++  BM_ZFlat/0             227582     223464       3043 437.0MB/s  html (23.57 %)    [ +7.4%]
++  BM_ZFlat/1            2982430    2918455        233 229.4MB/s  urls (50.89 %)    [ +2.9%]
++  BM_ZFlat/2              46967      46658      15217 2.5GB/s  jpg (99.88 %)       [ +0.0%]
++  BM_ZFlat/3             115298     114864       5833 783.2MB/s  pdf (82.13 %)     [ +1.5%]
++  BM_ZFlat/4             913440     899743        778 434.2MB/s  html4 (23.55 %)   [ +0.3%]
++  BM_ZFlat/5             110302     108571       7000 216.1MB/s  cp (48.12 %)      [ +0.0%]
++  BM_ZFlat/6              44409      43372      15909 245.2MB/s  c (42.40 %)       [ +0.8%]
++  BM_ZFlat/7              15713      15643      46667 226.9MB/s  lsp (48.37 %)     [ +2.7%]
++  BM_ZFlat/8            2625539    2602230        269 377.4MB/s  xls (41.34 %)     [ +1.4%]
++  BM_ZFlat/9             808884     811429        875 178.8MB/s  txt1 (59.81 %)    [ -3.9%]
++  BM_ZFlat/10            709532     700000       1000 170.5MB/s  txt2 (64.07 %)    [ +0.0%]
++  BM_ZFlat/11           2177682    2162162        333 188.2MB/s  txt3 (57.11 %)    [ -1.4%]
++  BM_ZFlat/12           2849640    2840000        250 161.8MB/s  txt4 (68.35 %)    [ -1.4%]
++  BM_ZFlat/13            849760     835476        778 585.8MB/s  bin (18.21 %)     [ +1.2%]
++  BM_ZFlat/14            165940     164571       4375 221.6MB/s  sum (51.88 %)     [ +1.4%]
++  BM_ZFlat/15             20939      20571      35000 196.0MB/s  man (59.36 %)     [ +2.1%]
++  BM_ZFlat/16            239209     236544       2917 478.1MB/s  pb (23.15 %)      [ +4.2%]
++  BM_ZFlat/17            616206     610000       1000 288.2MB/s  gaviota (38.27 %) [ -1.6%]
++
++R=sanjay
++
++------------------------------------------------------------------------
++r59 | snappy.mirrorbot@gmail.com | 2012-02-21 18:02:17 +0100 (Tue, 21 Feb 2012) | 107 lines
++
++Enable the use of unaligned loads and stores for ARM-based architectures 
++where they are available (ARMv7 and higher). This gives a significant 
++speed boost on ARM, both for compression and decompression. 
++It should not affect x86 at all. 
++ 
++There are more changes possible to speed up ARM, but it might not be 
++that easy to do without hurting x86 or making the code uglier. 
++Also, we de not try to use NEON yet. 
++ 
++Microbenchmark results on a Cortex-A9 1GHz, using g++ 4.6.2 (from Ubuntu/Linaro), 
++-O2 -DNDEBUG -Wa,-march=armv7a -mtune=cortex-a9 -mthumb-interwork: 
++ 
++Benchmark            Time(ns)    CPU(ns) Iterations
++---------------------------------------------------
++BM_UFlat/0             524806     529100        378 184.6MB/s  html            [+33.6%]
++BM_UFlat/1            5139790    5200000        100 128.8MB/s  urls            [+28.8%]
++BM_UFlat/2              86540      84166       1901 1.4GB/s  jpg               [ +0.6%]
++BM_UFlat/3             215351     210176        904 428.0MB/s  pdf             [+29.8%]
++BM_UFlat/4            2144490    2100000        100 186.0MB/s  html4           [+33.3%]
++BM_UFlat/5             194482     190000       1000 123.5MB/s  cp              [+36.2%]
++BM_UFlat/6              91843      90175       2107 117.9MB/s  c               [+38.6%]
++BM_UFlat/7              28535      28426       6684 124.8MB/s  lsp             [+34.7%]
++BM_UFlat/8            9206600    9200000        100 106.7MB/s  xls             [+42.4%]
++BM_UFlat/9            1865273    1886792        106 76.9MB/s  txt1             [+32.5%]
++BM_UFlat/10           1576809    1587301        126 75.2MB/s  txt2             [+32.3%]
++BM_UFlat/11           4968450    4900000        100 83.1MB/s  txt3             [+32.7%]
++BM_UFlat/12           6673970    6700000        100 68.6MB/s  txt4             [+32.8%]
++BM_UFlat/13           2391470    2400000        100 203.9MB/s  bin             [+29.2%]
++BM_UFlat/14            334601     344827        522 105.8MB/s  sum             [+30.6%]
++BM_UFlat/15             37404      38080       5252 105.9MB/s  man             [+33.8%]
++BM_UFlat/16            535470     540540        370 209.2MB/s  pb              [+31.2%]
++BM_UFlat/17           1875245    1886792        106 93.2MB/s  gaviota          [+37.8%]
++BM_UValidate/0         178425     179533       1114 543.9MB/s  html            [ +2.7%]
++BM_UValidate/1        2100450    2000000        100 334.8MB/s  urls            [ +5.0%]
++BM_UValidate/2           1039       1044     172413 113.3GB/s  jpg             [ +3.4%]
++BM_UValidate/3          59423      59470       3363 1.5GB/s  pdf               [ +7.8%]
++BM_UValidate/4         760716     766283        261 509.8MB/s  html4           [ +6.5%]
++BM_ZFlat/0            1204632    1204819        166 81.1MB/s  html (23.57 %)   [+32.8%]
++BM_ZFlat/1           15656190   15600000        100 42.9MB/s  urls (50.89 %)   [+27.6%]
++BM_ZFlat/2             403336     410677        487 294.8MB/s  jpg (99.88 %)   [+16.5%]
++BM_ZFlat/3             664073     671140        298 134.0MB/s  pdf (82.13 %)   [+28.4%]
++BM_ZFlat/4            4961940    4900000        100 79.7MB/s  html4 (23.55 %)  [+30.6%]
++BM_ZFlat/5             500664     501253        399 46.8MB/s  cp (48.12 %)     [+33.4%]
++BM_ZFlat/6             217276     215982        926 49.2MB/s  c (42.40 %)      [+25.0%]
++BM_ZFlat/7              64122      65487       3054 54.2MB/s  lsp (48.37 %)    [+36.1%]
++BM_ZFlat/8           18045730   18000000        100 54.6MB/s  xls (41.34 %)    [+34.4%]
++BM_ZFlat/9            4051530    4000000        100 36.3MB/s  txt1 (59.81 %)   [+25.0%]
++BM_ZFlat/10           3451800    3500000        100 34.1MB/s  txt2 (64.07 %)   [+25.7%]
++BM_ZFlat/11          11052340   11100000        100 36.7MB/s  txt3 (57.11 %)   [+24.3%]
++BM_ZFlat/12          14538690   14600000        100 31.5MB/s  txt4 (68.35 %)   [+24.7%]
++BM_ZFlat/13           5041850    5000000        100 97.9MB/s  bin (18.21 %)    [+32.0%]
++BM_ZFlat/14            908840     909090        220 40.1MB/s  sum (51.88 %)    [+22.2%]
++BM_ZFlat/15             86921      86206       1972 46.8MB/s  man (59.36 %)    [+42.2%]
++BM_ZFlat/16           1312315    1315789        152 86.0MB/s  pb (23.15 %)     [+34.5%]
++BM_ZFlat/17           3173120    3200000        100 54.9MB/s  gaviota (38.27%) [+28.1%]
++
++
++The move from 64-bit to 32-bit operations for the copies also affected 32-bit x86;
++positive on the decompression side, and slightly negative on the compression side
++(unless that is noise; I only ran once):
++
++Benchmark              Time(ns)    CPU(ns) Iterations
++-----------------------------------------------------
++BM_UFlat/0                86279      86140       7778 1.1GB/s  html             [ +7.5%]
++BM_UFlat/1               839265     822622        778 813.9MB/s  urls           [ +9.4%]
++BM_UFlat/2                 9180       9143      87500 12.9GB/s  jpg             [ +1.2%]
++BM_UFlat/3                35080      35000      20000 2.5GB/s  pdf              [+10.1%]
++BM_UFlat/4               350318     345000       2000 1.1GB/s  html4            [ +7.0%]
++BM_UFlat/5                33808      33472      21212 701.0MB/s  cp             [ +9.0%]
++BM_UFlat/6                15201      15214      46667 698.9MB/s  c              [+14.9%]
++BM_UFlat/7                 4652       4651     159091 762.9MB/s  lsp            [ +7.5%]
++BM_UFlat/8              1285551    1282528        538 765.7MB/s  xls            [+10.7%]
++BM_UFlat/9               282510     281690       2414 514.9MB/s  txt1           [+13.6%]
++BM_UFlat/10              243494     239286       2800 498.9MB/s  txt2           [+14.4%]
++BM_UFlat/11              743625     740000       1000 550.0MB/s  txt3           [+14.3%]
++BM_UFlat/12              999441     989717        778 464.3MB/s  txt4           [+16.1%]
++BM_UFlat/13              412402     410076       1707 1.2GB/s  bin              [ +7.3%]
++BM_UFlat/14               54876      54000      10000 675.3MB/s  sum            [+13.0%]
++BM_UFlat/15                6146       6100     100000 660.8MB/s  man            [+14.8%]
++BM_UFlat/16               90496      90286       8750 1.2GB/s  pb               [ +4.0%]
++BM_UFlat/17              292650     292000       2500 602.0MB/s  gaviota        [+18.1%]
++BM_UValidate/0            49620      49699      14286 1.9GB/s  html             [ +0.0%]
++BM_UValidate/1           501371     500000       1000 1.3GB/s  urls             [ +0.0%]
++BM_UValidate/2              232        227    3043478 521.5GB/s  jpg            [ +1.3%]
++BM_UValidate/3            17250      17143      43750 5.1GB/s  pdf              [ -1.3%]
++BM_UValidate/4           198643     200000       3500 1.9GB/s  html4            [ -0.9%]
++BM_ZFlat/0               227128     229415       3182 425.7MB/s  html (23.57 %) [ -1.4%]
++BM_ZFlat/1              2970089    2960000        250 226.2MB/s  urls (50.89 %) [ -1.9%]
++BM_ZFlat/2                45683      44999      15556 2.6GB/s  jpg (99.88 %)    [ +2.2%]
++BM_ZFlat/3               114661     113136       6364 795.1MB/s  pdf (82.13 %)  [ -1.5%]
++BM_ZFlat/4               919702     914286        875 427.2MB/s  html4 (23.55%) [ -1.3%]
++BM_ZFlat/5               108189     108422       6364 216.4MB/s  cp (48.12 %)   [ -1.2%]
++BM_ZFlat/6                44525      44000      15909 241.7MB/s  c (42.40 %)    [ -2.9%]
++BM_ZFlat/7                15973      15857      46667 223.8MB/s  lsp (48.37 %)  [ +0.0%]
++BM_ZFlat/8              2677888    2639405        269 372.1MB/s  xls (41.34 %)  [ -1.4%]
++BM_ZFlat/9               800715     780000       1000 186.0MB/s  txt1 (59.81 %) [ -0.4%]
++BM_ZFlat/10              700089     700000       1000 170.5MB/s  txt2 (64.07 %) [ -2.9%]
++BM_ZFlat/11             2159356    2138365        318 190.3MB/s  txt3 (57.11 %) [ -0.3%]
++BM_ZFlat/12             2796143    2779923        259 165.3MB/s  txt4 (68.35 %) [ -1.4%]
++BM_ZFlat/13              856458     835476        778 585.8MB/s  bin (18.21 %)  [ -0.1%]
++BM_ZFlat/14              166908     166857       4375 218.6MB/s  sum (51.88 %)  [ -1.4%]
++BM_ZFlat/15               21181      20857      35000 193.3MB/s  man (59.36 %)  [ -0.8%]
++BM_ZFlat/16              244009     239973       2917 471.3MB/s  pb (23.15 %)   [ -1.4%]
++BM_ZFlat/17              596362     590000       1000 297.9MB/s  gaviota (38.27%) [ +0.0%]
++
++R=sanjay
++
++------------------------------------------------------------------------
++r58 | snappy.mirrorbot@gmail.com | 2012-02-11 23:11:22 +0100 (Sat, 11 Feb 2012) | 9 lines
++
++Lower the size allocated in the "corrupted input" unit test from 256 MB
++to 2 MB. This fixes issues with running the unit test on platforms with
++little RAM (e.g. some ARM boards).
++
++Also, reactivate the 2 MB test for 64-bit platforms; there's no good
++reason why it shouldn't be.
++
++R=sanjay
++
++------------------------------------------------------------------------
++r57 | snappy.mirrorbot@gmail.com | 2012-01-08 18:55:48 +0100 (Sun, 08 Jan 2012) | 2 lines
++
++Minor refactoring to accomodate changes in Google's internal code tree.
++
++------------------------------------------------------------------------
++r56 | snappy.mirrorbot@gmail.com | 2012-01-04 14:10:46 +0100 (Wed, 04 Jan 2012) | 19 lines
++
++Fix public issue r57: Fix most warnings with -Wall, mostly signed/unsigned
++warnings. There are still some in the unit test, but the main .cc file should
++be clean. We haven't enabled -Wall for the default build, since the unit test
++is still not clean.
++
++This also fixes a real bug in the open-source implementation of
++ReadFileToStringOrDie(); it would not detect errors correctly.
++
++I had to go through some pains to avoid performance loss as the types
++were changed; I think there might still be some with 32-bit if and only if LFS
++is enabled (ie., size_t is 64-bit), but for regular 32-bit and 64-bit I can't
++see any losses, and I've diffed the generated GCC assembler between the old and
++new code without seeing any significant choices. If anything, it's ever so
++slightly faster.
++
++This may or may not enable compression of very large blocks (>2^32 bytes)
++when size_t is 64-bit, but I haven't checked, and it is still not a supported
++case.
++
++------------------------------------------------------------------------
++r55 | snappy.mirrorbot@gmail.com | 2012-01-04 11:46:39 +0100 (Wed, 04 Jan 2012) | 6 lines
++
++Add a framing format description. We do not have any implementation of this at
++the current point, but there seems to be enough of a general interest in the
++topic (cf. public bug #34).
++
++R=csilvers,sanjay
++
++------------------------------------------------------------------------
++r54 | snappy.mirrorbot@gmail.com | 2011-12-05 22:27:26 +0100 (Mon, 05 Dec 2011) | 81 lines
++
++Speed up decompression by moving the refill check to the end of the loop.
++
++This seems to work because in most of the branches, the compiler can evaluate
++“ip_limit_ - ip” in a more efficient way than reloading ip_limit_ from memory
++(either by already having the entire expression in a register, or reconstructing
++it from “avail”, or something else). Memory loads, even from L1, are seemingly
++costly in the big picture at the current decompression speeds.
++
++Microbenchmarks (64-bit, opt mode):
++
++Westmere (Intel Core i7):
++
++  Benchmark     Time(ns)    CPU(ns) Iterations
++  --------------------------------------------
++  BM_UFlat/0       74492      74491     187894 1.3GB/s  html      [ +5.9%]
++  BM_UFlat/1      712268     712263      19644 940.0MB/s  urls    [ +3.8%]
++  BM_UFlat/2       10591      10590    1000000 11.2GB/s  jpg      [ -6.8%]
++  BM_UFlat/3       29643      29643     469915 3.0GB/s  pdf       [ +7.9%]
++  BM_UFlat/4      304669     304667      45930 1.3GB/s  html4     [ +4.8%]
++  BM_UFlat/5       28508      28507     490077 823.1MB/s  cp      [ +4.0%]
++  BM_UFlat/6       12415      12415    1000000 856.5MB/s  c       [ +8.6%]
++  BM_UFlat/7        3415       3415    4084723 1039.0MB/s  lsp    [+18.0%]
++  BM_UFlat/8      979569     979563      14261 1002.5MB/s  xls    [ +5.8%]
++  BM_UFlat/9      230150     230148      60934 630.2MB/s  txt1    [ +5.2%]
++  BM_UFlat/10     197167     197166      71135 605.5MB/s  txt2    [ +4.7%]
++  BM_UFlat/11     607394     607390      23041 670.1MB/s  txt3    [ +5.6%]
++  BM_UFlat/12     808502     808496      17316 568.4MB/s  txt4    [ +5.0%]
++  BM_UFlat/13     372791     372788      37564 1.3GB/s  bin       [ +3.3%]
++  BM_UFlat/14      44541      44541     313969 818.8MB/s  sum     [ +5.7%]
++  BM_UFlat/15       4833       4833    2898697 834.1MB/s  man     [ +4.8%]
++  BM_UFlat/16      79855      79855     175356 1.4GB/s  pb        [ +4.8%]
++  BM_UFlat/17     245845     245843      56838 715.0MB/s  gaviota [ +5.8%]
++
++Clovertown (Intel Core 2):
++
++  Benchmark     Time(ns)    CPU(ns) Iterations
++  --------------------------------------------
++  BM_UFlat/0      107911     107890     100000 905.1MB/s  html    [ +2.2%]
++  BM_UFlat/1     1011237    1011041      10000 662.3MB/s  urls    [ +2.5%]
++  BM_UFlat/2       26775      26770     523089 4.4GB/s  jpg       [ +0.0%]
++  BM_UFlat/3       48103      48095     290618 1.8GB/s  pdf       [ +3.4%]
++  BM_UFlat/4      437724     437644      31937 892.6MB/s  html4   [ +2.1%]
++  BM_UFlat/5       39607      39600     358284 592.5MB/s  cp      [ +2.4%]
++  BM_UFlat/6       18227      18224     768191 583.5MB/s  c       [ +2.7%]
++  BM_UFlat/7        5171       5170    2709437 686.4MB/s  lsp     [ +3.9%]
++  BM_UFlat/8     1560291    1559989       8970 629.5MB/s  xls     [ +3.6%]
++  BM_UFlat/9      335401     335343      41731 432.5MB/s  txt1    [ +3.0%]
++  BM_UFlat/10     287014     286963      48758 416.0MB/s  txt2    [ +2.8%]
++  BM_UFlat/11     888522     888356      15752 458.1MB/s  txt3    [ +2.9%]
++  BM_UFlat/12    1186600    1186378      10000 387.3MB/s  txt4    [ +3.1%]
++  BM_UFlat/13     572295     572188      24468 855.4MB/s  bin     [ +2.1%]
++  BM_UFlat/14      64060      64049     218401 569.4MB/s  sum     [ +4.1%]
++  BM_UFlat/15       7264       7263    1916168 555.0MB/s  man     [ +1.4%]
++  BM_UFlat/16     108853     108836     100000 1039.1MB/s  pb     [ +1.7%]
++  BM_UFlat/17     364289     364223      38419 482.6MB/s  gaviota [ +4.9%]
++
++Barcelona (AMD Opteron):
++
++  Benchmark     Time(ns)    CPU(ns) Iterations
++  --------------------------------------------
++  BM_UFlat/0      103900     103871     100000 940.2MB/s  html    [ +8.3%]
++  BM_UFlat/1     1000435    1000107      10000 669.5MB/s  urls    [ +6.6%]
++  BM_UFlat/2       24659      24652     567362 4.8GB/s  jpg       [ +0.1%]
++  BM_UFlat/3       48206      48193     291121 1.8GB/s  pdf       [ +5.0%]
++  BM_UFlat/4      421980     421850      33174 926.0MB/s  html4   [ +7.3%]
++  BM_UFlat/5       40368      40357     346994 581.4MB/s  cp      [ +8.7%]
++  BM_UFlat/6       19836      19830     708695 536.2MB/s  c       [ +8.0%]
++  BM_UFlat/7        6100       6098    2292774 581.9MB/s  lsp     [ +9.0%]
++  BM_UFlat/8     1693093    1692514       8261 580.2MB/s  xls     [ +8.0%]
++  BM_UFlat/9      365991     365886      38225 396.4MB/s  txt1    [ +7.1%]
++  BM_UFlat/10     311330     311238      44950 383.6MB/s  txt2    [ +7.6%]
++  BM_UFlat/11     975037     974737      14376 417.5MB/s  txt3    [ +6.9%]
++  BM_UFlat/12    1303558    1303175      10000 352.6MB/s  txt4    [ +7.3%]
++  BM_UFlat/13     517448     517290      27144 946.2MB/s  bin     [ +5.5%]
++  BM_UFlat/14      66537      66518     210352 548.3MB/s  sum     [ +7.5%]
++  BM_UFlat/15       7976       7974    1760383 505.6MB/s  man     [ +5.6%]
++  BM_UFlat/16     103121     103092     100000 1097.0MB/s  pb     [ +8.7%]
++  BM_UFlat/17     391431     391314      35733 449.2MB/s  gaviota [ +6.5%]
++
++R=sanjay
++
++------------------------------------------------------------------------
++r53 | snappy.mirrorbot@gmail.com | 2011-11-23 12:14:17 +0100 (Wed, 23 Nov 2011) | 88 lines
++
++Speed up decompression by making the fast path for literals faster.
++
++We do the fast-path step as soon as possible; in fact, as soon as we know the
++literal length. Since we usually hit the fast path, we can then skip the checks
++for long literals and available input space (beyond what the fast path check
++already does).
++
++Note that this changes the decompression Writer API; however, it does not
++change the ABI, since writers are always templatized and as such never
++cross compilation units. The new API is slightly more general, in that it
++doesn't hard-code the value 16. Note that we also take care to check
++for len <= 16 first, since the other two checks almost always succeed
++(so we don't want to waste time checking for them until we have to).
++
++The improvements are most marked on Nehalem, but are generally positive
++on other platforms as well. All microbenchmarks are 64-bit, opt.
++
++Clovertown (Core 2):
++
++  Benchmark     Time(ns)    CPU(ns) Iterations
++  --------------------------------------------
++  BM_UFlat/0      110226     110224     100000 886.0MB/s  html    [ +1.5%]
++  BM_UFlat/1     1036523    1036508      10000 646.0MB/s  urls    [ -0.8%]
++  BM_UFlat/2       26775      26775     522570 4.4GB/s  jpg       [ +0.0%]
++  BM_UFlat/3       49738      49737     280974 1.8GB/s  pdf       [ +0.3%]
++  BM_UFlat/4      446790     446792      31334 874.3MB/s  html4   [ +0.8%]
++  BM_UFlat/5       40561      40562     350424 578.5MB/s  cp      [ +1.3%]
++  BM_UFlat/6       18722      18722     746903 568.0MB/s  c       [ +1.4%]
++  BM_UFlat/7        5373       5373    2608632 660.5MB/s  lsp     [ +8.3%]
++  BM_UFlat/8     1615716    1615718       8670 607.8MB/s  xls     [ +2.0%]
++  BM_UFlat/9      345278     345281      40481 420.1MB/s  txt1    [ +1.4%]
++  BM_UFlat/10     294855     294855      47452 404.9MB/s  txt2    [ +1.6%]
++  BM_UFlat/11     914263     914263      15316 445.2MB/s  txt3    [ +1.1%]
++  BM_UFlat/12    1222694    1222691      10000 375.8MB/s  txt4    [ +1.4%]
++  BM_UFlat/13     584495     584489      23954 837.4MB/s  bin     [ -0.6%]
++  BM_UFlat/14      66662      66662     210123 547.1MB/s  sum     [ +1.2%]
++  BM_UFlat/15       7368       7368    1881856 547.1MB/s  man     [ +4.0%]
++  BM_UFlat/16     110727     110726     100000 1021.4MB/s  pb     [ +2.3%]
++  BM_UFlat/17     382138     382141      36616 460.0MB/s  gaviota [ -0.7%]
++
++Westmere (Core i7):
++
++  Benchmark     Time(ns)    CPU(ns) Iterations
++  --------------------------------------------
++  BM_UFlat/0       78861      78853     177703 1.2GB/s  html      [ +2.1%]
++  BM_UFlat/1      739560     739491      18912 905.4MB/s  urls    [ +3.4%]
++  BM_UFlat/2        9867       9866    1419014 12.0GB/s  jpg      [ +3.4%]
++  BM_UFlat/3       31989      31986     438385 2.7GB/s  pdf       [ +0.2%]
++  BM_UFlat/4      319406     319380      43771 1.2GB/s  html4     [ +1.9%]
++  BM_UFlat/5       29639      29636     472862 791.7MB/s  cp      [ +5.2%]
++  BM_UFlat/6       13478      13477    1000000 789.0MB/s  c       [ +2.3%]
++  BM_UFlat/7        4030       4029    3475364 880.7MB/s  lsp     [ +8.7%]
++  BM_UFlat/8     1036585    1036492      10000 947.5MB/s  xls     [ +6.9%]
++  BM_UFlat/9      242127     242105      57838 599.1MB/s  txt1    [ +3.0%]
++  BM_UFlat/10     206499     206480      67595 578.2MB/s  txt2    [ +3.4%]
++  BM_UFlat/11     641635     641570      21811 634.4MB/s  txt3    [ +2.4%]
++  BM_UFlat/12     848847     848769      16443 541.4MB/s  txt4    [ +3.1%]
++  BM_UFlat/13     384968     384938      36366 1.2GB/s  bin       [ +0.3%]
++  BM_UFlat/14      47106      47101     297770 774.3MB/s  sum     [ +4.4%]
++  BM_UFlat/15       5063       5063    2772202 796.2MB/s  man     [ +7.7%]
++  BM_UFlat/16      83663      83656     167697 1.3GB/s  pb        [ +1.8%]
++  BM_UFlat/17     260224     260198      53823 675.6MB/s  gaviota [ -0.5%]
++
++Barcelona (Opteron):
++
++  Benchmark     Time(ns)    CPU(ns) Iterations
++  --------------------------------------------
++  BM_UFlat/0      112490     112457     100000 868.4MB/s  html    [ -0.4%]
++  BM_UFlat/1     1066719    1066339      10000 627.9MB/s  urls    [ +1.0%]
++  BM_UFlat/2       24679      24672     563802 4.8GB/s  jpg       [ +0.7%]
++  BM_UFlat/3       50603      50589     277285 1.7GB/s  pdf       [ +2.6%]
++  BM_UFlat/4      452982     452849      30900 862.6MB/s  html4   [ -0.2%]
++  BM_UFlat/5       43860      43848     319554 535.1MB/s  cp      [ +1.2%]
++  BM_UFlat/6       21419      21413     653573 496.6MB/s  c       [ +1.0%]
++  BM_UFlat/7        6646       6645    2105405 534.1MB/s  lsp     [ +0.3%]
++  BM_UFlat/8     1828487    1827886       7658 537.3MB/s  xls     [ +2.6%]
++  BM_UFlat/9      391824     391714      35708 370.3MB/s  txt1    [ +2.2%]
++  BM_UFlat/10     334913     334816      41885 356.6MB/s  txt2    [ +1.7%]
++  BM_UFlat/11    1042062    1041674      10000 390.7MB/s  txt3    [ +1.1%]
++  BM_UFlat/12    1398902    1398456      10000 328.6MB/s  txt4    [ +1.7%]
++  BM_UFlat/13     545706     545530      25669 897.2MB/s  bin     [ -0.4%]
++  BM_UFlat/14      71512      71505     196035 510.0MB/s  sum     [ +1.4%]
++  BM_UFlat/15       8422       8421    1665036 478.7MB/s  man     [ +2.6%]
++  BM_UFlat/16     112053     112048     100000 1009.3MB/s  pb     [ -0.4%]
++  BM_UFlat/17     416723     416713      33612 421.8MB/s  gaviota [ -2.0%]
++
++R=sanjay
++
++------------------------------------------------------------------------
++r52 | snappy.mirrorbot@gmail.com | 2011-11-08 15:46:39 +0100 (Tue, 08 Nov 2011) | 5 lines
++
++Fix public issue #53: Update the README to the API we actually open-sourced
++with.
++
++R=sanjay
++
++------------------------------------------------------------------------
++r51 | snappy.mirrorbot@gmail.com | 2011-10-05 14:27:12 +0200 (Wed, 05 Oct 2011) | 5 lines
++
++In the format description, use a clearer example to emphasize that varints are
++stored in little-endian. Patch from Christian von Roques.
++
++R=csilvers
++
++------------------------------------------------------------------------
++r50 | snappy.mirrorbot@gmail.com | 2011-09-15 21:34:06 +0200 (Thu, 15 Sep 2011) | 4 lines
++
++Release Snappy 1.0.4.
++
++R=sanjay
++
+ ------------------------------------------------------------------------
+ r49 | snappy.mirrorbot@gmail.com | 2011-09-15 11:50:05 +0200 (Thu, 15 Sep 2011) | 5 lines
+ 
+ Fix public issue #50: Include generic byteswap macros.
+ Also include Solaris 10 and FreeBSD versions.
+ 
+ R=csilvers
+ 
+@@ -168,18 +584,18 @@ Release Snappy 1.0.3.
+ 
+ ------------------------------------------------------------------------
+ r39 | snappy.mirrorbot@gmail.com | 2011-06-02 20:06:54 +0200 (Thu, 02 Jun 2011) | 11 lines
+ 
+ Remove an unneeded goto in the decompressor; it turns out that the
+ state of ip_ after decompression (or attempted decompresion) is
+ completely irrelevant, so we don't need the trailer.
+ 
+-Performance is, as expected, mostly flat -- there's a curious ~3–5%
+-loss in the “lsp” test, but that test case is so short it is hard to say
++Performance is, as expected, mostly flat -- there's a curious ~3-5%
++loss in the "lsp" test, but that test case is so short it is hard to say
+ anything definitive about why (most likely, it's some sort of
+ unrelated effect).
+ 
+ R=jeff
+ 
+ ------------------------------------------------------------------------
+ r38 | snappy.mirrorbot@gmail.com | 2011-06-02 19:59:40 +0200 (Thu, 02 Jun 2011) | 52 lines
+ 
+@@ -190,17 +606,17 @@ pointer into the compressed data stream,
+ thus using it directly will incur memory traffic as it cannot be kept in a
+ register. The code already knew about this and cached it into a local
+ variable, but since Step() only decoded one tag, it had to move ip_ back into
+ place between every tag. This seems to have cost us a significant amount of
+ performance, so changing Step() into a function that decodes as much as it can
+ before it saves ip_ back and returns. (Note that Step() was already inlined,
+ so it is not the manual inlining that buys the performance here.)
+ 
+-The wins are about 3–6% for Core 2, 6–13% on Core i7 and 5–12% on Opteron
++The wins are about 3-6% for Core 2, 6-13% on Core i7 and 5-12% on Opteron
+ (for plain array-to-array decompression, in 64-bit opt mode).
+ 
+ There is a tiny difference in the behavior here; if an invalid literal is
+ encountered (ie., the writer refuses the Append() operation), ip_ will now
+ point to the byte past the tag byte, instead of where the literal was
+ originally thought to end. However, we don't use ip_ for anything after
+ DecompressAllTags() has returned, so this should not change external behavior
+ in any way.
+diff --git a/other-licenses/snappy/src/NEWS b/other-licenses/snappy/src/NEWS
+--- a/other-licenses/snappy/src/NEWS
++++ b/other-licenses/snappy/src/NEWS
+@@ -1,8 +1,39 @@
++Snappy v1.0.5, February 24th 2012:
++
++  * More speed improvements. Exactly how big will depend on
++    the architecture:
++
++    - 3–10% faster decompression for the base case (x86-64).
++
++    - ARMv7 and higher can now use unaligned accesses,
++      and will see about 30% faster decompression and
++      20–40% faster compression.
++
++    - 32-bit platforms (ARM and 32-bit x86) will see 2–5%
++      faster compression.
++
++    These are all cumulative (e.g., ARM gets all three speedups).
++
++  * Fixed an issue where the unit test would crash on system
++    with less than 256 MB address space available,
++    e.g. some embedded platforms.
++
++  * Added a framing format description, for use over e.g. HTTP,
++    or for a command-line compressor. We do not have any
++    implementations of this at the current point, but there seems
++    to be enough of a general interest in the topic.
++    Also make the format description slightly clearer.
++
++  * Remove some compile-time warnings in -Wall
++    (mostly signed/unsigned comparisons), for easier embedding
++    into projects that use -Wall -Werror.
++
++
+ Snappy v1.0.4, September 15th 2011:
+ 
+   * Speeded up the decompressor somewhat; typically about 2–8%
+     for Core i7, in 64-bit mode (comparable for Opteron).
+     Somewhat more for some tests, almost no gain for others.
+   
+   * Make Snappy compile on certain platforms it didn't before
+     (Solaris with SunPro C++, HP-UX, AIX).
+diff --git a/other-licenses/snappy/src/snappy-internal.h b/other-licenses/snappy/src/snappy-internal.h
+--- a/other-licenses/snappy/src/snappy-internal.h
++++ b/other-licenses/snappy/src/snappy-internal.h
+@@ -80,17 +80,17 @@ char* CompressFragment(const char* input
+ // Requires that s2_limit >= s2.
+ //
+ // Separate implementation for x86_64, for speed.  Uses the fact that
+ // x86_64 is little endian.
+ #if defined(ARCH_K8)
+ static inline int FindMatchLength(const char* s1,
+                                   const char* s2,
+                                   const char* s2_limit) {
+-  DCHECK_GE(s2_limit, s2);
++  assert(s2_limit >= s2);
+   int matched = 0;
+ 
+   // Find out how long the match is. We loop over the data 64 bits at a
+   // time until we find a 64-bit block that doesn't match; then we find
+   // the first non-matching bit and use that to calculate the total
+   // length of the match.
+   while (PREDICT_TRUE(s2 <= s2_limit - 8)) {
+     if (PREDICT_FALSE(UNALIGNED_LOAD64(s2) == UNALIGNED_LOAD64(s1 + matched))) {
+@@ -117,17 +117,17 @@ static inline int FindMatchLength(const 
+   }
+   return matched;
+ }
+ #else
+ static inline int FindMatchLength(const char* s1,
+                                   const char* s2,
+                                   const char* s2_limit) {
+   // Implementation based on the x86-64 version, above.
+-  DCHECK_GE(s2_limit, s2);
++  assert(s2_limit >= s2);
+   int matched = 0;
+ 
+   while (s2 <= s2_limit - 4 &&
+          UNALIGNED_LOAD32(s2) == UNALIGNED_LOAD32(s1 + matched)) {
+     s2 += 4;
+     matched += 4;
+   }
+   if (LittleEndian::IsLittleEndian() && s2 <= s2_limit - 4) {
+diff --git a/other-licenses/snappy/src/snappy-sinksource.cc b/other-licenses/snappy/src/snappy-sinksource.cc
+--- a/other-licenses/snappy/src/snappy-sinksource.cc
++++ b/other-licenses/snappy/src/snappy-sinksource.cc
+@@ -63,10 +63,9 @@ void UncheckedByteArraySink::Append(cons
+   }
+   dest_ += n;
+ }
+ 
+ char* UncheckedByteArraySink::GetAppendBuffer(size_t len, char* scratch) {
+   return dest_;
+ }
+ 
+-
+ }
+diff --git a/other-licenses/snappy/src/snappy-sinksource.h b/other-licenses/snappy/src/snappy-sinksource.h
+--- a/other-licenses/snappy/src/snappy-sinksource.h
++++ b/other-licenses/snappy/src/snappy-sinksource.h
+@@ -55,16 +55,17 @@ class Sink {
+   //
+   // If a non-scratch buffer is returned, the caller may only pass a
+   // prefix of it to Append().  That is, it is not correct to pass an
+   // interior pointer of the returned array to Append().
+   //
+   // The default implementation always returns the scratch buffer.
+   virtual char* GetAppendBuffer(size_t length, char* scratch);
+ 
++
+  private:
+   // No copying
+   Sink(const Sink&);
+   void operator=(const Sink&);
+ };
+ 
+ // A Source is an interface that yields a sequence of bytes
+ class Source {
+diff --git a/other-licenses/snappy/src/snappy-stubs-internal.h b/other-licenses/snappy/src/snappy-stubs-internal.h
+--- a/other-licenses/snappy/src/snappy-stubs-internal.h
++++ b/other-licenses/snappy/src/snappy-stubs-internal.h
+@@ -30,17 +30,16 @@
+ 
+ #ifndef UTIL_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_
+ #define UTIL_SNAPPY_OPENSOURCE_SNAPPY_STUBS_INTERNAL_H_
+ 
+ #ifdef HAVE_CONFIG_H
+ #include "config.h"
+ #endif
+ 
+-#include <iostream>
+ #include <string>
+ 
+ #include <assert.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+ #ifdef HAVE_SYS_MMAN_H
+ #include <sys/mman.h>
+@@ -90,109 +89,71 @@ using namespace std;
+ #define DECLARE_bool(flag_name) \
+   extern bool FLAGS_ ## flag_name
+ 
+ namespace snappy {
+ 
+ static const uint32 kuint32max = static_cast<uint32>(0xFFFFFFFF);
+ static const int64 kint64max = static_cast<int64>(0x7FFFFFFFFFFFFFFFLL);
+ 
+-// Logging.
++// Potentially unaligned loads and stores.
+ 
+-#define LOG(level) LogMessage()
+-#define VLOG(level) true ? (void)0 : \
+-    snappy::LogMessageVoidify() & snappy::LogMessage()
+-
+-class LogMessage {
+- public:
+-  LogMessage() { }
+-  ~LogMessage() {
+-    cerr << endl;
+-  }
+-
+-  LogMessage& operator<<(const std::string& msg) {
+-    cerr << msg;
+-    return *this;
+-  }
+-  LogMessage& operator<<(int x) {
+-    cerr << x;
+-    return *this;
+-  }
+-};
+-
+-// Asserts, both versions activated in debug mode only,
+-// and ones that are always active.
+-
+-#define CRASH_UNLESS(condition) \
+-    PREDICT_TRUE(condition) ? (void)0 : \
+-    snappy::LogMessageVoidify() & snappy::LogMessageCrash()
+-
+-class LogMessageCrash : public LogMessage {
+- public:
+-  LogMessageCrash() { }
+-  ~LogMessageCrash() {
+-    cerr << endl;
+-    abort();
+-  }
+-};
+-
+-// This class is used to explicitly ignore values in the conditional
+-// logging macros.  This avoids compiler warnings like "value computed
+-// is not used" and "statement has no effect".
+-
+-class LogMessageVoidify {
+- public:
+-  LogMessageVoidify() { }
+-  // This has to be an operator with a precedence lower than << but
+-  // higher than ?:
+-  void operator&(const LogMessage&) { }
+-};
+-
+-#define CHECK(cond) CRASH_UNLESS(cond)
+-#define CHECK_LE(a, b) CRASH_UNLESS((a) <= (b))
+-#define CHECK_GE(a, b) CRASH_UNLESS((a) >= (b))
+-#define CHECK_EQ(a, b) CRASH_UNLESS((a) == (b))
+-#define CHECK_NE(a, b) CRASH_UNLESS((a) != (b))
+-#define CHECK_LT(a, b) CRASH_UNLESS((a) < (b))
+-#define CHECK_GT(a, b) CRASH_UNLESS((a) > (b))
+-
+-#ifdef NDEBUG
+-
+-#define DCHECK(cond) CRASH_UNLESS(true)
+-#define DCHECK_LE(a, b) CRASH_UNLESS(true)
+-#define DCHECK_GE(a, b) CRASH_UNLESS(true)
+-#define DCHECK_EQ(a, b) CRASH_UNLESS(true)
+-#define DCHECK_NE(a, b) CRASH_UNLESS(true)
+-#define DCHECK_LT(a, b) CRASH_UNLESS(true)
+-#define DCHECK_GT(a, b) CRASH_UNLESS(true)
+-
+-#else
+-
+-#define DCHECK(cond) CHECK(cond)
+-#define DCHECK_LE(a, b) CHECK_LE(a, b)
+-#define DCHECK_GE(a, b) CHECK_GE(a, b)
+-#define DCHECK_EQ(a, b) CHECK_EQ(a, b)
+-#define DCHECK_NE(a, b) CHECK_NE(a, b)
+-#define DCHECK_LT(a, b) CHECK_LT(a, b)
+-#define DCHECK_GT(a, b) CHECK_GT(a, b)
+-
+-#endif
+-
+-// Potentially unaligned loads and stores.
++// x86 and PowerPC can simply do these loads and stores native.
+ 
+ #if defined(__i386__) || defined(__x86_64__) || defined(__powerpc__)
+ 
+ #define UNALIGNED_LOAD16(_p) (*reinterpret_cast<const uint16 *>(_p))
+ #define UNALIGNED_LOAD32(_p) (*reinterpret_cast<const uint32 *>(_p))
+ #define UNALIGNED_LOAD64(_p) (*reinterpret_cast<const uint64 *>(_p))
+ 
+ #define UNALIGNED_STORE16(_p, _val) (*reinterpret_cast<uint16 *>(_p) = (_val))
+ #define UNALIGNED_STORE32(_p, _val) (*reinterpret_cast<uint32 *>(_p) = (_val))
+ #define UNALIGNED_STORE64(_p, _val) (*reinterpret_cast<uint64 *>(_p) = (_val))
+ 
++// ARMv7 and newer support native unaligned accesses, but only of 16-bit
++// and 32-bit values (not 64-bit); older versions either raise a fatal signal,
++// do an unaligned read and rotate the words around a bit, or do the reads very
++// slowly (trip through kernel mode). There's no simple #define that says just
++// “ARMv7 or higher”, so we have to filter away all ARMv5 and ARMv6
++// sub-architectures.
++//
++// This is a mess, but there's not much we can do about it.
++
++#elif defined(__arm__) && \
++      !defined(__ARM_ARCH_5__) && \
++      !defined(__ARM_ARCH_5T__) && \
++      !defined(__ARM_ARCH_5TE__) && \
++      !defined(__ARM_ARCH_5TEJ__) && \
++      !defined(__ARM_ARCH_6__) && \
++      !defined(__ARM_ARCH_6J__) && \
++      !defined(__ARM_ARCH_6K__) && \
++      !defined(__ARM_ARCH_6Z__) && \
++      !defined(__ARM_ARCH_6ZK__) && \
++      !defined(__ARM_ARCH_6T2__)
++
++#define UNALIGNED_LOAD16(_p) (*reinterpret_cast<const uint16 *>(_p))
++#define UNALIGNED_LOAD32(_p) (*reinterpret_cast<const uint32 *>(_p))
++
++#define UNALIGNED_STORE16(_p, _val) (*reinterpret_cast<uint16 *>(_p) = (_val))
++#define UNALIGNED_STORE32(_p, _val) (*reinterpret_cast<uint32 *>(_p) = (_val))
++
++// TODO(user): NEON supports unaligned 64-bit loads and stores.
++// See if that would be more efficient on platforms supporting it,
++// at least for copies.
++
++inline uint64 UNALIGNED_LOAD64(const void *p) {
++  uint64 t;
++  memcpy(&t, p, sizeof t);
++  return t;
++}
++
++inline void UNALIGNED_STORE64(void *p, uint64 v) {
++  memcpy(p, &v, sizeof v);
++}
++
+ #else
+ 
+ // These functions are provided for architectures that don't support
+ // unaligned loads and stores.
+ 
+ inline uint16 UNALIGNED_LOAD16(const void *p) {
+   uint16 t;
+   memcpy(&t, p, sizeof t);
+@@ -220,16 +181,30 @@ inline void UNALIGNED_STORE32(void *p, u
+ }
+ 
+ inline void UNALIGNED_STORE64(void *p, uint64 v) {
+   memcpy(p, &v, sizeof v);
+ }
+ 
+ #endif
+ 
++// This can be more efficient than UNALIGNED_LOAD64 + UNALIGNED_STORE64
++// on some platforms, in particular ARM.
++inline void UnalignedCopy64(const void *src, void *dst) {
++  if (sizeof(void *) == 8) {
++    UNALIGNED_STORE64(dst, UNALIGNED_LOAD64(src));
++  } else {
++    const char *src_char = reinterpret_cast<const char *>(src);
++    char *dst_char = reinterpret_cast<char *>(dst);
++
++    UNALIGNED_STORE32(dst_char, UNALIGNED_LOAD32(src_char));
++    UNALIGNED_STORE32(dst_char + 4, UNALIGNED_LOAD32(src_char + 4));
++  }
++}
++
+ // The following guarantees declaration of the byte swap functions.
+ #ifdef WORDS_BIGENDIAN
+ 
+ #ifdef HAVE_SYS_BYTEORDER_H
+ #include <sys/byteorder.h>
+ #endif
+ 
+ #ifdef HAVE_SYS_ENDIAN_H
+diff --git a/other-licenses/snappy/src/snappy-test.h b/other-licenses/snappy/src/snappy-test.h
+--- a/other-licenses/snappy/src/snappy-test.h
++++ b/other-licenses/snappy/src/snappy-test.h
+@@ -26,16 +26,19 @@
+ // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ //
+ // Various stubs for the unit tests for the open-source version of Snappy.
+ 
+ #ifndef UTIL_SNAPPY_OPENSOURCE_SNAPPY_TEST_H_
+ #define UTIL_SNAPPY_OPENSOURCE_SNAPPY_TEST_H_
+ 
++#include <iostream>
++#include <string>
++
+ #include "snappy-stubs-internal.h"
+ 
+ #include <stdio.h>
+ #include <stdarg.h>
+ 
+ #ifdef HAVE_SYS_MMAN_H
+ #include <sys/mman.h>
+ #endif
+@@ -491,15 +494,74 @@ static inline int RUN_ALL_TESTS() {
+ 
+ // For main().
+ namespace snappy {
+ 
+ static void CompressFile(const char* fname);
+ static void UncompressFile(const char* fname);
+ static void MeasureFile(const char* fname);
+ 
++// Logging.
++
++#define LOG(level) LogMessage()
++#define VLOG(level) true ? (void)0 : \
++    snappy::LogMessageVoidify() & snappy::LogMessage()
++
++class LogMessage {
++ public:
++  LogMessage() { }
++  ~LogMessage() {
++    cerr << endl;
++  }
++
++  LogMessage& operator<<(const std::string& msg) {
++    cerr << msg;
++    return *this;
++  }
++  LogMessage& operator<<(int x) {
++    cerr << x;
++    return *this;
++  }
++};
++
++// Asserts, both versions activated in debug mode only,
++// and ones that are always active.
++
++#define CRASH_UNLESS(condition) \
++    PREDICT_TRUE(condition) ? (void)0 : \
++    snappy::LogMessageVoidify() & snappy::LogMessageCrash()
++
++class LogMessageCrash : public LogMessage {
++ public:
++  LogMessageCrash() { }
++  ~LogMessageCrash() {
++    cerr << endl;
++    abort();
++  }
++};
++
++// This class is used to explicitly ignore values in the conditional
++// logging macros.  This avoids compiler warnings like "value computed
++// is not used" and "statement has no effect".
++
++class LogMessageVoidify {
++ public:
++  LogMessageVoidify() { }
++  // This has to be an operator with a precedence lower than << but
++  // higher than ?:
++  void operator&(const LogMessage&) { }
++};
++
++#define CHECK(cond) CRASH_UNLESS(cond)
++#define CHECK_LE(a, b) CRASH_UNLESS((a) <= (b))
++#define CHECK_GE(a, b) CRASH_UNLESS((a) >= (b))
++#define CHECK_EQ(a, b) CRASH_UNLESS((a) == (b))
++#define CHECK_NE(a, b) CRASH_UNLESS((a) != (b))
++#define CHECK_LT(a, b) CRASH_UNLESS((a) < (b))
++#define CHECK_GT(a, b) CRASH_UNLESS((a) > (b))
++
+ }  // namespace
+ 
+ using snappy::CompressFile;
+ using snappy::UncompressFile;
+ using snappy::MeasureFile;
+ 
+ #endif  // UTIL_SNAPPY_OPENSOURCE_SNAPPY_TEST_H_
+diff --git a/other-licenses/snappy/src/snappy.cc b/other-licenses/snappy/src/snappy.cc
+--- a/other-licenses/snappy/src/snappy.cc
++++ b/other-licenses/snappy/src/snappy.cc
+@@ -90,17 +90,17 @@ enum {
+ //    op     == src + 2
+ //    len    == 20
+ // After IncrementalCopy(src, op, len), the result will have
+ // eleven copies of "ab"
+ //    ababababababababababab
+ // Note that this does not match the semantics of either memcpy()
+ // or memmove().
+ static inline void IncrementalCopy(const char* src, char* op, int len) {
+-  DCHECK_GT(len, 0);
++  assert(len > 0);
+   do {
+     *op++ = *src++;
+   } while (--len > 0);
+ }
+ 
+ // Equivalent to IncrementalCopy except that it can write up to ten extra
+ // bytes after the end of the copy, and that it is faster.
+ //
+@@ -135,22 +135,22 @@ static inline void IncrementalCopy(const
+ namespace {
+ 
+ const int kMaxIncrementCopyOverflow = 10;
+ 
+ }  // namespace
+ 
+ static inline void IncrementalCopyFastPath(const char* src, char* op, int len) {
+   while (op - src < 8) {
+-    UNALIGNED_STORE64(op, UNALIGNED_LOAD64(src));
++    UnalignedCopy64(src, op);
+     len -= op - src;
+     op += op - src;
+   }
+   while (len > 0) {
+-    UNALIGNED_STORE64(op, UNALIGNED_LOAD64(src));
++    UnalignedCopy64(src, op);
+     src += 8;
+     op += 8;
+     len -= 8;
+   }
+ }
+ 
+ static inline char* EmitLiteral(char* op,
+                                 const char* literal,
+@@ -167,18 +167,18 @@ static inline char* EmitLiteral(char* op
+     // main loop, since we have a bit to go on for both sides:
+     //
+     //   - The input will always have kInputMarginBytes = 15 extra
+     //     available bytes, as long as we're in the main loop, and
+     //     if not, allow_fast_path = false.
+     //   - The output will always have 32 spare bytes (see
+     //     MaxCompressedLength).
+     if (allow_fast_path && len <= 16) {
+-      UNALIGNED_STORE64(op, UNALIGNED_LOAD64(literal));
+-      UNALIGNED_STORE64(op + 8, UNALIGNED_LOAD64(literal + 8));
++      UnalignedCopy64(literal, op);
++      UnalignedCopy64(literal + 8, op + 8);
+       return op + len;
+     }
+   } else {
+     // Encode in upcoming bytes
+     char* base = op;
+     int count = 0;
+     op++;
+     while (n > 0) {
+@@ -190,19 +190,19 @@ static inline char* EmitLiteral(char* op
+     assert(count <= 4);
+     *base = LITERAL | ((59+count) << 2);
+   }
+   memcpy(op, literal, len);
+   return op + len;
+ }
+ 
+ static inline char* EmitCopyLessThan64(char* op, size_t offset, int len) {
+-  DCHECK_LE(len, 64);
+-  DCHECK_GE(len, 4);
+-  DCHECK_LT(offset, 65536);
++  assert(len <= 64);
++  assert(len >= 4);
++  assert(offset < 65536);
+ 
+   if ((len < 12) && (offset < 2048)) {
+     size_t len_minus_4 = len - 4;
+     assert(len_minus_4 < 8);            // Must fit in 3 bits
+     *op++ = COPY_1_BYTE_OFFSET | ((len_minus_4) << 2) | ((offset >> 8) << 5);
+     *op++ = offset & 0xff;
+   } else {
+     *op++ = COPY_2_BYTE_OFFSET | ((len-1) << 2);
+@@ -248,18 +248,16 @@ uint16* WorkingMemory::GetHashTable(size
+   // fill the table, incurring O(hash table size) overhead for
+   // compression, and if the input is short, we won't need that
+   // many hash table entries anyway.
+   assert(kMaxHashTableSize >= 256);
+   size_t htsize = 256;
+   while (htsize < kMaxHashTableSize && htsize < input_size) {
+     htsize <<= 1;
+   }
+-  CHECK_EQ(0, htsize & (htsize - 1)) << ": must be power of two";
+-  CHECK_LE(htsize, kMaxHashTableSize) << ": hash table too large";
+ 
+   uint16* table;
+   if (htsize <= ARRAYSIZE(small_table_)) {
+     table = small_table_;
+   } else {
+     if (large_table_ == NULL) {
+       large_table_ = new uint16[kMaxHashTableSize];
+     }
+@@ -267,26 +265,59 @@ uint16* WorkingMemory::GetHashTable(size
+   }
+ 
+   *table_size = htsize;
+   memset(table, 0, htsize * sizeof(*table));
+   return table;
+ }
+ }  // end namespace internal
+ 
+-// For 0 <= offset <= 4, GetUint32AtOffset(UNALIGNED_LOAD64(p), offset) will
++// For 0 <= offset <= 4, GetUint32AtOffset(GetEightBytesAt(p), offset) will
+ // equal UNALIGNED_LOAD32(p + offset).  Motivation: On x86-64 hardware we have
+ // empirically found that overlapping loads such as
+ //  UNALIGNED_LOAD32(p) ... UNALIGNED_LOAD32(p+1) ... UNALIGNED_LOAD32(p+2)
+ // are slower than UNALIGNED_LOAD64(p) followed by shifts and casts to uint32.
++//
++// We have different versions for 64- and 32-bit; ideally we would avoid the
++// two functions and just inline the UNALIGNED_LOAD64 call into
++// GetUint32AtOffset, but GCC (at least not as of 4.6) is seemingly not clever
++// enough to avoid loading the value multiple times then. For 64-bit, the load
++// is done when GetEightBytesAt() is called, whereas for 32-bit, the load is
++// done at GetUint32AtOffset() time.
++
++#ifdef ARCH_K8
++
++typedef uint64 EightBytesReference;
++
++static inline EightBytesReference GetEightBytesAt(const char* ptr) {
++  return UNALIGNED_LOAD64(ptr);
++}
++
+ static inline uint32 GetUint32AtOffset(uint64 v, int offset) {
+-  DCHECK(0 <= offset && offset <= 4) << offset;
++  assert(offset >= 0);
++  assert(offset <= 4);
+   return v >> (LittleEndian::IsLittleEndian() ? 8 * offset : 32 - 8 * offset);
+ }
+ 
++#else
++
++typedef const char* EightBytesReference;
++
++static inline EightBytesReference GetEightBytesAt(const char* ptr) {
++  return ptr;
++}
++
++static inline uint32 GetUint32AtOffset(const char* v, int offset) {
++  assert(offset >= 0);
++  assert(offset <= 4);
++  return UNALIGNED_LOAD32(v + offset);
++}
++
++#endif
++
+ // Flat array compression that does not emit the "uncompressed length"
+ // prefix. Compresses "input" string to the "*op" buffer.
+ //
+ // REQUIRES: "input" is at most "kBlockSize" bytes long.
+ // REQUIRES: "op" points to an array of memory that is at least
+ // "MaxCompressedLength(input.size())" in size.
+ // REQUIRES: All elements in "table[0..table_size-1]" are initialized to zero.
+ // REQUIRES: "table_size" is a power of two
+@@ -296,32 +327,32 @@ static inline uint32 GetUint32AtOffset(u
+ namespace internal {
+ char* CompressFragment(const char* input,
+                        size_t input_size,
+                        char* op,
+                        uint16* table,
+                        const int table_size) {
+   // "ip" is the input pointer, and "op" is the output pointer.
+   const char* ip = input;
+-  CHECK_LE(input_size, kBlockSize);
+-  CHECK_EQ(table_size & (table_size - 1), 0) << ": table must be power of two";
++  assert(input_size <= kBlockSize);
++  assert((table_size & (table_size - 1)) == 0); // table must be power of two
+   const int shift = 32 - Bits::Log2Floor(table_size);
+-  DCHECK_EQ(static_cast<int>(kuint32max >> shift), table_size - 1);
++  assert(static_cast<int>(kuint32max >> shift) == table_size - 1);
+   const char* ip_end = input + input_size;
+   const char* base_ip = ip;
+   // Bytes in [next_emit, ip) will be emitted as literal bytes.  Or
+   // [next_emit, ip_end) after the main loop.
+   const char* next_emit = ip;
+ 
+   const size_t kInputMarginBytes = 15;
+   if (PREDICT_TRUE(input_size >= kInputMarginBytes)) {
+     const char* ip_limit = input + input_size - kInputMarginBytes;
+ 
+     for (uint32 next_hash = Hash(++ip, shift); ; ) {
+-      DCHECK_LT(next_emit, ip);
++      assert(next_emit < ip);
+       // The body of this loop calls EmitLiteral once and then EmitCopy one or
+       // more times.  (The exception is that when we're close to exhausting
+       // the input we goto emit_remainder.)
+       //
+       // In the first iteration of this loop we're just starting, so
+       // there's nothing to copy, so calling EmitLiteral once is
+       // necessary.  And we only start a new iteration when the
+       // current iteration has determined that a call to EmitLiteral will
+@@ -344,65 +375,65 @@ char* CompressFragment(const char* input
+       // number of bytes to move ahead for each iteration.
+       uint32 skip = 32;
+ 
+       const char* next_ip = ip;
+       const char* candidate;
+       do {
+         ip = next_ip;
+         uint32 hash = next_hash;
+-        DCHECK_EQ(hash, Hash(ip, shift));
++        assert(hash == Hash(ip, shift));
+         uint32 bytes_between_hash_lookups = skip++ >> 5;
+         next_ip = ip + bytes_between_hash_lookups;
+         if (PREDICT_FALSE(next_ip > ip_limit)) {
+           goto emit_remainder;
+         }
+         next_hash = Hash(next_ip, shift);
+         candidate = base_ip + table[hash];
+-        DCHECK_GE(candidate, base_ip);
+-        DCHECK_LT(candidate, ip);
++        assert(candidate >= base_ip);
++        assert(candidate < ip);
+ 
+         table[hash] = ip - base_ip;
+       } while (PREDICT_TRUE(UNALIGNED_LOAD32(ip) !=
+                             UNALIGNED_LOAD32(candidate)));
+ 
+       // Step 2: A 4-byte match has been found.  We'll later see if more
+       // than 4 bytes match.  But, prior to the match, input
+       // bytes [next_emit, ip) are unmatched.  Emit them as "literal bytes."
+-      DCHECK_LE(next_emit + 16, ip_end);
++      assert(next_emit + 16 <= ip_end);
+       op = EmitLiteral(op, next_emit, ip - next_emit, true);
+ 
+       // Step 3: Call EmitCopy, and then see if another EmitCopy could
+       // be our next move.  Repeat until we find no match for the
+       // input immediately after what was consumed by the last EmitCopy call.
+       //
+       // If we exit this loop normally then we need to call EmitLiteral next,
+       // though we don't yet know how big the literal will be.  We handle that
+       // by proceeding to the next iteration of the main loop.  We also can exit
+       // this loop via goto if we get close to exhausting the input.
+-      uint64 input_bytes = 0;
++      EightBytesReference input_bytes;
+       uint32 candidate_bytes = 0;
+ 
+       do {
+         // We have a 4-byte match at ip, and no need to emit any
+         // "literal bytes" prior to ip.
+         const char* base = ip;
+         int matched = 4 + FindMatchLength(candidate + 4, ip + 4, ip_end);
+         ip += matched;
+         size_t offset = base - candidate;
+-        DCHECK_EQ(0, memcmp(base, candidate, matched));
++        assert(0 == memcmp(base, candidate, matched));
+         op = EmitCopy(op, offset, matched);
+         // We could immediately start working at ip now, but to improve
+         // compression we first update table[Hash(ip - 1, ...)].
+         const char* insert_tail = ip - 1;
+         next_emit = ip;
+         if (PREDICT_FALSE(ip >= ip_limit)) {
+           goto emit_remainder;
+         }
+-        input_bytes = UNALIGNED_LOAD64(insert_tail);
++        input_bytes = GetEightBytesAt(insert_tail);
+         uint32 prev_hash = HashBytes(GetUint32AtOffset(input_bytes, 0), shift);
+         table[prev_hash] = ip - base_ip - 1;
+         uint32 cur_hash = HashBytes(GetUint32AtOffset(input_bytes, 1), shift);
+         candidate = base_ip + table[cur_hash];
+         candidate_bytes = UNALIGNED_LOAD32(candidate);
+         table[cur_hash] = ip - base_ip;
+       } while (GetUint32AtOffset(input_bytes, 1) == candidate_bytes);
+ 
+@@ -516,19 +547,19 @@ static const uint16 char_table[256] = {
+ #ifndef NDEBUG
+ DEFINE_bool(snappy_dump_decompression_table, false,
+             "If true, we print the decompression table at startup.");
+ 
+ static uint16 MakeEntry(unsigned int extra,
+                         unsigned int len,
+                         unsigned int copy_offset) {
+   // Check that all of the fields fit within the allocated space
+-  DCHECK_EQ(extra,       extra & 0x7);          // At most 3 bits
+-  DCHECK_EQ(copy_offset, copy_offset & 0x7);    // At most 3 bits
+-  DCHECK_EQ(len,         len & 0x7f);           // At most 7 bits
++  assert(extra       == (extra & 0x7));          // At most 3 bits
++  assert(copy_offset == (copy_offset & 0x7));    // At most 3 bits
++  assert(len         == (len & 0x7f));           // At most 7 bits
+   return len | (copy_offset << 8) | (extra << 11);
+ }
+ 
+ static void ComputeTable() {
+   uint16 dst[256];
+ 
+   // Place invalid entries in all places to detect missing initialization
+   int assigned = 0;
+@@ -576,34 +607,44 @@ static void ComputeTable() {
+   // COPY_4_BYTE_OFFSET.
+   // Tag contents len-1 in top 6 bits, and offset in next four bytes.
+   for (unsigned int len = 1; len <= 64; len++) {
+     dst[COPY_4_BYTE_OFFSET | ((len-1)<<2)] = MakeEntry(4, len, 0);
+     assigned++;
+   }
+ 
+   // Check that each entry was initialized exactly once.
+-  CHECK_EQ(assigned, 256);
++  if (assigned != 256) {
++    fprintf(stderr, "ComputeTable: assigned only %d of 256\n", assigned);
++    abort();
++  }
+   for (int i = 0; i < 256; i++) {
+-    CHECK_NE(dst[i], 0xffff);
++    if (dst[i] == 0xffff) {
++      fprintf(stderr, "ComputeTable: did not assign byte %d\n", i);
++      abort();
++    }
+   }
+ 
+   if (FLAGS_snappy_dump_decompression_table) {
+     printf("static const uint16 char_table[256] = {\n  ");
+     for (int i = 0; i < 256; i++) {
+       printf("0x%04x%s",
+              dst[i],
+              ((i == 255) ? "\n" : (((i%8) == 7) ? ",\n  " : ", ")));
+     }
+     printf("};\n");
+   }
+ 
+   // Check that computed table matched recorded table
+   for (int i = 0; i < 256; i++) {
+-    CHECK_EQ(dst[i], char_table[i]);
++    if (dst[i] != char_table[i]) {
++      fprintf(stderr, "ComputeTable: byte %d: computed (%x), expect (%x)\n",
++              i, static_cast<int>(dst[i]), static_cast<int>(char_table[i]));
++      abort();
++    }
+   }
+ }
+ #endif /* !NDEBUG */
+ 
+ // Helper class for decompression
+ class SnappyDecompressor {
+  private:
+   Source*       reader_;         // Underlying source of bytes to decompress
+@@ -638,17 +679,17 @@ class SnappyDecompressor {
+   bool eof() const {
+     return eof_;
+   }
+ 
+   // Read the uncompressed length stored at the start of the compressed data.
+   // On succcess, stores the length in *result and returns true.
+   // On failure, returns false.
+   bool ReadUncompressedLength(uint32* result) {
+-    DCHECK(ip_ == NULL);       // Must not have read anything yet
++    assert(ip_ == NULL);       // Must not have read anything yet
+     // Length is encoded in 1..5 bytes
+     *result = 0;
+     uint32 shift = 0;
+     while (true) {
+       if (shift >= 32) return false;
+       size_t n;
+       const char* ip = reader_->Peek(&n);
+       if (n == 0) return false;
+@@ -682,17 +723,17 @@ class SnappyDecompressor {
+ 
+     MAYBE_REFILL();
+     for ( ;; ) {
+       const unsigned char c = *(reinterpret_cast<const unsigned char*>(ip++));
+ 
+       if ((c & 0x3) == LITERAL) {
+         size_t literal_length = (c >> 2) + 1u;
+         if (writer->TryFastAppend(ip, ip_limit_ - ip, literal_length)) {
+-          DCHECK_LT(literal_length, 61);
++          assert(literal_length < 61);
+           ip += literal_length;
+           MAYBE_REFILL();
+           continue;
+         }
+         if (PREDICT_FALSE(literal_length >= 61)) {
+           // Long literal.
+           const size_t literal_length_length = literal_length - 60;
+           literal_length =
+@@ -749,21 +790,21 @@ bool SnappyDecompressor::RefillTag() {
+     if (n == 0) {
+       eof_ = true;
+       return false;
+     }
+     ip_limit_ = ip + n;
+   }
+ 
+   // Read the tag character
+-  DCHECK_LT(ip, ip_limit_);
++  assert(ip < ip_limit_);
+   const unsigned char c = *(reinterpret_cast<const unsigned char*>(ip));
+   const uint32 entry = char_table[c];
+   const uint32 needed = (entry >> 11) + 1;  // +1 byte for 'c'
+-  DCHECK_LE(needed, sizeof(scratch_));
++  assert(needed <= sizeof(scratch_));
+ 
+   // Read more bytes from reader if needed
+   uint32 nbuf = ip_limit_ - ip;
+   if (nbuf < needed) {
+     // Stitch together bytes from ip and reader to form the word
+     // contents.  We store the needed bytes in "scratch_".  They
+     // will be consumed immediately by the caller since we do not
+     // read more than we need.
+@@ -774,17 +815,17 @@ bool SnappyDecompressor::RefillTag() {
+       size_t length;
+       const char* src = reader_->Peek(&length);
+       if (length == 0) return false;
+       uint32 to_add = min<uint32>(needed - nbuf, length);
+       memcpy(scratch_ + nbuf, src, to_add);
+       nbuf += to_add;
+       reader_->Skip(to_add);
+     }
+-    DCHECK_EQ(nbuf, needed);
++    assert(nbuf == needed);
+     ip_ = scratch_;
+     ip_limit_ = scratch_ + needed;
+   } else if (nbuf < 5) {
+     // Have enough bytes, but move into scratch_ so that we do not
+     // read past end of input
+     memmove(scratch_, ip, nbuf);
+     reader_->Skip(peeked_);  // All peeked bytes are used up
+     peeked_ = 0;
+@@ -800,26 +841,35 @@ bool SnappyDecompressor::RefillTag() {
+ template <typename Writer>
+ static bool InternalUncompress(Source* r,
+                                Writer* writer,
+                                uint32 max_len) {
+   // Read the uncompressed length from the front of the compressed input
+   SnappyDecompressor decompressor(r);
+   uint32 uncompressed_len = 0;
+   if (!decompressor.ReadUncompressedLength(&uncompressed_len)) return false;
++  return InternalUncompressAllTags(
++      &decompressor, writer, uncompressed_len, max_len);
++}
++
++template <typename Writer>
++static bool InternalUncompressAllTags(SnappyDecompressor* decompressor,
++                                      Writer* writer,
++                                      uint32 uncompressed_len,
++                                      uint32 max_len) {
+   // Protect against possible DoS attack
+   if (static_cast<uint64>(uncompressed_len) > max_len) {
+     return false;
+   }
+ 
+   writer->SetExpectedLength(uncompressed_len);
+ 
+   // Process the entire input
+-  decompressor.DecompressAllTags(writer);
+-  return (decompressor.eof() && writer->CheckLength());
++  decompressor->DecompressAllTags(writer);
++  return (decompressor->eof() && writer->CheckLength());
+ }
+ 
+ bool GetUncompressedLength(Source* source, uint32* result) {
+   SnappyDecompressor decompressor(source);
+   return decompressor.ReadUncompressedLength(result);
+ }
+ 
+ size_t Compress(Source* reader, Sink* writer) {
+@@ -833,17 +883,17 @@ size_t Compress(Source* reader, Sink* wr
+   internal::WorkingMemory wmem;
+   char* scratch = NULL;
+   char* scratch_output = NULL;
+ 
+   while (N > 0) {
+     // Get next block to compress (without copying if possible)
+     size_t fragment_size;
+     const char* fragment = reader->Peek(&fragment_size);
+-    DCHECK_NE(fragment_size, 0) << ": premature end of input";
++    assert(fragment_size != 0);  // premature end of input
+     const size_t num_to_read = min(N, kBlockSize);
+     size_t bytes_read = fragment_size;
+ 
+     size_t pending_advance = 0;
+     if (bytes_read >= num_to_read) {
+       // Buffer returned by reader is large enough
+       pending_advance = num_to_read;
+       fragment_size = num_to_read;
+@@ -860,21 +910,21 @@ size_t Compress(Source* reader, Sink* wr
+ 
+       while (bytes_read < num_to_read) {
+         fragment = reader->Peek(&fragment_size);
+         size_t n = min<size_t>(fragment_size, num_to_read - bytes_read);
+         memcpy(scratch + bytes_read, fragment, n);
+         bytes_read += n;
+         reader->Skip(n);
+       }
+-      DCHECK_EQ(bytes_read, num_to_read);
++      assert(bytes_read == num_to_read);
+       fragment = scratch;
+       fragment_size = num_to_read;
+     }
+-    DCHECK_EQ(fragment_size, num_to_read);
++    assert(fragment_size == num_to_read);
+ 
+     // Get encoding table for compression
+     int table_size;
+     uint16* table = wmem.GetHashTable(num_to_read, &table_size);
+ 
+     // Compress input_fragment and append to dest
+     const int max_output = MaxCompressedLength(num_to_read);
+ 
+@@ -941,36 +991,36 @@ class SnappyArrayWriter {
+     return true;
+   }
+ 
+   inline bool TryFastAppend(const char* ip, size_t available, size_t len) {
+     char* op = op_;
+     const size_t space_left = op_limit_ - op;
+     if (len <= 16 && available >= 16 && space_left >= 16) {
+       // Fast path, used for the majority (about 95%) of invocations.
+-      UNALIGNED_STORE64(op, UNALIGNED_LOAD64(ip));
+-      UNALIGNED_STORE64(op + 8, UNALIGNED_LOAD64(ip + 8));
++      UnalignedCopy64(ip, op);
++      UnalignedCopy64(ip + 8, op + 8);
+       op_ = op + len;
+       return true;
+     } else {
+       return false;
+     }
+   }
+ 
+   inline bool AppendFromSelf(size_t offset, size_t len) {
+     char* op = op_;
+     const size_t space_left = op_limit_ - op;
+ 
+     if (op - base_ <= offset - 1u) {  // -1u catches offset==0
+       return false;
+     }
+     if (len <= 16 && offset >= 8 && space_left >= 16) {
+       // Fast path, used for the majority (70-80%) of dynamic invocations.
+-      UNALIGNED_STORE64(op, UNALIGNED_LOAD64(op - offset));
+-      UNALIGNED_STORE64(op + 8, UNALIGNED_LOAD64(op - offset + 8));
++      UnalignedCopy64(op - offset, op);
++      UnalignedCopy64(op - offset + 8, op + 8);
+     } else {
+       if (space_left >= len + kMaxIncrementCopyOverflow) {
+         IncrementalCopyFastPath(op - offset, op, len);
+       } else {
+         if (space_left < len) {
+           return false;
+         }
+         IncrementalCopy(op - offset, op, len);
+diff --git a/other-licenses/snappy/src/snappy_unittest.cc b/other-licenses/snappy/src/snappy_unittest.cc
+--- a/other-licenses/snappy/src/snappy_unittest.cc
++++ b/other-licenses/snappy/src/snappy_unittest.cc
+@@ -586,32 +586,34 @@ TYPED_TEST(CorruptedTest, VerifyCorrupte
+   dest[0] = dest[1] = dest[2] = dest[3] = 0;
+   CHECK(!IsValidCompressedBuffer(TypeParam(dest)));
+   CHECK(!Uncompress(TypeParam(dest), &uncmp));
+ 
+   if (sizeof(void *) == 4) {
+     // Another security check; check a crazy big length can't DoS us with an
+     // over-allocation.
+     // Currently this is done only for 32-bit builds.  On 64-bit builds,
+-    // where 3GBytes might be an acceptable allocation size, Uncompress()
++    // where 3 GB might be an acceptable allocation size, Uncompress()
+     // attempts to decompress, and sometimes causes the test to run out of
+     // memory.
+     dest[0] = dest[1] = dest[2] = dest[3] = 0xff;
+-    // This decodes to a really large size, i.e., 3221225471 bytes
++    // This decodes to a really large size, i.e., about 3 GB.
+     dest[4] = 'k';
+     CHECK(!IsValidCompressedBuffer(TypeParam(dest)));
+     CHECK(!Uncompress(TypeParam(dest), &uncmp));
+-    dest[0] = dest[1] = dest[2] = 0xff;
+-    dest[3] = 0x7f;
+-    CHECK(!IsValidCompressedBuffer(TypeParam(dest)));
+-    CHECK(!Uncompress(TypeParam(dest), &uncmp));
+   } else {
+     LOG(WARNING) << "Crazy decompression lengths not checked on 64-bit build";
+   }
+ 
++  // This decodes to about 2 MB; much smaller, but should still fail.
++  dest[0] = dest[1] = dest[2] = 0xff;
++  dest[3] = 0x00;
++  CHECK(!IsValidCompressedBuffer(TypeParam(dest)));
++  CHECK(!Uncompress(TypeParam(dest), &uncmp));
++
+   // try reading stuff in from a bad file.
+   for (int i = 1; i <= 3; ++i) {
+     string data = ReadTestDataFile(StringPrintf("baddata%d.snappy", i).c_str());
+     string uncmp;
+     // check that we don't return a crazy length
+     size_t ulen;
+     CHECK(!snappy::GetUncompressedLength(data.data(), data.size(), &ulen)
+           || (ulen < (1<<20)));

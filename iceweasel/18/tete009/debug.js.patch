@@ -1,0 +1,22 @@
+diff -r 284837bbf631 toolkit/content/debug.js
+--- a/toolkit/content/debug.js	Sat Aug 25 07:23:12 2012 +0900
++++ b/toolkit/content/debug.js	Sat Aug 25 11:13:23 2012 +0900
+@@ -36,17 +36,17 @@ function NS_ASSERT(condition, message) {
+   var releaseBuild = true;
+   var defB = Components.classes["@mozilla.org/preferences-service;1"]
+                        .getService(Components.interfaces.nsIPrefService)
+                        .getDefaultBranch(null);
+   try {
+     switch (defB.getCharPref("app.update.channel")) {
+       case "nightly":
+       case "beta":
+-      case "default":
++      // case "default":
+         releaseBuild = false;
+     }
+   } catch(ex) {}
+ 
+   var caller = arguments.callee.caller;
+   var assertionText = "ASSERT: " + message + "\n";
+ 
+   if (releaseBuild) {

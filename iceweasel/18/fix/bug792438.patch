@@ -1,0 +1,1830 @@
+# HG changeset patch
+# Parent 3dedba3272162d8f44b79dfbd26937296e019577
+# User hua.andy <hua.andy@gmail.com>
+"bug792438.patch"
+
+
+diff --git a/content/base/src/nsScriptLoader.cpp b/content/base/src/nsScriptLoader.cpp
+--- a/content/base/src/nsScriptLoader.cpp
++++ b/content/base/src/nsScriptLoader.cpp
+@@ -19,16 +19,17 @@
+ #include "nsNetUtil.h"
+ #include "nsIScriptGlobalObject.h"
+ #include "nsIScriptContext.h"
+ #include "nsIScriptRuntime.h"
+ #include "nsIScriptSecurityManager.h"
+ #include "nsIPrincipal.h"
+ #include "nsContentPolicyUtils.h"
+ #include "nsIHttpChannel.h"
++#include "nsIHttpChannelInternal.h"
+ #include "nsIScriptElement.h"
+ #include "nsIDOMHTMLScriptElement.h"
+ #include "nsIDocShell.h"
+ #include "nsContentUtils.h"
+ #include "nsUnicharUtils.h"
+ #include "nsAutoPtr.h"
+ #include "nsIXPConnect.h"
+ #include "nsError.h"
+@@ -252,17 +253,18 @@ nsScriptLoader::ShouldLoadScript(nsIDocu
+   if (NS_FAILED(rv)) {
+     return rv;
+   }
+ 
+   return NS_OK;
+ }
+ 
+ nsresult
+-nsScriptLoader::StartLoad(nsScriptLoadRequest *aRequest, const nsAString &aType)
++nsScriptLoader::StartLoad(nsScriptLoadRequest *aRequest, const nsAString &aType,
++                          bool aScriptFromHead)
+ {
+   nsISupports *context = aRequest->mElement.get()
+                          ? static_cast<nsISupports *>(aRequest->mElement.get())
+                          : static_cast<nsISupports *>(mDocument);
+   nsresult rv = ShouldLoadScript(mDocument, context, aRequest->mURI, aType);
+   if (NS_FAILED(rv)) {
+     return rv;
+   }
+@@ -297,16 +299,25 @@ nsScriptLoader::StartLoad(nsScriptLoadRe
+ 
+   nsCOMPtr<nsIChannel> channel;
+   rv = NS_NewChannel(getter_AddRefs(channel),
+                      aRequest->mURI, nullptr, loadGroup, prompter,
+                      nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_CLASSIFY_URI,
+                      channelPolicy);
+   NS_ENSURE_SUCCESS(rv, rv);
+ 
++  nsIScriptElement *script = aRequest->mElement;
++  if (aScriptFromHead &&
++      !(script && (script->GetScriptAsync() || script->GetScriptDeferred()))) {
++    nsCOMPtr<nsIHttpChannelInternal>
++      internalHttpChannel(do_QueryInterface(channel));
++    if (internalHttpChannel)
++      internalHttpChannel->SetLoadAsBlocking(true);
++  }
++
+   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
+   if (httpChannel) {
+     // HTTP content negotation has little value in this context.
+     httpChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept"),
+                                   NS_LITERAL_CSTRING("*/*"),
+                                   false);
+     httpChannel->SetReferrer(mDocument->GetDocumentURI());
+   }
+@@ -513,17 +524,20 @@ nsScriptLoader::ProcessScriptElement(nsI
+     }
+ 
+     if (!request) {
+       // no usable preload
+       request = new nsScriptLoadRequest(aElement, version, ourCORSMode);
+       request->mURI = scriptURI;
+       request->mIsInline = false;
+       request->mLoading = true;
+-      rv = StartLoad(request, type);
++
++      // set aScriptFromHead to false so we don't treat non preloaded scripts as
++      // blockers for full page load. See bug 792438.
++      rv = StartLoad(request, type, false);
+       if (NS_FAILED(rv)) {
+         // Asynchronously report the load failure
+         NS_DispatchToCurrentThread(
+           NS_NewRunnableMethod(aElement,
+                                &nsIScriptElement::FireErrorEvent));
+         return false;
+       }
+     }
+@@ -1229,30 +1243,31 @@ nsScriptLoader::ParsingComplete(bool aTe
+   // Have to call this even if aTerminated so we'll correctly unblock
+   // onload and all.
+   ProcessPendingRequests();
+ }
+ 
+ void
+ nsScriptLoader::PreloadURI(nsIURI *aURI, const nsAString &aCharset,
+                            const nsAString &aType,
+-                           const nsAString &aCrossOrigin)
++                           const nsAString &aCrossOrigin,
++                           bool aScriptFromHead)
+ {
+   // Check to see if scripts has been turned off.
+   if (!mEnabled || !mDocument->IsScriptEnabled()) {
+     return;
+   }
+ 
+   nsRefPtr<nsScriptLoadRequest> request =
+     new nsScriptLoadRequest(nullptr, 0,
+                             nsGenericElement::StringToCORSMode(aCrossOrigin));
+   request->mURI = aURI;
+   request->mIsInline = false;
+   request->mLoading = true;
+-  nsresult rv = StartLoad(request, aType);
++  nsresult rv = StartLoad(request, aType, aScriptFromHead);
+   if (NS_FAILED(rv)) {
+     return;
+   }
+ 
+   PreloadInfo *pi = mPreloads.AppendElement();
+   pi->mRequest = request;
+   pi->mCharset = aCharset;
+ }
+diff --git a/content/base/src/nsScriptLoader.h b/content/base/src/nsScriptLoader.h
+--- a/content/base/src/nsScriptLoader.h
++++ b/content/base/src/nsScriptLoader.h
+@@ -195,20 +195,22 @@ public:
+   /**
+    * Adds aURI to the preload list and starts loading it.
+    *
+    * @param aURI The URI of the external script.
+    * @param aCharset The charset parameter for the script.
+    * @param aType The type parameter for the script.
+    * @param aCrossOrigin The crossorigin attribute for the script.
+    *                     Void if not present.
++   * @param aScriptFromHead Whether or not the script was a child of head
+    */
+   virtual void PreloadURI(nsIURI *aURI, const nsAString &aCharset,
+                           const nsAString &aType,
+-                          const nsAString &aCrossOrigin);
++                          const nsAString &aCrossOrigin,
++                          bool aScriptFromHead);
+ 
+ private:
+   /**
+    * Unblocks the creator parser of the parser-blocking scripts.
+    */
+   void UnblockParser(nsScriptLoadRequest* aParserBlockingRequest);
+ 
+   /**
+@@ -223,17 +225,18 @@ private:
+   static nsresult CheckContentPolicy(nsIDocument* aDocument,
+                                      nsISupports *aContext,
+                                      nsIURI *aURI,
+                                      const nsAString &aType);
+ 
+   /**
+    * Start a load for aRequest's URI.
+    */
+-  nsresult StartLoad(nsScriptLoadRequest *aRequest, const nsAString &aType);
++  nsresult StartLoad(nsScriptLoadRequest *aRequest, const nsAString &aType,
++                     bool aScriptFromHead);
+ 
+   /**
+    * Process any pending requests asynchronously (i.e. off an event) if there
+    * are any. Note that this is a no-op if there aren't any currently pending
+    * requests.
+    *
+    * This function is virtual to allow cross-library calls to SetEnabled()
+    */
+diff --git a/content/base/src/nsXMLHttpRequest.cpp b/content/base/src/nsXMLHttpRequest.cpp
+--- a/content/base/src/nsXMLHttpRequest.cpp
++++ b/content/base/src/nsXMLHttpRequest.cpp
+@@ -73,16 +73,17 @@
+ #include "jsfriendapi.h"
+ #include "sampler.h"
+ #include "mozilla/dom/XMLHttpRequestBinding.h"
+ #include "nsIDOMFormData.h"
+ #include "DictionaryHelpers.h"
+ #include "mozilla/Attributes.h"
+ #include "nsIPermissionManager.h"
+ #include "nsMimeTypes.h"
++#include "nsIHttpChannelInternal.h"
+ 
+ #include "nsWrapperCacheInlines.h"
+ #include "nsStreamListenerWrapper.h"
+ 
+ using namespace mozilla;
+ using namespace mozilla::dom;
+ 
+ #define LOAD_STR "load"
+@@ -3017,16 +3018,25 @@ nsXMLHttpRequest::Send(nsIVariant* aVari
+   } else {
+     Telemetry::Accumulate(Telemetry::MULTIPART_XHR_RESPONSE, 0);
+   }
+ 
+   // Blocking gets are common enough out of XHR that we should mark
+   // the channel slow by default for pipeline purposes
+   AddLoadFlags(mChannel, nsIRequest::INHIBIT_PIPELINE);
+ 
++  nsCOMPtr<nsIHttpChannelInternal>
++    internalHttpChannel(do_QueryInterface(mChannel));
++  if (internalHttpChannel) {
++    // we never let XHR be blocked by head CSS/JS loads to avoid
++    // potential deadlock where server generation of CSS/JS requires
++    // an XHR signal.
++    internalHttpChannel->SetLoadUnblocked(true);
++  }
++
+   if (!IsSystemXHR()) {
+     // Always create a nsCORSListenerProxy here even if it's
+     // a same-origin request right now, since it could be redirected.
+     nsRefPtr<nsCORSListenerProxy> corsListener =
+       new nsCORSListenerProxy(listener, mPrincipal, withCredentials);
+     rv = corsListener->Init(mChannel, true);
+     NS_ENSURE_SUCCESS(rv, rv);
+     listener = corsListener;
+diff --git a/image/src/imgLoader.cpp b/image/src/imgLoader.cpp
+--- a/image/src/imgLoader.cpp
++++ b/image/src/imgLoader.cpp
+@@ -1666,18 +1666,22 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIUR
+ 
+     NewRequestAndEntry(forcePrincipalCheck, this, getter_AddRefs(request), getter_AddRefs(entry));
+ 
+     PR_LOG(gImgLog, PR_LOG_DEBUG,
+            ("[this=%p] imgLoader::LoadImage -- Created new imgRequest [request=%p]\n", this, request.get()));
+ 
+     // Create a loadgroup for this new channel.  This way if the channel
+     // is redirected, we'll have a way to cancel the resulting channel.
++    // Inform the new loadgroup of the old one so they can still be correlated
++    // together as a logical group.
+     nsCOMPtr<nsILoadGroup> loadGroup =
+         do_CreateInstance(NS_LOADGROUP_CONTRACTID);
++    if (loadGroup)
++      loadGroup->SetLoadGroup(aLoadGroup);
+     newChannel->SetLoadGroup(loadGroup);
+ 
+     request->Init(aURI, aURI, loadGroup, newChannel, entry, aCX,
+                   aLoadingPrincipal, corsmode);
+ 
+     // Pass the inner window ID of the loading document, if possible.
+     nsCOMPtr<nsIDocument> doc = do_QueryInterface(aCX);
+     if (doc) {
+diff --git a/layout/style/Loader.cpp b/layout/style/Loader.cpp
+--- a/layout/style/Loader.cpp
++++ b/layout/style/Loader.cpp
+@@ -34,16 +34,17 @@
+ #include "nsIURI.h"
+ #include "nsIServiceManager.h"
+ #include "nsNetUtil.h"
+ #include "nsContentUtils.h"
+ #include "nsCRT.h"
+ #include "nsIScriptSecurityManager.h"
+ #include "nsContentPolicyUtils.h"
+ #include "nsIHttpChannel.h"
++#include "nsIHttpChannelInternal.h"
+ #include "nsIScriptError.h"
+ #include "nsMimeTypes.h"
+ #include "nsIAtom.h"
+ #include "nsCSSStyleSheet.h"
+ #include "nsIStyleSheetLinkingElement.h"
+ #include "nsICSSLoaderObserver.h"
+ #include "nsCSSParser.h"
+ #include "mozilla/css/ImportRule.h"
+@@ -1511,16 +1512,21 @@ Loader::LoadSheet(SheetLoadData* aLoadDa
+ #ifdef DEBUG
+     mSyncCallback = false;
+ #endif
+     LOG_ERROR(("  Failed to create channel"));
+     SheetComplete(aLoadData, rv);
+     return rv;
+   }
+ 
++  nsCOMPtr<nsIHttpChannelInternal>
++    internalHttpChannel(do_QueryInterface(channel));
++  if (internalHttpChannel)
++      internalHttpChannel->SetLoadAsBlocking(!aLoadData->mWasAlternate);
++
+   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
+   if (httpChannel) {
+     // send a minimal Accept header for text/css
+     httpChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept"),
+                                   NS_LITERAL_CSTRING("text/css,*/*;q=0.1"),
+                                   false);
+     nsCOMPtr<nsIURI> referrerURI = aLoadData->GetReferrerURI();
+     if (referrerURI)
+diff --git a/modules/libpref/src/init/all.js b/modules/libpref/src/init/all.js
+--- a/modules/libpref/src/init/all.js
++++ b/modules/libpref/src/init/all.js
+@@ -912,16 +912,24 @@ pref("network.http.qos", 0);
+ // to wait before trying a different connection. 0 means do not use a second
+ // connection.
+ pref("network.http.connection-retry-timeout", 250);
+ 
+ // The number of seconds after sending initial SYN for an HTTP connection
+ // to give up if the OS does not give up first
+ pref("network.http.connection-timeout", 90);
+ 
++// The maximum number of current global half open sockets allowable
++// when starting a new speculative connection.
++pref("network.http.speculative-parallel-limit", 6);
++
++// Whether or not to block requests for non head js/css items (e.g. media)
++// while those elements load.
++pref("network.http.rendering-critical-requests-prioritization", true);
++
+ // Disable IPv6 for backup connections to workaround problems about broken
+ // IPv6 connectivity.
+ pref("network.http.fast-fallback-to-IPv4", true);
+ 
+ // Try and use SPDY when using SSL
+ pref("network.http.spdy.enabled", true);
+ pref("network.http.spdy.enabled.v2", true);
+ pref("network.http.spdy.enabled.v3", true);
+diff --git a/netwerk/base/public/nsILoadGroup.idl b/netwerk/base/public/nsILoadGroup.idl
+--- a/netwerk/base/public/nsILoadGroup.idl
++++ b/netwerk/base/public/nsILoadGroup.idl
+@@ -3,21 +3,22 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsIRequest.idl"
+ 
+ interface nsISimpleEnumerator;
+ interface nsIRequestObserver;
+ interface nsIInterfaceRequestor;
++interface nsILoadGroupConnectionInfo;
+ 
+ /**
+  * A load group maintains a collection of nsIRequest objects. 
+  */
+-[scriptable, uuid(3de0a31c-feaf-400f-9f1e-4ef71f8b20cc)]
++[scriptable, uuid(19501006-46e3-4634-b97d-26eff894b4d3)]
+ interface nsILoadGroup : nsIRequest
+ {
+     /**
+      * The group observer is notified when requests are added to and removed
+      * from this load group.  The groupObserver is weak referenced.
+      */
+     attribute nsIRequestObserver groupObserver;
+ 
+@@ -66,9 +67,41 @@ interface nsILoadGroup : nsIRequest
+      * LOAD_BACKGROUND bit set).
+      */
+     readonly attribute unsigned long activeCount;
+ 
+     /**
+      * Notification callbacks for the load group.
+      */
+     attribute nsIInterfaceRequestor notificationCallbacks;
++
++    /**
++     * Connection information for managing things like js/css
++     * connection blocking, and per-tab connection grouping
++     */
++    readonly attribute nsILoadGroupConnectionInfo connectionInfo;
+ };
++
++/**
++ * Used to maintain state about the connections of a load group and
++ * how they interact with blocking items like HEAD css/js loads.
++ */
++[uuid(d1f9f18e-3d85-473a-ad58-a2367d7cdb2a)]
++interface nsILoadGroupConnectionInfo : nsISupports
++{
++    /**
++     * Number of active blocking transactions associated with this load group
++     */
++    readonly attribute unsigned long blockingTransactionCount;
++
++    /**
++     * Increase the number of active blocking transactions associated
++     * with this load group by one.
++     */
++    void addBlockingTransaction();
++
++    /**
++     * Decrease the number of active blocking transactions associated
++     * with this load group by one. The return value is the number of remaining
++     * blockers.
++     */
++    unsigned long removeBlockingTransaction();
++};
+diff --git a/netwerk/base/src/nsLoadGroup.cpp b/netwerk/base/src/nsLoadGroup.cpp
+--- a/netwerk/base/src/nsLoadGroup.cpp
++++ b/netwerk/base/src/nsLoadGroup.cpp
+@@ -142,40 +142,16 @@ nsLoadGroup::~nsLoadGroup()
+     }
+ 
+     mDefaultLoadRequest = 0;
+ 
+     LOG(("LOADGROUP [%x]: Destroyed.\n", this));
+ }
+ 
+ 
+-nsresult nsLoadGroup::Init()
+-{
+-    static PLDHashTableOps hash_table_ops =
+-    {
+-        PL_DHashAllocTable,
+-        PL_DHashFreeTable,
+-        PL_DHashVoidPtrKeyStub,
+-        RequestHashMatchEntry,
+-        PL_DHashMoveEntryStub,
+-        RequestHashClearEntry,
+-        PL_DHashFinalizeStub,
+-        RequestHashInitEntry
+-    };
+-
+-    if (!PL_DHashTableInit(&mRequests, &hash_table_ops, nullptr,
+-                           sizeof(RequestMapEntry), 16)) {
+-        mRequests.ops = nullptr;
+-
+-        return NS_ERROR_OUT_OF_MEMORY;
+-    }
+-
+-    return NS_OK;
+-}
+-
+ ////////////////////////////////////////////////////////////////////////////////
+ // nsISupports methods:
+ 
+ NS_IMPL_AGGREGATED(nsLoadGroup)
+ NS_INTERFACE_MAP_BEGIN_AGGREGATED(nsLoadGroup)
+     NS_INTERFACE_MAP_ENTRY(nsILoadGroup)
+     NS_INTERFACE_MAP_ENTRY(nsIRequest)
+     NS_INTERFACE_MAP_ENTRY(nsISupportsPriority)
+@@ -787,16 +763,25 @@ nsLoadGroup::GetNotificationCallbacks(ns
+ 
+ NS_IMETHODIMP
+ nsLoadGroup::SetNotificationCallbacks(nsIInterfaceRequestor *aCallbacks)
+ {
+     mCallbacks = aCallbacks;
+     return NS_OK;
+ }
+ 
++NS_IMETHODIMP
++nsLoadGroup::GetConnectionInfo(nsILoadGroupConnectionInfo **aCI)
++{
++    NS_ENSURE_ARG_POINTER(aCI);
++    *aCI = mConnectionInfo;
++    NS_IF_ADDREF(*aCI);
++    return NS_OK;
++}
++
+ ////////////////////////////////////////////////////////////////////////////////
+ // nsISupportsPriority methods:
+ 
+ NS_IMETHODIMP
+ nsLoadGroup::GetPriority(int32_t *aValue)
+ {
+     *aValue = mPriority;
+     return NS_OK;
+@@ -1000,8 +985,78 @@ nsresult nsLoadGroup::MergeLoadFlags(nsI
+                             VALIDATE_NEVER));
+ 
+     if (flags != oldFlags)
+         rv = aRequest->SetLoadFlags(flags);
+ 
+     outFlags = flags;
+     return rv;
+ }
++
++// nsLoadGroupConnectionInfo
++
++class nsLoadGroupConnectionInfo MOZ_FINAL : public nsILoadGroupConnectionInfo
++{
++public:
++    NS_DECL_ISUPPORTS
++    NS_DECL_NSILOADGROUPCONNECTIONINFO
++
++    nsLoadGroupConnectionInfo();
++private:
++    int32_t       mBlockingTransactionCount; // signed for PR_ATOMIC_*
++};
++
++NS_IMPL_THREADSAFE_ISUPPORTS1(nsLoadGroupConnectionInfo, nsILoadGroupConnectionInfo)
++
++nsLoadGroupConnectionInfo::nsLoadGroupConnectionInfo()
++    : mBlockingTransactionCount(0)
++{
++}
++
++NS_IMETHODIMP
++nsLoadGroupConnectionInfo::GetBlockingTransactionCount(uint32_t *aBlockingTransactionCount)
++{
++    NS_ENSURE_ARG_POINTER(aBlockingTransactionCount);
++    *aBlockingTransactionCount = static_cast<uint32_t>(mBlockingTransactionCount);
++    return NS_OK;
++}
++
++NS_IMETHODIMP
++nsLoadGroupConnectionInfo::AddBlockingTransaction()
++{
++    PR_ATOMIC_INCREMENT(&mBlockingTransactionCount);
++    return NS_OK;
++}
++
++NS_IMETHODIMP
++nsLoadGroupConnectionInfo::RemoveBlockingTransaction(uint32_t *_retval)
++{
++    NS_ENSURE_ARG_POINTER(_retval);
++    *_retval =
++        static_cast<uint32_t>(PR_ATOMIC_DECREMENT(&mBlockingTransactionCount));
++    return NS_OK;
++}
++
++nsresult nsLoadGroup::Init()
++{
++    static PLDHashTableOps hash_table_ops =
++    {
++        PL_DHashAllocTable,
++        PL_DHashFreeTable,
++        PL_DHashVoidPtrKeyStub,
++        RequestHashMatchEntry,
++        PL_DHashMoveEntryStub,
++        RequestHashClearEntry,
++        PL_DHashFinalizeStub,
++        RequestHashInitEntry
++    };
++
++    if (!PL_DHashTableInit(&mRequests, &hash_table_ops, nullptr,
++                           sizeof(RequestMapEntry), 16)) {
++        mRequests.ops = nullptr;
++
++        return NS_ERROR_OUT_OF_MEMORY;
++    }
++
++    mConnectionInfo = new nsLoadGroupConnectionInfo();
++
++    return NS_OK;
++}
+diff --git a/netwerk/base/src/nsLoadGroup.h b/netwerk/base/src/nsLoadGroup.h
+--- a/netwerk/base/src/nsLoadGroup.h
++++ b/netwerk/base/src/nsLoadGroup.h
+@@ -16,16 +16,17 @@
+ #include "nsIInterfaceRequestor.h"
+ #include "nsIInterfaceRequestorUtils.h"
+ #include "nsISupportsPriority.h"
+ #include "nsITimedChannel.h"
+ #include "pldhash.h"
+ #include "mozilla/TimeStamp.h"
+ 
+ class  nsISupportsArray;
++class  nsILoadGroupConnectionInfo;
+ 
+ class nsLoadGroup : public nsILoadGroup,
+                     public nsISupportsPriority,
+                     public nsSupportsWeakReference
+ {
+ public:
+     NS_DECL_AGGREGATED
+     
+@@ -59,16 +60,17 @@ private:
+                                 bool defaultRequest);
+ 
+ protected:
+     uint32_t                        mForegroundCount;
+     uint32_t                        mLoadFlags;
+ 
+     nsCOMPtr<nsILoadGroup>          mLoadGroup; // load groups can contain load groups
+     nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
++    nsCOMPtr<nsILoadGroupConnectionInfo> mConnectionInfo;
+ 
+     nsCOMPtr<nsIRequest>            mDefaultLoadRequest;
+     PLDHashTable                    mRequests;
+ 
+     nsWeakPtr                       mObserver;
+     
+     nsresult                        mStatus;
+     int32_t                         mPriority;
+diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/HttpBaseChannel.cpp
+--- a/netwerk/protocol/http/HttpBaseChannel.cpp
++++ b/netwerk/protocol/http/HttpBaseChannel.cpp
+@@ -43,16 +43,18 @@ HttpBaseChannel::HttpBaseChannel()
+   , mUploadStreamHasHeaders(false)
+   , mInheritApplicationCache(true)
+   , mChooseApplicationCache(false)
+   , mLoadedFromApplicationCache(false)
+   , mChannelIsForDownload(false)
+   , mTracingEnabled(true)
+   , mTimingEnabled(false)
+   , mAllowSpdy(true)
++  , mLoadAsBlocking(false)
++  , mLoadUnblocked(false)
+   , mSuspendCount(0)
+   , mProxyResolveFlags(0)
+   , mContentDispositionHint(UINT32_MAX)
+ {
+   LOG(("Creating HttpBaseChannel @%x\n", this));
+ 
+   // grab a reference to the handler to ensure that it doesn't go away.
+   NS_ADDREF(gHttpHandler);
+@@ -1349,16 +1351,46 @@ HttpBaseChannel::GetAllowSpdy(bool *aAll
+ 
+ NS_IMETHODIMP
+ HttpBaseChannel::SetAllowSpdy(bool aAllowSpdy)
+ {
+   mAllowSpdy = aAllowSpdy;
+   return NS_OK;
+ }
+ 
++NS_IMETHODIMP
++HttpBaseChannel::GetLoadAsBlocking(bool *aLoadAsBlocking)
++{
++  NS_ENSURE_ARG_POINTER(aLoadAsBlocking);
++  *aLoadAsBlocking = mLoadAsBlocking;
++  return NS_OK;
++}
++
++NS_IMETHODIMP
++HttpBaseChannel::SetLoadAsBlocking(bool aLoadAsBlocking)
++{
++  mLoadAsBlocking = aLoadAsBlocking;
++  return NS_OK;
++}
++
++NS_IMETHODIMP
++HttpBaseChannel::GetLoadUnblocked(bool *aLoadUnblocked)
++{
++  NS_ENSURE_ARG_POINTER(aLoadUnblocked);
++  *aLoadUnblocked = mLoadUnblocked;
++  return NS_OK;
++}
++
++NS_IMETHODIMP
++HttpBaseChannel::SetLoadUnblocked(bool aLoadUnblocked)
++{
++  mLoadUnblocked = aLoadUnblocked;
++  return NS_OK;
++}
++
+ //-----------------------------------------------------------------------------
+ // HttpBaseChannel::nsISupportsPriority
+ //-----------------------------------------------------------------------------
+ 
+ NS_IMETHODIMP
+ HttpBaseChannel::GetPriority(int32_t *value)
+ {
+   *value = mPriority;
+diff --git a/netwerk/protocol/http/HttpBaseChannel.h b/netwerk/protocol/http/HttpBaseChannel.h
+--- a/netwerk/protocol/http/HttpBaseChannel.h
++++ b/netwerk/protocol/http/HttpBaseChannel.h
+@@ -137,16 +137,20 @@ public:
+   NS_IMETHOD SetChannelIsForDownload(bool aChannelIsForDownload);
+   NS_IMETHOD SetCacheKeysRedirectChain(nsTArray<nsCString> *cacheKeys);
+   NS_IMETHOD GetLocalAddress(nsACString& addr);
+   NS_IMETHOD GetLocalPort(int32_t* port);
+   NS_IMETHOD GetRemoteAddress(nsACString& addr);
+   NS_IMETHOD GetRemotePort(int32_t* port);
+   NS_IMETHOD GetAllowSpdy(bool *aAllowSpdy);
+   NS_IMETHOD SetAllowSpdy(bool aAllowSpdy);
++  NS_IMETHOD GetLoadAsBlocking(bool *aLoadAsBlocking);
++  NS_IMETHOD SetLoadAsBlocking(bool aLoadAsBlocking);
++  NS_IMETHOD GetLoadUnblocked(bool *aLoadUnblocked);
++  NS_IMETHOD SetLoadUnblocked(bool aLoadUnblocked);
+   
+   inline void CleanRedirectCacheChainIfNecessary()
+   {
+       mRedirectedCachekeys = nullptr;
+   }
+   NS_IMETHOD HTTPUpgrade(const nsACString & aProtocolName,
+                          nsIHttpUpgradeListener *aListener); 
+ 
+@@ -267,16 +271,18 @@ protected:
+   uint32_t                          mInheritApplicationCache    : 1;
+   uint32_t                          mChooseApplicationCache     : 1;
+   uint32_t                          mLoadedFromApplicationCache : 1;
+   uint32_t                          mChannelIsForDownload       : 1;
+   uint32_t                          mTracingEnabled             : 1;
+   // True if timing collection is enabled
+   uint32_t                          mTimingEnabled              : 1;
+   uint32_t                          mAllowSpdy                  : 1;
++  uint32_t                          mLoadAsBlocking             : 1;
++  uint32_t                          mLoadUnblocked              : 1;
+ 
+   // Current suspension depth for this channel object
+   uint32_t                          mSuspendCount;
+ 
+   nsAutoPtr<nsTArray<nsCString> >   mRedirectedCachekeys;
+ 
+   uint32_t                          mProxyResolveFlags;
+   nsCOMPtr<nsIURI>                  mProxyURI;
+diff --git a/netwerk/protocol/http/nsHttp.h b/netwerk/protocol/http/nsHttp.h
+--- a/netwerk/protocol/http/nsHttp.h
++++ b/netwerk/protocol/http/nsHttp.h
+@@ -88,23 +88,29 @@ typedef uint8_t nsHttpVersion;
+ 
+ // a transaction with this caps flag will not pass SSL client-certificates
+ // to the server (see bug #466080), but is may also be used for other things
+ #define NS_HTTP_LOAD_ANONYMOUS       (1<<4)
+ 
+ // a transaction with this caps flag keeps timing information
+ #define NS_HTTP_TIMING_ENABLED       (1<<5)
+ 
+-// (1<<6) is unused
++// a transaction with this flag blocks the initiation of other transactons
++// in the same load group until it is complete
++#define NS_HTTP_LOAD_AS_BLOCKING     (1<<6)
+ 
+ // Disallow the use of the SPDY protocol. This is meant for the contexts
+ // such as HTTP upgrade which are nonsensical for SPDY, it is not the
+ // SPDY configuration variable.
+ #define NS_HTTP_DISALLOW_SPDY        (1<<7)
+ 
++// a transaction with this flag loads without respect to whether the load
++// group is currently blocking on some resources
++#define NS_HTTP_LOAD_UNBLOCKED       (1<<8)
++
+ //-----------------------------------------------------------------------------
+ // some default values
+ //-----------------------------------------------------------------------------
+ 
+ #define NS_HTTP_DEFAULT_PORT  80
+ #define NS_HTTPS_DEFAULT_PORT 443
+ 
+ #define NS_HTTP_HEADER_SEPS ", \t"
+diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
+--- a/netwerk/protocol/http/nsHttpChannel.cpp
++++ b/netwerk/protocol/http/nsHttpChannel.cpp
+@@ -677,16 +677,41 @@ nsHttpChannel::ContinueHandleAsyncFallba
+     mIsPending = false;
+ 
+     if (mLoadGroup)
+         mLoadGroup->RemoveRequest(this, nullptr, mStatus);
+ 
+     return rv;
+ }
+ 
++void
++nsHttpChannel::SetupTransactionLoadGroupInfo()
++{
++    // Find the loadgroup at the end of the chain in order
++    // to make sure all channels derived from the load group
++    // use the same connection scope.
++    nsCOMPtr<nsILoadGroup> rootLoadGroup = mLoadGroup;
++    while (rootLoadGroup) {
++        nsCOMPtr<nsILoadGroup> tmp;
++        rootLoadGroup->GetLoadGroup(getter_AddRefs(tmp));
++        if (tmp)
++            rootLoadGroup.swap(tmp);
++        else
++            break;
++    }
++
++    // Set the load group connection scope on the transaction
++    if (rootLoadGroup) {
++        nsCOMPtr<nsILoadGroupConnectionInfo> ci;
++        rootLoadGroup->GetConnectionInfo(getter_AddRefs(ci));
++        if (ci)
++            mTransaction->SetLoadGroupConnectionInfo(ci);
++    }
++}
++
+ nsresult
+ nsHttpChannel::SetupTransaction()
+ {
+     LOG(("nsHttpChannel::SetupTransaction [this=%p]\n", this));
+ 
+     NS_ENSURE_TRUE(!mTransaction, NS_ERROR_ALREADY_INITIALIZED);
+ 
+     nsresult rv;
+@@ -850,16 +875,18 @@ nsHttpChannel::SetupTransaction()
+                             mUploadStream, mUploadStreamHasHeaders,
+                             NS_GetCurrentThread(), callbacks, this,
+                             getter_AddRefs(responseStream));
+     if (NS_FAILED(rv)) {
+         mTransaction = nullptr;
+         return rv;
+     }
+ 
++    SetupTransactionLoadGroupInfo();
++    
+     rv = nsInputStreamPump::Create(getter_AddRefs(mTransactionPump),
+                                    responseStream);
+     return rv;
+ }
+ 
+ // NOTE: This function duplicates code from nsBaseChannel. This will go away
+ // once HTTP uses nsBaseChannel (part of bug 312760)
+ static void
+@@ -4410,16 +4437,23 @@ nsHttpChannel::BeginConnect()
+     //    trying to establish a keep-alive connection.
+     if (mRequestHead.HasHeaderValue(nsHttp::Connection, "close"))
+         mCaps &= ~(NS_HTTP_ALLOW_KEEPALIVE | NS_HTTP_ALLOW_PIPELINING);
+     
+     if ((mLoadFlags & VALIDATE_ALWAYS) || 
+         (BYPASS_LOCAL_CACHE(mLoadFlags)))
+         mCaps |= NS_HTTP_REFRESH_DNS;
+ 
++    if (gHttpHandler->CritialRequestPrioritization()) {
++        if (mLoadAsBlocking)
++            mCaps |= NS_HTTP_LOAD_AS_BLOCKING;
++        if (mLoadUnblocked)
++            mCaps |= NS_HTTP_LOAD_UNBLOCKED;
++    }
++
+     // Force-Reload should reset the persistent connection pool for this host
+     if (mLoadFlags & LOAD_FRESH_CONNECTION) {
+         // just the initial document resets the whole pool
+         if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI)
+             gHttpHandler->ConnMgr()->ClosePersistentConnections();
+         // each sub resource gets a fresh connection
+         mCaps &= ~(NS_HTTP_ALLOW_KEEPALIVE | NS_HTTP_ALLOW_PIPELINING);
+     }
+diff --git a/netwerk/protocol/http/nsHttpChannel.h b/netwerk/protocol/http/nsHttpChannel.h
+--- a/netwerk/protocol/http/nsHttpChannel.h
++++ b/netwerk/protocol/http/nsHttpChannel.h
+@@ -151,16 +151,17 @@ private:
+     typedef nsresult (nsHttpChannel::*nsContinueRedirectionFunc)(nsresult result);
+ 
+     bool     RequestIsConditional();
+     nsresult BeginConnect();
+     nsresult Connect();
+     nsresult ContinueConnect();
+     void     SpeculativeConnect();
+     nsresult SetupTransaction();
++    void     SetupTransactionLoadGroupInfo();
+     nsresult CallOnStartRequest();
+     nsresult ProcessResponse();
+     nsresult ContinueProcessResponse(nsresult);
+     nsresult ProcessNormal();
+     nsresult ContinueProcessNormal(nsresult);
+     nsresult ProcessNotModified();
+     nsresult AsyncProcessRedirection(uint32_t httpStatus);
+     nsresult ContinueProcessRedirection(nsresult);
+diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.cpp b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
+--- a/netwerk/protocol/http/nsHttpConnectionMgr.cpp
++++ b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
+@@ -55,16 +55,17 @@ InsertTransactionSorted(nsTArray<nsHttpT
+ nsHttpConnectionMgr::nsHttpConnectionMgr()
+     : mReentrantMonitor("nsHttpConnectionMgr.mReentrantMonitor")
+     , mMaxConns(0)
+     , mMaxPersistConnsPerHost(0)
+     , mMaxPersistConnsPerProxy(0)
+     , mIsShuttingDown(false)
+     , mNumActiveConns(0)
+     , mNumIdleConns(0)
++    , mNumHalfOpenConns(0)
+     , mTimeOfNextWakeUp(UINT64_MAX)
+     , mTimeoutTickArmed(false)
+ {
+     LOG(("Creating nsHttpConnectionMgr @%x\n", this));
+     mCT.Init();
+     mAlternateProtocolHash.Init(16);
+     mSpdyPreferredHash.Init();
+ }
+@@ -393,16 +394,23 @@ nsHttpConnectionMgr::ProcessPendingQ(nsH
+ 
+     NS_ADDREF(ci);
+     nsresult rv = PostEvent(&nsHttpConnectionMgr::OnMsgProcessPendingQ, 0, ci);
+     if (NS_FAILED(rv))
+         NS_RELEASE(ci);
+     return rv;
+ }
+ 
++nsresult
++nsHttpConnectionMgr::ProcessPendingQ()
++{
++    LOG(("nsHttpConnectionMgr::ProcessPendingQ [All CI]\n"));
++    return PostEvent(&nsHttpConnectionMgr::OnMsgProcessPendingQ, 0, nullptr);
++}
++
+ // Given a nsHttpConnectionInfo find the connection entry object that
+ // contains either the nshttpconnection or nshttptransaction parameter.
+ // Normally this is done by the hashkey lookup of connectioninfo,
+ // but if spdy coalescing is in play it might be found in a redirected
+ // entry
+ nsHttpConnectionMgr::nsConnectionEntry *
+ nsHttpConnectionMgr::LookupConnectionEntry(nsHttpConnectionInfo *ci,
+                                            nsHttpConnection *conn,
+@@ -716,22 +724,32 @@ nsHttpConnectionMgr::RemoveSpdyPreferred
+ 
+ PLDHashOperator
+ nsHttpConnectionMgr::ProcessOneTransactionCB(const nsACString &key,
+                                              nsAutoPtr<nsConnectionEntry> &ent,
+                                              void *closure)
+ {
+     nsHttpConnectionMgr *self = (nsHttpConnectionMgr *) closure;
+ 
+-    if (self->ProcessPendingQForEntry(ent))
++    if (self->ProcessPendingQForEntry(ent, false))
+         return PL_DHASH_STOP;
+ 
+     return PL_DHASH_NEXT;
+ }
+ 
++PLDHashOperator
++nsHttpConnectionMgr::ProcessAllTransactionsCB(const nsACString &key,
++                                              nsAutoPtr<nsConnectionEntry> &ent,
++                                              void *closure)
++{
++    nsHttpConnectionMgr *self = (nsHttpConnectionMgr *) closure;
++    self->ProcessPendingQForEntry(ent, true);
++    return PL_DHASH_NEXT;
++}
++
+ // If the global number of idle connections is preventing the opening of
+ // new connections to a host without idle connections, then
+ // close them regardless of their TTL
+ PLDHashOperator
+ nsHttpConnectionMgr::PurgeExcessIdleConnectionsCB(const nsACString &key,
+                                                   nsAutoPtr<nsConnectionEntry> &ent,
+                                                   void *closure)
+ {
+@@ -887,32 +905,33 @@ nsHttpConnectionMgr::ShutdownPassCB(cons
+         ent->mHalfOpens[i]->Abandon();
+ 
+     return PL_DHASH_REMOVE;
+ }
+ 
+ //-----------------------------------------------------------------------------
+ 
+ bool
+-nsHttpConnectionMgr::ProcessPendingQForEntry(nsConnectionEntry *ent)
++nsHttpConnectionMgr::ProcessPendingQForEntry(nsConnectionEntry *ent, bool considerAll)
+ {
+     NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+ 
+     LOG(("nsHttpConnectionMgr::ProcessPendingQForEntry [ci=%s]\n",
+          ent->mConnInfo->HashKey().get()));
+ 
+     ProcessSpdyPendingQ(ent);
+ 
+     uint32_t count = ent->mPendingQ.Length();
+     nsHttpTransaction *trans;
+     nsresult rv;
+     bool dispatchedSuccessfully = false;
+ 
+-    // iterate the pending list until one is dispatched successfully. Keep
+-    // iterating afterwards only until a transaction fails to dispatch.
++    // if !considerAll iterate the pending list until one is dispatched successfully.
++    // Keep iterating afterwards only until a transaction fails to dispatch.
++    // if considerAll == true then try and dispatch all items.
+     for (uint32_t i = 0; i < count; ++i) {
+         trans = ent->mPendingQ[i];
+ 
+         // When this transaction has already established a half-open
+         // connection, we want to prevent any duplicate half-open
+         // connections from being established and bound to this
+         // transaction. Allow only use of an idle persistent connection
+         // (if found) for transactions referred by a half-open connection.
+@@ -937,34 +956,34 @@ nsHttpConnectionMgr::ProcessPendingQForE
+ 
+             // reset index and array length after RemoveElelmentAt()
+             dispatchedSuccessfully = true;
+             count = ent->mPendingQ.Length();
+             --i;
+             continue;
+         }
+ 
+-        if (dispatchedSuccessfully)
+-            return true;
+-
++        if (dispatchedSuccessfully && !considerAll)
++            break;
++    
+         NS_ABORT_IF_FALSE(count == ent->mPendingQ.Length(),
+                           "something mutated pending queue from "
+                           "GetConnection()");
+     }
+-    return false;
++    return dispatchedSuccessfully;
+ }
+ 
+ bool
+ nsHttpConnectionMgr::ProcessPendingQForEntry(nsHttpConnectionInfo *ci)
+ {
+     NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+ 
+     nsConnectionEntry *ent = mCT.Get(ci->HashKey());
+     if (ent)
+-        return ProcessPendingQForEntry(ent);
++        return ProcessPendingQForEntry(ent, false);
+     return false;
+ }
+ 
+ bool
+ nsHttpConnectionMgr::SupportsPipelining(nsHttpConnectionInfo *ci)
+ {
+     NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+ 
+@@ -1436,21 +1455,46 @@ nsHttpConnectionMgr::TryDispatchTransact
+     // step 0
+     // look for existing spdy connection - that's always best because it is
+     // essentially pipelining without head of line blocking
+ 
+     if (!(caps & NS_HTTP_DISALLOW_SPDY) && gHttpHandler->IsSpdyEnabled()) {
+         nsRefPtr<nsHttpConnection> conn = GetSpdyPreferredConn(ent);
+         if (conn) {
+             LOG(("   dispatch to spdy: [conn=%x]\n", conn.get()));
++            trans->RemoveDispatchedAsBlocking();  /* just in case */
+             DispatchTransaction(ent, trans, conn);
+             return NS_OK;
+         }
+     }
+ 
++    // If this is not a blocking transaction and the loadgroup for it is
++    // currently processing one or more blocking transactions then we
++    // need to just leave it in the queue until those are complete unless it is
++    // explicitly marked as unblocked.
++    if (!(caps & NS_HTTP_LOAD_AS_BLOCKING)) {
++        if (!(caps & NS_HTTP_LOAD_UNBLOCKED)) {
++            nsILoadGroupConnectionInfo *loadGroupCI = trans->LoadGroupConnectionInfo();
++            if (loadGroupCI) {
++                uint32_t blockers = 0;
++                if (NS_SUCCEEDED(loadGroupCI->GetBlockingTransactionCount(&blockers)) &&
++                    blockers) {
++                    // need to wait for blockers to clear
++                    LOG(("   blocked by load group: [blockers=%d]\n", blockers));
++                    return NS_ERROR_NOT_AVAILABLE;
++                }
++            }
++        }
++    }
++    else {
++        // Mark the transaction and its load group as blocking right now to prevent
++        // other transactions from being reordered in the queue due to slow syns.
++        trans->DispatchedAsBlocking();
++    }
++
+     // step 1
+     // If connection pressure, then we want to favor pipelining of any kind
+     if (IsUnderPressure(ent, classification) && !attemptedOptimisticPipeline) {
+         attemptedOptimisticPipeline = true;
+         if (AddToShortestPipeline(ent, trans,
+                                   classification,
+                                   mMaxOptimisticPipelinedRequests)) {
+             return NS_OK;
+@@ -1776,16 +1820,17 @@ nsHttpConnectionMgr::CreateTransport(nsC
+ {
+     NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+ 
+     nsRefPtr<nsHalfOpenSocket> sock = new nsHalfOpenSocket(ent, trans, caps);
+     nsresult rv = sock->SetupPrimaryStreams();
+     NS_ENSURE_SUCCESS(rv, rv);
+ 
+     ent->mHalfOpens.AppendElement(sock);
++    mNumHalfOpenConns++;
+     if (speculative)
+         sock->SetSpeculative(true);
+     return NS_OK;
+ }
+ 
+ // This function tries to dispatch the pending spdy transactions on
+ // the connection entry sent in as an argument. It will do so on the
+ // active spdy connection either in that same entry or in the
+@@ -1973,21 +2018,29 @@ nsHttpConnectionMgr::OnMsgCancelTransact
+ }
+ 
+ void
+ nsHttpConnectionMgr::OnMsgProcessPendingQ(int32_t, void *param)
+ {
+     NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+     nsHttpConnectionInfo *ci = (nsHttpConnectionInfo *) param;
+ 
+-    LOG(("nsHttpConnectionMgr::OnMsgProcessPendingQ [ci=%s]\n", ci->HashKey().get()));
++    if (!ci) {
++        LOG(("nsHttpConnectionMgr::OnMsgProcessPendingQ [ci=nullptr]\n"));
++        // Try and dispatch everything
++        mCT.Enumerate(ProcessAllTransactionsCB, this);
++        return;
++    }
++
++    LOG(("nsHttpConnectionMgr::OnMsgProcessPendingQ [ci=%s]\n",
++         ci->HashKey().get()));
+ 
+     // start by processing the queue identified by the given connection info.
+     nsConnectionEntry *ent = mCT.Get(ci->HashKey());
+-    if (!(ent && ProcessPendingQForEntry(ent))) {
++    if (!(ent && ProcessPendingQForEntry(ent, false))) {
+         // if we reach here, it means that we couldn't dispatch a transaction
+         // for the specified connection info.  walk the connection table...
+         mCT.Enumerate(ProcessOneTransactionCB, this);
+     }
+ 
+     NS_RELEASE(ci);
+ }
+ 
+@@ -2334,20 +2387,24 @@ nsHttpConnectionMgr::OnMsgSpeculativeCon
+ 
+     // If spdy has previously made a preferred entry for this host via
+     // the ip pooling rules. If so, connect to the preferred host instead of
+     // the one directly passed in here.
+     nsConnectionEntry *preferredEntry = GetSpdyPreferredEnt(ent);
+     if (preferredEntry)
+         ent = preferredEntry;
+ 
+-    if (!ent->mIdleConns.Length() && !RestrictConnections(ent) &&
++    if (mNumHalfOpenConns <= gHttpHandler->ParallelSpeculativeConnectLimit() &&
++        !ent->mIdleConns.Length() && !RestrictConnections(ent) &&
+         !AtActiveConnectionLimit(ent, trans->Caps())) {
+         CreateTransport(ent, trans, trans->Caps(), true);
+     }
++    else {
++        LOG(("  Transport not created due to existing connection count\n"));
++    }
+ }
+ 
+ bool
+ nsHttpConnectionMgr::nsConnectionHandle::IsPersistent()
+ {
+     return mConn->IsPersistent();
+ }
+ 
+@@ -3132,15 +3189,16 @@ nsHttpConnectionMgr::nsConnectionEntry::
+ void
+ nsHttpConnectionMgr::
+ nsConnectionEntry::RemoveHalfOpen(nsHalfOpenSocket *halfOpen)
+ {
+     // A failure to create the transport object at all
+     // will result in it not being present in the halfopen table
+     // so ignore failures of RemoveElement()
+     mHalfOpens.RemoveElement(halfOpen);
++    gHttpHandler->ConnMgr()->mNumHalfOpenConns--;
+ 
+     if (!UnconnectedHalfOpens())
+         // perhaps this reverted RestrictConnections()
+         // use the PostEvent version of processpendingq to avoid
+         // altering the pending q vector from an arbitrary stack
+         gHttpHandler->ConnMgr()->ProcessPendingQ(mConnInfo);
+ }
+diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.h b/netwerk/protocol/http/nsHttpConnectionMgr.h
+--- a/netwerk/protocol/http/nsHttpConnectionMgr.h
++++ b/netwerk/protocol/http/nsHttpConnectionMgr.h
+@@ -203,16 +203,19 @@ public:
+     // NOTE: functions below may be called only on the socket thread.
+     //-------------------------------------------------------------------------
+ 
+     // called to force the transaction queue to be processed once more, giving
+     // preference to the specified connection.
+     nsresult ProcessPendingQ(nsHttpConnectionInfo *);
+     bool     ProcessPendingQForEntry(nsHttpConnectionInfo *);
+ 
++    // Try and process all pending transactions
++    nsresult ProcessPendingQ();
++
+     // This is used to force an idle connection to be closed and removed from
+     // the idle connection list. It is called when the idle connection detects
+     // that the network peer has closed the transport.
+     nsresult CloseIdleConnection(nsHttpConnection *);
+ 
+     // The connection manager needs to know when a normal HTTP connection has been
+     // upgraded to SPDY because the dispatch and idle semantics are a little
+     // bit different.
+@@ -449,22 +452,23 @@ private:
+     uint16_t mMaxOptimisticPipelinedRequests;
+     bool mIsShuttingDown;
+ 
+     //-------------------------------------------------------------------------
+     // NOTE: these members are only accessed on the socket transport thread
+     //-------------------------------------------------------------------------
+ 
+     static PLDHashOperator ProcessOneTransactionCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
++    static PLDHashOperator ProcessAllTransactionsCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+ 
+     static PLDHashOperator PruneDeadConnectionsCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+     static PLDHashOperator ShutdownPassCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+     static PLDHashOperator PurgeExcessIdleConnectionsCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+     static PLDHashOperator ClosePersistentConnectionsCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+-    bool     ProcessPendingQForEntry(nsConnectionEntry *);
++    bool     ProcessPendingQForEntry(nsConnectionEntry *, bool considerAll);
+     bool     IsUnderPressure(nsConnectionEntry *ent,
+                              nsHttpTransaction::Classifier classification);
+     bool     AtActiveConnectionLimit(nsConnectionEntry *, uint8_t caps);
+     nsresult TryDispatchTransaction(nsConnectionEntry *ent,
+                                     bool onlyReusedConnection,
+                                     nsHttpTransaction *trans);
+     nsresult DispatchTransaction(nsConnectionEntry *,
+                                  nsHttpTransaction *,
+@@ -574,16 +578,19 @@ private:
+     void OnMsgProcessFeedback      (int32_t, void *);
+ 
+     // Total number of active connections in all of the ConnectionEntry objects
+     // that are accessed from mCT connection table.
+     uint16_t mNumActiveConns;
+     // Total number of idle connections in all of the ConnectionEntry objects
+     // that are accessed from mCT connection table.
+     uint16_t mNumIdleConns;
++    // Total number of connections in mHalfOpens ConnectionEntry objects
++    // that are accessed from mCT connection table
++    uint32_t mNumHalfOpenConns;
+ 
+     // Holds time in seconds for next wake-up to prune dead connections. 
+     uint64_t mTimeOfNextWakeUp;
+     // Timer for next pruning of dead connections.
+     nsCOMPtr<nsITimer> mTimer;
+ 
+     // A 1s tick to call nsHttpConnection::ReadTimeoutTick on
+     // active http/1 connections and check for orphaned half opens.
+diff --git a/netwerk/protocol/http/nsHttpHandler.cpp b/netwerk/protocol/http/nsHttpHandler.cpp
+--- a/netwerk/protocol/http/nsHttpHandler.cpp
++++ b/netwerk/protocol/http/nsHttpHandler.cpp
+@@ -173,16 +173,18 @@ nsHttpHandler::nsHttpHandler()
+     , mSpdyV3(true)
+     , mCoalesceSpdy(true)
+     , mUseAlternateProtocol(false)
+     , mSpdySendingChunkSize(ASpdySession::kSendingChunkSize)
+     , mSpdySendBufferSize(ASpdySession::kTCPSendBufferSize)
+     , mSpdyPingThreshold(PR_SecondsToInterval(44))
+     , mSpdyPingTimeout(PR_SecondsToInterval(8))
+     , mConnectTimeout(90000)
++    , mParallelSpeculativeConnectLimit(6)
++    , mCritialRequestPrioritization(true)
+ {
+ #if defined(PR_LOGGING)
+     gHttpLog = PR_NewLogModule("nsHttp");
+ #endif
+ 
+     LOG(("Creating nsHttpHandler [this=%x].\n", this));
+ 
+     NS_ASSERTION(!gHttpHandler, "HTTP handler already created!");
+@@ -1124,16 +1126,32 @@ nsHttpHandler::PrefsChanged(nsIPrefBranc
+     // established
+     if (PREF_CHANGED(HTTP_PREF("connection-timeout"))) {
+         rv = prefs->GetIntPref(HTTP_PREF("connection-timeout"), &val);
+         if (NS_SUCCEEDED(rv))
+             // the pref is in seconds, but the variable is in milliseconds
+             mConnectTimeout = clamped(val, 1, 0xffff) * PR_MSEC_PER_SEC;
+     }
+ 
++    // The maximum number of current global half open sockets allowable
++    // for starting a new speculative connection.
++    if (PREF_CHANGED(HTTP_PREF("speculative-parallel-limit"))) {
++        rv = prefs->GetIntPref(HTTP_PREF("speculative-parallel-limit"), &val);
++        if (NS_SUCCEEDED(rv))
++            mParallelSpeculativeConnectLimit = (uint32_t) clamped(val, 0, 1024);
++    }
++
++    // Whether or not to block requests for non head js/css items (e.g. media)
++    // while those elements load.
++    if (PREF_CHANGED(HTTP_PREF("rendering-critical-requests-prioritization"))) {
++        rv = prefs->GetBoolPref(HTTP_PREF("rendering-critical-requests-prioritization"), &cVar);
++        if (NS_SUCCEEDED(rv))
++            mCritialRequestPrioritization = cVar;
++    }
++
+     // on transition of network.http.diagnostics to true print
+     // a bunch of information to the console
+     if (pref && PREF_CHANGED(HTTP_PREF("diagnostics"))) {
+         rv = prefs->GetBoolPref(HTTP_PREF("diagnostics"), &cVar);
+         if (NS_SUCCEEDED(rv) && cVar) {
+             if (mConnMgr)
+                 mConnMgr->PrintDiagnostics();
+         }
+diff --git a/netwerk/protocol/http/nsHttpHandler.h b/netwerk/protocol/http/nsHttpHandler.h
+--- a/netwerk/protocol/http/nsHttpHandler.h
++++ b/netwerk/protocol/http/nsHttpHandler.h
+@@ -92,16 +92,18 @@ public:
+     bool           IsSpdyV3Enabled() { return mSpdyV3; }
+     bool           CoalesceSpdy() { return mCoalesceSpdy; }
+     bool           UseAlternateProtocol() { return mUseAlternateProtocol; }
+     uint32_t       SpdySendingChunkSize() { return mSpdySendingChunkSize; }
+     uint32_t       SpdySendBufferSize()      { return mSpdySendBufferSize; }
+     PRIntervalTime SpdyPingThreshold() { return mSpdyPingThreshold; }
+     PRIntervalTime SpdyPingTimeout() { return mSpdyPingTimeout; }
+     uint32_t       ConnectTimeout()  { return mConnectTimeout; }
++    uint32_t       ParallelSpeculativeConnectLimit() { return mParallelSpeculativeConnectLimit; }
++    bool           CritialRequestPrioritization() { return mCritialRequestPrioritization; }
+ 
+     bool           PromptTempRedirect()      { return mPromptTempRedirect; }
+ 
+     nsHttpAuthCache     *AuthCache() { return &mAuthCache; }
+     nsHttpConnectionMgr *ConnMgr()   { return mConnMgr; }
+ 
+     // cache support
+     bool UseCache() const { return mUseCache; }
+@@ -147,16 +149,21 @@ public:
+         return mConnMgr->ReclaimConnection(conn);
+     }
+ 
+     nsresult ProcessPendingQ(nsHttpConnectionInfo *cinfo)
+     {
+         return mConnMgr->ProcessPendingQ(cinfo);
+     }
+ 
++    nsresult ProcessPendingQ()
++    {
++        return mConnMgr->ProcessPendingQ();
++    }
++
+     nsresult GetSocketThreadTarget(nsIEventTarget **target)
+     {
+         return mConnMgr->GetSocketThreadTarget(target);
+     }
+ 
+     nsresult SpeculativeConnect(nsHttpConnectionInfo *ci,
+                                 nsIInterfaceRequestor *callbacks,
+                                 nsIEventTarget *target)
+@@ -383,16 +390,24 @@ private:
+     uint32_t       mSpdySendingChunkSize;
+     uint32_t       mSpdySendBufferSize;
+     PRIntervalTime mSpdyPingThreshold;
+     PRIntervalTime mSpdyPingTimeout;
+ 
+     // The maximum amount of time to wait for socket transport to be
+     // established. In milliseconds.
+     uint32_t       mConnectTimeout;
++
++    // The maximum number of current global half open sockets allowable
++    // when starting a new speculative connection.
++    uint32_t       mParallelSpeculativeConnectLimit;
++
++    // Whether or not to block requests for non head js/css items (e.g. media)
++    // while those elements load.
++    bool           mCritialRequestPrioritization;
+ };
+ 
+ //-----------------------------------------------------------------------------
+ 
+ extern nsHttpHandler *gHttpHandler;
+ 
+ //-----------------------------------------------------------------------------
+ // nsHttpsHandler - thin wrapper to distinguish the HTTP handler from the
+diff --git a/netwerk/protocol/http/nsHttpTransaction.cpp b/netwerk/protocol/http/nsHttpTransaction.cpp
+--- a/netwerk/protocol/http/nsHttpTransaction.cpp
++++ b/netwerk/protocol/http/nsHttpTransaction.cpp
+@@ -101,16 +101,17 @@ nsHttpTransaction::nsHttpTransaction()
+     , mNoContent(false)
+     , mSentData(false)
+     , mReceivedData(false)
+     , mStatusEventPending(false)
+     , mHasRequestBody(false)
+     , mProxyConnectFailed(false)
+     , mHttpResponseMatched(false)
+     , mPreserveStream(false)
++    , mDispatchedAsBlocking(false)
+     , mReportedStart(false)
+     , mReportedResponseHeader(false)
+     , mForTakeResponseHead(nullptr)
+     , mResponseHeadTaken(false)
+ {
+     LOG(("Creating nsHttpTransaction @%x\n", this));
+     gHttpHandler->GetMaxPipelineObjectSize(&mMaxPipelineObjectSize);
+ }
+@@ -120,16 +121,17 @@ nsHttpTransaction::~nsHttpTransaction()
+     LOG(("Destroying nsHttpTransaction @%x\n", this));
+ 
+     NS_IF_RELEASE(mConnection);
+     NS_IF_RELEASE(mConnInfo);
+ 
+     delete mResponseHead;
+     delete mForTakeResponseHead;
+     delete mChunkedDecoder;
++    ReleaseBlockingTransaction();
+ }
+ 
+ nsHttpTransaction::Classifier
+ nsHttpTransaction::Classify()
+ {
+     if (!(mCaps & NS_HTTP_ALLOW_PIPELINING))
+         return (mClassification = CLASS_SOLO);
+ 
+@@ -767,16 +769,17 @@ nsHttpTransaction::Close(nsresult reason
+         mTimings.responseEnd = mozilla::TimeStamp::Now();
+ 
+     if (relConn && mConnection)
+         NS_RELEASE(mConnection);
+ 
+     mStatus = reason;
+     mTransactionDone = true; // forcibly flag the transaction as complete
+     mClosed = true;
++    ReleaseBlockingTransaction();
+ 
+     // release some resources that we no longer need
+     mRequestStream = nullptr;
+     mReqHeaderBuf.Truncate();
+     mLineBuf.Truncate();
+     if (mChunkedDecoder) {
+         delete mChunkedDecoder;
+         mChunkedDecoder = nullptr;
+@@ -1364,16 +1367,17 @@ nsHttpTransaction::HandleContent(char *b
+     }
+ 
+     // check for end-of-file
+     if ((mContentRead == mContentLength) ||
+         (mChunkedDecoder && mChunkedDecoder->ReachedEOF())) {
+         // the transaction is done with a complete response.
+         mTransactionDone = true;
+         mResponseIsComplete = true;
++        ReleaseBlockingTransaction();
+ 
+         if (TimingEnabled())
+             mTimings.responseEnd = mozilla::TimeStamp::Now();
+ 
+         // report the entire response has arrived
+         if (mActivityDistributor)
+             mActivityDistributor->ObserveActivity(
+                 mChannel,
+@@ -1476,16 +1480,67 @@ nsHttpTransaction::CancelPipeline(uint32
+     mConnection->CancelPipeline(NS_ERROR_ABORT);
+ 
+     // Avoid pipelining this transaction on restart by classifying it as solo.
+     // This also prevents BadUnexpectedLarge from being reported more
+     // than one time per transaction.
+     mClassification = CLASS_SOLO;
+ }
+ 
++// Called when the transaction marked for blocking is associated with a connection
++// (i.e. added to a spdy session, an idle http connection, or placed into
++// a http pipeline). It is safe to call this multiple times with it only
++// having an effect once.
++void
++nsHttpTransaction::DispatchedAsBlocking()
++{
++    if (mDispatchedAsBlocking)
++        return;
++
++    LOG(("nsHttpTransaction %p dispatched as blocking\n", this));
++    
++    if (!mLoadGroupCI)
++        return;
++
++    LOG(("nsHttpTransaction adding blocking channel %p from "
++         "loadgroup %p\n", this, mLoadGroupCI.get()));
++    
++    mLoadGroupCI->AddBlockingTransaction();
++    mDispatchedAsBlocking = true;
++}
++
++void
++nsHttpTransaction::RemoveDispatchedAsBlocking()
++{
++    if (!mLoadGroupCI || !mDispatchedAsBlocking)
++        return;
++    
++    uint32_t blockers = 0;
++    nsresult rv = mLoadGroupCI->RemoveBlockingTransaction(&blockers);
++
++    LOG(("nsHttpTransaction removing blocking channel %p from "
++         "loadgroup %p. %d blockers remain.\n", this,
++         mLoadGroupCI.get(), blockers));
++
++    if (NS_SUCCEEDED(rv) && !blockers) {
++        LOG(("nsHttpTransaction %p triggering release of blocked channels.\n",
++             this));
++        gHttpHandler->ConnMgr()->ProcessPendingQ();
++    }
++    
++    mDispatchedAsBlocking = false;
++}
++
++void
++nsHttpTransaction::ReleaseBlockingTransaction()
++{
++    RemoveDispatchedAsBlocking();
++    mLoadGroupCI = nullptr;
++}
++
+ //-----------------------------------------------------------------------------
+ // nsHttpTransaction deletion event
+ //-----------------------------------------------------------------------------
+ 
+ class nsDeleteHttpTransaction : public nsRunnable {
+ public:
+     nsDeleteHttpTransaction(nsHttpTransaction *trans)
+         : mTrans(trans)
+diff --git a/netwerk/protocol/http/nsHttpTransaction.h b/netwerk/protocol/http/nsHttpTransaction.h
+--- a/netwerk/protocol/http/nsHttpTransaction.h
++++ b/netwerk/protocol/http/nsHttpTransaction.h
+@@ -9,16 +9,17 @@
+ #include "nsHttp.h"
+ #include "nsHttpHeaderArray.h"
+ #include "nsAHttpTransaction.h"
+ #include "nsAHttpConnection.h"
+ #include "nsCOMPtr.h"
+ 
+ #include "nsIPipe.h"
+ #include "nsIInputStream.h"
++#include "nsILoadGroup.h"
+ #include "nsIOutputStream.h"
+ #include "nsIInterfaceRequestor.h"
+ #include "nsISocketTransportService.h"
+ #include "nsITransport.h"
+ #include "nsIEventTarget.h"
+ #include "TimingStruct.h"
+ 
+ //-----------------------------------------------------------------------------
+@@ -105,28 +106,34 @@ public:
+ 
+     void PrintDiagnostics(nsCString &log);
+ 
+     // Sets mPendingTime to the current time stamp or to a null time stamp (if now is false)
+     void SetPendingTime(bool now = true) { mPendingTime = now ? mozilla::TimeStamp::Now() : mozilla::TimeStamp(); }
+     const mozilla::TimeStamp GetPendingTime() { return mPendingTime; }
+     bool UsesPipelining() const { return mCaps & NS_HTTP_ALLOW_PIPELINING; }
+ 
++    void SetLoadGroupConnectionInfo(nsILoadGroupConnectionInfo *aLoadGroupCI) { mLoadGroupCI = aLoadGroupCI; } 
++    nsILoadGroupConnectionInfo *LoadGroupConnectionInfo() { return mLoadGroupCI.get(); }
++    void DispatchedAsBlocking();
++    void RemoveDispatchedAsBlocking();
++
+ private:
+     nsresult Restart();
+     nsresult RestartInProgress();
+     char    *LocateHttpStart(char *buf, uint32_t len,
+                              bool aAllowPartialMatch);
+     nsresult ParseLine(char *line);
+     nsresult ParseLineSegment(char *seg, uint32_t len);
+     nsresult ParseHead(char *, uint32_t count, uint32_t *countRead);
+     nsresult HandleContentStart();
+     nsresult HandleContent(char *, uint32_t count, uint32_t *contentRead, uint32_t *contentRemaining);
+     nsresult ProcessData(char *, uint32_t, uint32_t *);
+     void     DeleteSelfOnConsumerThread();
++    void     ReleaseBlockingTransaction();
+ 
+     Classifier Classify();
+     void       CancelPipeline(uint32_t reason);
+ 
+     static NS_METHOD ReadRequestSegment(nsIInputStream *, void *, const char *,
+                                         uint32_t, uint32_t, uint32_t *);
+     static NS_METHOD WritePipeSegment(nsIOutputStream *, void *, char *,
+                                       uint32_t, uint32_t, uint32_t *);
+@@ -135,16 +142,17 @@ private:
+ 
+ private:
+     nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
+     nsCOMPtr<nsITransportEventSink> mTransportSink;
+     nsCOMPtr<nsIEventTarget>        mConsumerTarget;
+     nsCOMPtr<nsISupports>           mSecurityInfo;
+     nsCOMPtr<nsIAsyncInputStream>   mPipeIn;
+     nsCOMPtr<nsIAsyncOutputStream>  mPipeOut;
++    nsCOMPtr<nsILoadGroupConnectionInfo> mLoadGroupCI;
+ 
+     nsCOMPtr<nsISupports>             mChannel;
+     nsCOMPtr<nsIHttpActivityObserver> mActivityDistributor;
+ 
+     nsCString                       mReqHeaderBuf;    // flattened request headers
+     nsCOMPtr<nsIInputStream>        mRequestStream;
+     uint64_t                        mRequestSize;
+ 
+@@ -196,16 +204,17 @@ private:
+     bool                            mNoContent; // expecting an empty entity body
+     bool                            mSentData;
+     bool                            mReceivedData;
+     bool                            mStatusEventPending;
+     bool                            mHasRequestBody;
+     bool                            mProxyConnectFailed;
+     bool                            mHttpResponseMatched;
+     bool                            mPreserveStream;
++    bool                            mDispatchedAsBlocking;
+ 
+     // mClosed           := transaction has been explicitly closed
+     // mTransactionDone  := transaction ran to completion or was interrupted
+     // mResponseComplete := transaction ran to completion
+ 
+     // For Restart-In-Progress Functionality
+     bool                            mReportedStart;
+     bool                            mReportedResponseHeader;
+diff --git a/netwerk/protocol/http/nsIHttpChannelInternal.idl b/netwerk/protocol/http/nsIHttpChannelInternal.idl
+--- a/netwerk/protocol/http/nsIHttpChannelInternal.idl
++++ b/netwerk/protocol/http/nsIHttpChannelInternal.idl
+@@ -29,17 +29,17 @@ interface nsIHttpUpgradeListener : nsISu
+                               in nsIAsyncOutputStream aSocketOut);
+ };
+ 
+ /**
+  * Dumping ground for http.  This interface will never be frozen.  If you are
+  * using any feature exposed by this interface, be aware that this interface
+  * will change and you will be broken.  You have been warned.
+  */
+-[scriptable, uuid(9363fd96-af59-47e8-bddf-1d5e91acd336)]
++[scriptable, uuid(74d13d41-85cd-490f-9942-300d0c01c726)]
+ interface nsIHttpChannelInternal : nsISupports
+ {
+     /**
+      * An http channel can own a reference to the document URI
+      */
+     attribute nsIURI documentURI;
+ 
+     /**
+@@ -151,9 +151,24 @@ interface nsIHttpChannelInternal : nsISu
+ 
+     /**
+      * Enable/Disable Spdy negotiation on per channel basis.
+      * The network.http.spdy.enabled preference is still a pre-requisite
+      * for starting spdy.
+      */
+     attribute boolean allowSpdy;
+ 
++    /**
++     * Set (e.g., by the docshell) to indicate whether or not the channel
++     * corresponds to content that should be given a degree of network exclusivity
++     * with respect to other members of its load group.
++     * Examples are js from the HTML head and css which are latency
++     * sensitive and should not compete with images for bandwidth. Default false.
++     */
++    attribute boolean loadAsBlocking;
++
++    /**
++     * If set, this channel will load in parallel with the rest of the load
++     * group even if a blocking subset of the group would normally be given
++     * exclusivity. Default false.
++     */
++    attribute boolean loadUnblocked;
+ };
+diff --git a/netwerk/protocol/websocket/WebSocketChannel.cpp b/netwerk/protocol/websocket/WebSocketChannel.cpp
+--- a/netwerk/protocol/websocket/WebSocketChannel.cpp
++++ b/netwerk/protocol/websocket/WebSocketChannel.cpp
+@@ -2071,16 +2071,22 @@ WebSocketChannel::SetupRequest()
+     NS_ENSURE_SUCCESS(rv, rv);
+   }
+ 
+   rv = mHttpChannel->SetLoadFlags(nsIRequest::LOAD_BACKGROUND |
+                                   nsIRequest::INHIBIT_CACHING |
+                                   nsIRequest::LOAD_BYPASS_CACHE);
+   NS_ENSURE_SUCCESS(rv, rv);
+ 
++  // we never let websockets be blocked by head CSS/JS loads to avoid
++  // potential deadlock where server generation of CSS/JS requires
++  // an XHR signal.
++  rv = mChannel->SetLoadUnblocked(true);
++  NS_ENSURE_SUCCESS(rv, rv);
++
+   // draft-ietf-hybi-thewebsocketprotocol-07 illustrates Upgrade: websocket
+   // in lower case, so go with that. It is technically case insensitive.
+   rv = mChannel->HTTPUpgrade(NS_LITERAL_CSTRING("websocket"), this);
+   NS_ENSURE_SUCCESS(rv, rv);
+ 
+   mHttpChannel->SetRequestHeader(
+     NS_LITERAL_CSTRING("Sec-WebSocket-Version"),
+     NS_LITERAL_CSTRING(SEC_WEBSOCKET_VERSION), false);
+diff --git a/parser/html/nsHtml5SpeculativeLoad.cpp b/parser/html/nsHtml5SpeculativeLoad.cpp
+--- a/parser/html/nsHtml5SpeculativeLoad.cpp
++++ b/parser/html/nsHtml5SpeculativeLoad.cpp
+@@ -27,17 +27,21 @@ nsHtml5SpeculativeLoad::Perform(nsHtml5T
+     case eSpeculativeLoadBase:
+       aExecutor->SetSpeculationBase(mUrl);
+       break;
+     case eSpeculativeLoadImage:
+       aExecutor->PreloadImage(mUrl, mCrossOrigin);
+       break;
+     case eSpeculativeLoadScript:
+       aExecutor->PreloadScript(mUrl, mCharset, mTypeOrCharsetSource,
+-			       mCrossOrigin);
++                               mCrossOrigin, false);
++      break;
++    case eSpeculativeLoadScriptFromHead:
++      aExecutor->PreloadScript(mUrl, mCharset, mTypeOrCharsetSource,
++                               mCrossOrigin, true);
+       break;
+     case eSpeculativeLoadStyle:
+       aExecutor->PreloadStyle(mUrl, mCharset, mCrossOrigin);
+       break;
+     case eSpeculativeLoadManifest:  
+       aExecutor->ProcessOfflineManifest(mUrl);
+       break;
+     case eSpeculativeLoadSetDocumentCharset: {
+diff --git a/parser/html/nsHtml5SpeculativeLoad.h b/parser/html/nsHtml5SpeculativeLoad.h
+--- a/parser/html/nsHtml5SpeculativeLoad.h
++++ b/parser/html/nsHtml5SpeculativeLoad.h
+@@ -11,16 +11,17 @@ class nsHtml5TreeOpExecutor;
+ 
+ enum eHtml5SpeculativeLoad {
+ #ifdef DEBUG
+   eSpeculativeLoadUninitialized,
+ #endif
+   eSpeculativeLoadBase,
+   eSpeculativeLoadImage,
+   eSpeculativeLoadScript,
++  eSpeculativeLoadScriptFromHead,
+   eSpeculativeLoadStyle,
+   eSpeculativeLoadManifest,
+   eSpeculativeLoadSetDocumentCharset
+ };
+ 
+ class nsHtml5SpeculativeLoad {
+   public:
+     nsHtml5SpeculativeLoad();
+@@ -40,20 +41,22 @@ class nsHtml5SpeculativeLoad {
+       mOpCode = eSpeculativeLoadImage;
+       mUrl.Assign(aUrl);
+       mCrossOrigin.Assign(aCrossOrigin);
+     }
+ 
+     inline void InitScript(const nsAString& aUrl,
+                            const nsAString& aCharset,
+                            const nsAString& aType,
+-                           const nsAString& aCrossOrigin) {
++                           const nsAString& aCrossOrigin,
++                           bool aParserInHead) {
+       NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
+                       "Trying to reinitialize a speculative load!");
+-      mOpCode = eSpeculativeLoadScript;
++      mOpCode = aParserInHead ?
++          eSpeculativeLoadScriptFromHead : eSpeculativeLoadScript;
+       mUrl.Assign(aUrl);
+       mCharset.Assign(aCharset);
+       mTypeOrCharsetSource.Assign(aType);
+       mCrossOrigin.Assign(aCrossOrigin);
+     }
+     
+     inline void InitStyle(const nsAString& aUrl, const nsAString& aCharset,
+ 			  const nsAString& aCrossOrigin) {
+@@ -103,30 +106,30 @@ class nsHtml5SpeculativeLoad {
+     }
+ 
+     void Perform(nsHtml5TreeOpExecutor* aExecutor);
+     
+   private:
+     eHtml5SpeculativeLoad mOpCode;
+     nsString mUrl;
+     /**
+-     * If mOpCode is eSpeculativeLoadStyle or eSpeculativeLoadScript
++     * If mOpCode is eSpeculativeLoadStyle or eSpeculativeLoadScript[FromHead]
+      * then this is the value of the "charset" attribute. For
+      * eSpeculativeLoadSetDocumentCharset it is the charset that the
+      * document's charset is being set to. Otherwise it's empty.
+      */
+     nsString mCharset;
+     /**
+      * If mOpCode is eSpeculativeLoadSetDocumentCharset, this is a
+      * one-character string whose single character's code point is to be
+      * interpreted as a charset source integer. Otherwise, it is empty or
+      * the value of the type attribute.
+      */
+     nsString mTypeOrCharsetSource;
+     /**
+-     * If mOpCode is eSpeculativeLoadImage or eSpeculativeLoadScript,
++     * If mOpCode is eSpeculativeLoadImage or eSpeculativeLoadScript[FromHead],
+      * this is the value of the "crossorigin" attribute.  If the
+      * attribute is not set, this will be a void string.
+      */
+     nsString mCrossOrigin;
+ };
+ 
+ #endif // nsHtml5SpeculativeLoad_h_
+diff --git a/parser/html/nsHtml5TreeBuilderCppSupplement.h b/parser/html/nsHtml5TreeBuilderCppSupplement.h
+--- a/parser/html/nsHtml5TreeBuilderCppSupplement.h
++++ b/parser/html/nsHtml5TreeBuilderCppSupplement.h
+@@ -87,17 +87,18 @@ nsHtml5TreeBuilder::createElement(int32_
+             nsString* charset = aAttributes->getValue(nsHtml5AttributeName::ATTR_CHARSET);
+             nsString* type = aAttributes->getValue(nsHtml5AttributeName::ATTR_TYPE);
+             nsString* crossOrigin =
+               aAttributes->getValue(nsHtml5AttributeName::ATTR_CROSSORIGIN);
+             mSpeculativeLoadQueue.AppendElement()->
+               InitScript(*url,
+                          (charset) ? *charset : EmptyString(),
+                          (type) ? *type : EmptyString(),
+-                         (crossOrigin) ? *crossOrigin : NullString());
++                         (crossOrigin) ? *crossOrigin : NullString(),
++                         mode == NS_HTML5TREE_BUILDER_IN_HEAD);
+             mCurrentHtmlScriptIsAsyncOrDefer = 
+               aAttributes->contains(nsHtml5AttributeName::ATTR_ASYNC) ||
+               aAttributes->contains(nsHtml5AttributeName::ATTR_DEFER);
+           }
+         } else if (nsHtml5Atoms::link == aName) {
+           nsString* rel = aAttributes->getValue(nsHtml5AttributeName::ATTR_REL);
+           // Not splitting on space here is bogus but the old parser didn't even
+           // do a case-insensitive check.
+@@ -152,17 +153,18 @@ nsHtml5TreeBuilder::createElement(int32_
+           if (url) {
+             nsString* type = aAttributes->getValue(nsHtml5AttributeName::ATTR_TYPE);
+             nsString* crossOrigin =
+               aAttributes->getValue(nsHtml5AttributeName::ATTR_CROSSORIGIN);
+             mSpeculativeLoadQueue.AppendElement()->
+               InitScript(*url,
+                          EmptyString(),
+                          (type) ? *type : EmptyString(),
+-                         (crossOrigin) ? *crossOrigin : NullString());
++                         (crossOrigin) ? *crossOrigin : NullString(),
++                         mode == NS_HTML5TREE_BUILDER_IN_HEAD);
+           }
+         } else if (nsHtml5Atoms::style == aName) {
+           nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
+           NS_ASSERTION(treeOp, "Tree op allocation failed.");
+           treeOp->Init(eTreeOpSetStyleLineNumber, content, tokenizer->getLineNumber());
+ 
+           nsString* url = aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
+           if (url) {
+diff --git a/parser/html/nsHtml5TreeOpExecutor.cpp b/parser/html/nsHtml5TreeOpExecutor.cpp
+--- a/parser/html/nsHtml5TreeOpExecutor.cpp
++++ b/parser/html/nsHtml5TreeOpExecutor.cpp
+@@ -1044,23 +1044,25 @@ nsHtml5TreeOpExecutor::ConvertIfNotPrelo
+   mPreloadedURLs.PutEntry(spec);
+   return uri.forget();
+ }
+ 
+ void
+ nsHtml5TreeOpExecutor::PreloadScript(const nsAString& aURL,
+                                      const nsAString& aCharset,
+                                      const nsAString& aType,
+-                                     const nsAString& aCrossOrigin)
++                                     const nsAString& aCrossOrigin,
++                                     bool aScriptFromHead)
+ {
+   nsCOMPtr<nsIURI> uri = ConvertIfNotPreloadedYet(aURL);
+   if (!uri) {
+     return;
+   }
+-  mDocument->ScriptLoader()->PreloadURI(uri, aCharset, aType, aCrossOrigin);
++  mDocument->ScriptLoader()->PreloadURI(uri, aCharset, aType, aCrossOrigin,
++                                        aScriptFromHead);
+ }
+ 
+ void
+ nsHtml5TreeOpExecutor::PreloadStyle(const nsAString& aURL,
+                                     const nsAString& aCharset,
+                                     const nsAString& aCrossOrigin)
+ {
+   nsCOMPtr<nsIURI> uri = ConvertIfNotPreloadedYet(aURL);
+diff --git a/parser/html/nsHtml5TreeOpExecutor.h b/parser/html/nsHtml5TreeOpExecutor.h
+--- a/parser/html/nsHtml5TreeOpExecutor.h
++++ b/parser/html/nsHtml5TreeOpExecutor.h
+@@ -388,17 +388,18 @@ class nsHtml5TreeOpExecutor : public nsC
+     }
+ #endif
+ 
+     nsIURI* GetViewSourceBaseURI();
+ 
+     void PreloadScript(const nsAString& aURL,
+                        const nsAString& aCharset,
+                        const nsAString& aType,
+-                       const nsAString& aCrossOrigin);
++                       const nsAString& aCrossOrigin,
++                       bool aScriptFromHead);
+ 
+     void PreloadStyle(const nsAString& aURL, const nsAString& aCharset,
+ 		      const nsAString& aCrossOrigin);
+ 
+     void PreloadImage(const nsAString& aURL, const nsAString& aCrossOrigin);
+ 
+     void SetSpeculationBase(const nsAString& aURL);
+ 

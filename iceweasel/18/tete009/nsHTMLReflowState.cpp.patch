@@ -1,0 +1,39 @@
+diff --git a/layout/generic/nsHTMLReflowState.cpp b/layout/generic/nsHTMLReflowState.cpp
+--- a/layout/generic/nsHTMLReflowState.cpp
++++ b/layout/generic/nsHTMLReflowState.cpp
+@@ -21,16 +21,17 @@
+ #include "nsTableFrame.h"
+ #include "nsTableCellFrame.h"
+ #include "nsIServiceManager.h"
+ #include "nsIPercentHeightObserver.h"
+ #include "nsLayoutUtils.h"
+ #include "mozilla/Preferences.h"
+ #include "nsBidiUtils.h"
+ #include "nsFontInflationData.h"
++#include "mozilla/Attributes.h"
+ 
+ #ifdef DEBUG
+ #undef NOISY_VERTICAL_ALIGN
+ #else
+ #undef NOISY_VERTICAL_ALIGN
+ #endif
+ 
+ using namespace mozilla;
+@@ -984,16 +985,17 @@ nsHTMLReflowState::CalculateHorizBorderP
+   *aOutsideBoxSizing = outside;
+   return;
+ }
+ 
+ /**
+  * Returns true iff a pre-order traversal of the normal child
+  * frames rooted at aFrame finds no non-empty frame before aDescendant.
+  */
++MOZ_ALWAYS_INLINE
+ static bool AreAllEarlierInFlowFramesEmpty(nsIFrame* aFrame,
+   nsIFrame* aDescendant, bool* aFound) {
+   if (aFrame == aDescendant) {
+     *aFound = true;
+     return true;
+   }
+   if (!aFrame->IsSelfEmpty()) {
+     *aFound = false;

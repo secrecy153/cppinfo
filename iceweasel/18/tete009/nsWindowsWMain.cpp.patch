@@ -1,0 +1,24 @@
+diff --git a/toolkit/xre/nsWindowsWMain.cpp b/toolkit/xre/nsWindowsWMain.cpp
+--- a/toolkit/xre/nsWindowsWMain.cpp
++++ b/toolkit/xre/nsWindowsWMain.cpp
+@@ -5,16 +5,20 @@
+ // This file is a .cpp file meant to be included in nsBrowserApp.cpp and other
+ // similar bootstrap code. It converts wide-character windows wmain into UTF-8
+ // narrow-character strings.
+ 
+ #ifndef XP_WIN
+ #error This file only makes sense on Windows.
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
+ #include "nsUTF8Utils.h"
+ 
+ #ifndef XRE_DONT_PROTECT_DLL_LOAD
+ #include "nsSetDllDirectory.h"
+ #endif
+ 
+ #ifdef __MINGW32__
+ 

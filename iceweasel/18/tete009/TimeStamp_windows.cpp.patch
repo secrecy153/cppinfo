@@ -1,0 +1,25 @@
+diff --git a/xpcom/ds/TimeStamp_windows.cpp b/xpcom/ds/TimeStamp_windows.cpp
+--- a/xpcom/ds/TimeStamp_windows.cpp
++++ b/xpcom/ds/TimeStamp_windows.cpp
+@@ -21,16 +21,21 @@
+ #include <pratom.h>
+ #include <windows.h>
+ 
+ #include "prlog.h"
+ #include <stdio.h>
+ 
+ #include <intrin.h>
+ 
++extern "C" {
++__int64 _InterlockedCompareExchange64(__int64 volatile *, __int64, __int64);
++#pragma intrinsic(_InterlockedCompareExchange64)
++}
++
+ static bool
+ HasStableTSC()
+ {
+   union {
+     int regs[4];
+     struct {
+       int nIds;
+       char cpuString[12];

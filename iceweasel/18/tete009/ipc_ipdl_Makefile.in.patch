@@ -1,0 +1,17 @@
+diff --git a/ipc/ipdl/Makefile.in b/ipc/ipdl/Makefile.in
+--- a/ipc/ipdl/Makefile.in
++++ b/ipc/ipdl/Makefile.in
+@@ -96,8 +96,13 @@ export:: $(ALL_IPDLSRCS)
+ 	  --outheaders-dir=_ipdlheaders \
+ 	  --outcpp-dir=. \
+ 	  $(IPDLDIRS:%=-I$(topsrcdir)/%) \
+ 	  $^
+ 
+ # We #include some things in the dom/plugins/ directory that rely on
+ # toolkit libraries.
+ CXXFLAGS    += $(TK_CFLAGS)
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error of compiler when applying PGO
++COMPILE_CXXFLAGS += -GL-
++endif

@@ -1,0 +1,29 @@
+diff --git a/gfx/cairo/cairo/src/moz-d2d1-1.h b/gfx/cairo/cairo/src/moz-d2d1-1.h
+--- a/gfx/cairo/cairo/src/moz-d2d1-1.h
++++ b/gfx/cairo/cairo/src/moz-d2d1-1.h
+@@ -7,16 +7,25 @@
+ //---------------------------------------------------------------------------
+ #pragma once
+ 
+ #ifndef _D2D1_1_H_
+ #ifndef _D2D1_H_
+ #include <d2d1.h>
+ #endif // #ifndef _D2D1_H_
+ 
++#if _MSC_VER == 1400
++#ifndef _In_
++#define _In_
++#endif
++#ifndef _In_opt_
++#define _In_opt_
++#endif
++#endif
++
+ //+-----------------------------------------------------------------------------
+ //
+ //  Flag:
+ //      D2D1_LAYER_OPTIONS1
+ //
+ //  Synopsis:
+ //      Specifies how the layer contents should be prepared.
+ //

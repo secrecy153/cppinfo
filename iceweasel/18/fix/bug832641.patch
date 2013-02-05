@@ -1,0 +1,77 @@
+# HG changeset patch
+# Parent fb99b73609cb114e3d1096ef09ced58f3edea706
+# User hua.andy <hua.andy@gmail.com>
+"ff18.0.2 bug832461"
+
+
+diff --git a/layout/xul/base/src/nsMenuPopupFrame.cpp b/layout/xul/base/src/nsMenuPopupFrame.cpp
+--- a/layout/xul/base/src/nsMenuPopupFrame.cpp
++++ b/layout/xul/base/src/nsMenuPopupFrame.cpp
+@@ -706,16 +706,18 @@ nsMenuPopupFrame::InitializePopupWithAnc
+   }
+ }
+ 
+ void
+ nsMenuPopupFrame::ShowPopup(bool aIsContextMenu, bool aSelectFirstItem)
+ {
+   mIsContextMenu = aIsContextMenu;
+ 
++  InvalidateFrameSubtree();
++
+   if (mPopupState == ePopupShowing) {
+     mPopupState = ePopupOpen;
+     mIsOpenChanged = true;
+ 
+     nsMenuFrame* menuFrame = do_QueryFrame(GetParent());
+     if (menuFrame) {
+       nsWeakFrame weakFrame(this);
+       menuFrame->PopupOpened();
+diff --git a/widget/android/nsWindow.cpp b/widget/android/nsWindow.cpp
+--- a/widget/android/nsWindow.cpp
++++ b/widget/android/nsWindow.cpp
+@@ -2296,16 +2296,13 @@ nsWindow::WidgetPaintsBackground()
+ }
+ 
+ bool
+ nsWindow::NeedsPaint()
+ {
+   if (sCompositorPaused || FindTopLevel() != nsWindow::TopWindow()) {
+     return false;
+   }
+-  nsIntRect bounds;
+-  nsresult rv = GetBounds(bounds);
+-  NS_ENSURE_SUCCESS(rv, false);
+-  return !bounds.IsEmpty();
++  return nsIWidget::NeedsPaint();
+ }
+ 
+ #endif
+ 
+diff --git a/widget/nsIWidget.h b/widget/nsIWidget.h
+--- a/widget/nsIWidget.h
++++ b/widget/nsIWidget.h
+@@ -1587,17 +1587,23 @@ class nsIWidget : public nsISupports {
+     /**
+      * Returns true to indicate that this widget paints an opaque background
+      * that we want to be visible under the page, so layout should not force
+      * a default background.
+      */
+     virtual bool WidgetPaintsBackground() { return false; }
+ 
+     virtual bool NeedsPaint() {
+-      return true;
++       if (!IsVisible()) {
++           return false;
++       }
++       nsIntRect bounds;
++       nsresult rv = GetBounds(bounds);
++       NS_ENSURE_SUCCESS(rv, false);
++       return !bounds.IsEmpty();
+     }
+     /**
+      * Get the natural bounds of this widget.  This method is only
+      * meaningful for widgets for which Gecko implements screen
+      * rotation natively.  When this is the case, GetBounds() returns
+      * the widget bounds taking rotation into account, and
+      * GetNaturalBounds() returns the bounds *not* taking rotation
+      * into account.

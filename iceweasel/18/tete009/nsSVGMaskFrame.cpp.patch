@@ -1,0 +1,59 @@
+diff --git a/layout/svg/nsSVGMaskFrame.cpp b/layout/svg/nsSVGMaskFrame.cpp
+--- a/layout/svg/nsSVGMaskFrame.cpp
++++ b/layout/svg/nsSVGMaskFrame.cpp
+@@ -1,13 +1,17 @@
+ /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
+ // Main header first:
+ #include "nsSVGMaskFrame.h"
+ 
+ // Keep others in (case-insensitive) order:
+ #include "gfxContext.h"
+ #include "gfxImageSurface.h"
+ #include "nsRenderingContext.h"
+ #include "nsSVGEffects.h"
+@@ -114,27 +118,36 @@ nsSVGMaskFrame::ComputeMaskAlpha(nsRende
+ 
+   nsIntRect rect(0, 0, surfaceSize.width, surfaceSize.height);
+   nsSVGUtils::UnPremultiplyImageDataAlpha(data, stride, rect);
+   if (GetStyleSVG()->mColorInterpolation ==
+       NS_STYLE_COLOR_INTERPOLATION_LINEARRGB) {
+     nsSVGUtils::ConvertImageDataToLinearRGB(data, stride, rect);
+   }
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++  int omp_thread_counts = omp_get_max_threads();
++
++#pragma omp parallel for schedule(guided) default(none) \
++shared(surfaceSize, data, stride, aOpacity) \
++if (omp_thread_counts >= 2 && \
++    surfaceSize.height >= (PRUint32)omp_thread_counts && \
++    surfaceSize.width * surfaceSize.height >= 10000)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
+   for (int32_t y = 0; y < surfaceSize.height; y++)
+     for (int32_t x = 0; x < surfaceSize.width; x++) {
+       uint8_t *pixel = data + stride * y + 4 * x;
+ 
+       /* linearRGB -> intensity */
+       uint8_t alpha =
+         static_cast<uint8_t>
+                    ((pixel[GFX_ARGB32_OFFSET_R] * 0.2125 +
+                         pixel[GFX_ARGB32_OFFSET_G] * 0.7154 +
+                         pixel[GFX_ARGB32_OFFSET_B] * 0.0721) *
+-                       (pixel[GFX_ARGB32_OFFSET_A] / 255.0) * aOpacity);
++                       (pixel[GFX_ARGB32_OFFSET_A] * 0.003921568627451) * aOpacity);
+ 
+       memset(pixel, alpha, 4);
+     }
+ 
+   gfxPattern *retval = new gfxPattern(image);
+   retval->SetMatrix(matrix);
+   NS_IF_ADDREF(retval);
+   return retval;
