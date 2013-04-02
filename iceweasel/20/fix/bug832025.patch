@@ -1,0 +1,73 @@
+# HG changeset patch
+# Parent 8babf9e55ea49129b0aaafc487b0160df25af5bf
+# User hua.andy <hua.andy@gmail.com>
+"bug 832025"
+
+
+diff --git a/editor/libeditor/html/nsHTMLEditRules.cpp b/editor/libeditor/html/nsHTMLEditRules.cpp
+--- a/editor/libeditor/html/nsHTMLEditRules.cpp
++++ b/editor/libeditor/html/nsHTMLEditRules.cpp
+@@ -6310,16 +6310,20 @@ nsHTMLEditRules::ReturnInHeader(nsISelec
+     NS_ENSURE_SUCCESS(res, res);
+     // layout tells the caret to blink in a weird place
+     // if we don't place a break after the header.
+     nsCOMPtr<nsIDOMNode> sibling;
+     res = mHTMLEditor->GetNextHTMLSibling(headerParent, offset+1, address_of(sibling));
+     NS_ENSURE_SUCCESS(res, res);
+     if (!sibling || !nsTextEditUtils::IsBreak(sibling))
+     {
++      res = ClearCachedStyles();
++      NS_ENSURE_SUCCESS(res, res);
++      mHTMLEditor->mTypeInState->ClearAllProps();
++
+       // create a paragraph
+       NS_NAMED_LITERAL_STRING(pType, "p");
+       nsCOMPtr<nsIDOMNode> pNode;
+       res = mHTMLEditor->CreateNode(pType, headerParent, offset+1, getter_AddRefs(pNode));
+       NS_ENSURE_SUCCESS(res, res);
+ 
+       // append a <br> to it
+       nsCOMPtr<nsIDOMNode> brNode;
+@@ -6556,16 +6560,20 @@ nsHTMLEditRules::ReturnInListItem(nsISel
+       res = aSelection->Collapse(aListItem,0);
+     }
+     else
+     {
+       // otherwise kill this listitem
+       res = mHTMLEditor->DeleteNode(aListItem);
+       NS_ENSURE_SUCCESS(res, res);
+       
++      res = ClearCachedStyles();
++      NS_ENSURE_SUCCESS(res, res);
++      mHTMLEditor->mTypeInState->ClearAllProps();
++
+       // time to insert a paragraph
+       NS_NAMED_LITERAL_STRING(pType, "p");
+       nsCOMPtr<nsIDOMNode> pNode;
+       res = mHTMLEditor->CreateNode(pType, listparent, offset+1, getter_AddRefs(pNode));
+       NS_ENSURE_SUCCESS(res, res);
+ 
+       // append a <br> to it
+       nsCOMPtr<nsIDOMNode> brNode;
+diff --git a/editor/libeditor/html/tests/Makefile.in b/editor/libeditor/html/tests/Makefile.in
+--- a/editor/libeditor/html/tests/Makefile.in
++++ b/editor/libeditor/html/tests/Makefile.in
+@@ -79,16 +79,18 @@ MOCHITEST_FILES = \
+ 		test_root_element_replacement.html \
+ 		test_bug738366.html \
+ 		test_bug757371.html \
+ 		test_bug767684.html \
+ 		test_bug780035.html \
+ 		test_bug787432.html \
+ 		test_bug790475.html \
+ 		test_bug796839.html \
++		test_bug832025.html \
++		test_bug832025_2.html \
+ 		test_spellcheck_pref.html \
+ 		$(NULL)
+ 
+ _DATA_FILES = \
+ 		data/cfhtml-chromium.txt \
+ 		data/cfhtml-firefox.txt \
+ 		data/cfhtml-ie.txt \
+ 		data/cfhtml-ooo.txt \
