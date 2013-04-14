@@ -11,6 +11,11 @@
 #define STATUS_ERROR					((NTSTATUS)0x80070000L)
 #define NT_SUCCESS(Status)              (((NTSTATUS)(Status)) >= 0)
 
+#ifndef _NTSTATUS_PSDK
+#define _NTSTATUS_PSDK
+  typedef LONG NTSTATUS;
+#endif
+
 #ifndef __UNICODE_STRING_DEFINED
 #define __UNICODE_STRING_DEFINED
   typedef struct _UNICODE_STRING {
@@ -304,7 +309,7 @@ BOOL WINAPI in_whitelist(LPCWSTR lpfile)
 	PathAppendW(white_list[1],L"plugin-container.exe");
 	GetModuleFileNameW(dll_module,white_list[2],VALUE_LEN);
 	PathRemoveFileSpecW(white_list[2]);
-	PathAppendW(white_list[1],L"plugin-hang-ui.exe");
+	PathAppendW(white_list[2],L"plugin-hang-ui.exe");
 	if ( for_eachSection(L"whitelist", &white_list[3], EXCLUDE_NUM-3) )
 	{
 		for ( i=0; i<EXCLUDE_NUM ; i++ )

@@ -4,7 +4,7 @@ LD       = gcc -o
 BITS	 := 32
 LDFLAGS  = -static -Wl,-s
 CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 \
-	    -flto -fomit-frame-pointer -mthreads
+	    -fomit-frame-pointer -mthreads
 LDLIBS   = -lpsapi -lshlwapi
 MD       = mkdir -p
 SRC      = src

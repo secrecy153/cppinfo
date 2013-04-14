@@ -3,7 +3,7 @@ CFLAGS   = -O3
 BITS	 := 32
 LD       = gcc
 LDFLAGS  = -static -Wl,-s
-CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 -flto -fomit-frame-pointer
+CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 -fomit-frame-pointer
 CFLAGSEX = -DMINGW_HAS_SECURE_API -std=c99
 LDLIBS   = -lmhook -municode
 MD       = mkdir -p
