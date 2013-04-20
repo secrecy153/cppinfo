@@ -145,3 +145,42 @@ DWORD WINAPI GetOsVersion(void)
 	}
 	return ver;
 }
+
+void WINAPI charTochar(LPWSTR path)
+{
+	LPWSTR lp = NULL;
+	int post;
+	do
+	{
+		lp =  StrChrW(path,L'/');
+		if (lp)
+		{
+			post = lp-path;
+			path[post] = L'\\';
+		}
+	}
+	while (lp!=NULL);
+	return;
+}
+
+BOOL PathToCombineW(IN LPWSTR lpfile, IN size_t str_len)
+{
+	BOOL	ret = FALSE;
+	wchar_t buf_modname[VALUE_LEN+1] = {0};
+	wchar_t tmp_path[MAX_PATH] = {0};
+	if ( dll_module && lpfile[1] != L':' )
+	{
+		charTochar(lpfile);
+		if ( GetModuleFileNameW( dll_module, buf_modname, VALUE_LEN) > 0)
+		{
+			PathRemoveFileSpecW(buf_modname);
+			if ( PathCombineW(tmp_path,buf_modname,lpfile) )
+			{
+				int n = _snwprintf(lpfile,str_len,L"%ls",tmp_path);
+				lpfile[n] = L'\0';
+				ret = TRUE;
+			}
+		}
+	}
+	return ret;
+}

@@ -81,7 +81,7 @@ void __cdecl logmsg(const char * format, ...)
  }
 #endif
 
-static DWORD SHNotifyCreateDirectoryW(LPCWSTR path, LPSECURITY_ATTRIBUTES sec)
+static DWORD TrueSHNotifyCreateDirectoryW(LPCWSTR path, LPSECURITY_ATTRIBUTES sec)
 {
     if (CreateDirectoryW(path, sec))
     {
@@ -99,7 +99,7 @@ static BOOL WINAPI NtSHCreateDirectoryExW(LPCWSTR pszPath,SECURITY_ATTRIBUTES *p
 		SetLastError(ret);
 		return FALSE;
     }
-	ret = SHNotifyCreateDirectoryW(pszPath, psa);
+	ret = TrueSHNotifyCreateDirectoryW(pszPath, psa);
     if (ret != ERROR_SUCCESS &&
 		ret != ERROR_FILE_EXISTS &&
 		ret != ERROR_ALREADY_EXISTS &&
@@ -116,7 +116,7 @@ static BOOL WINAPI NtSHCreateDirectoryExW(LPCWSTR pszPath,SECURITY_ATTRIBUTES *p
             {
                 *pSlash = 0;
 
-                ret = SHNotifyCreateDirectoryW(szTemp, pSlash + 1 == pEnd ? psa : NULL);
+                ret = TrueSHNotifyCreateDirectoryW(szTemp, pSlash + 1 == pEnd ? psa : NULL);
             }
             *pSlash++ = '\\';
         }
@@ -134,7 +134,6 @@ unsigned WINAPI init_global_env(void * pParam)
 	{
 		return (0);
 	} 
-	wstrstr(appdata_path);
 	/* 如果ini文件里的appdata设置路径为相对路径 */
 	if (appdata_path[1] != L':')
 	{
@@ -148,12 +147,22 @@ unsigned WINAPI init_global_env(void * pParam)
 	{
 		wcsncpy(localdata_path,appdata_path,VALUE_LEN);
 	}
+	/* 修正相对路径问题 */
+	if (localdata_path[1] != L':')
+	{
+		if ( !PathToCombineW(localdata_path,VALUE_LEN) )
+		{
+			ZeroMemory(localdata_path,sizeof(localdata_path));
+		}
+	}
 	/* 为appdata建立目录 */
+	charTochar(appdata_path);
 	if ( wcsncat(appdata_path,L"\\AppData",VALUE_LEN) )
 	{
 		NtSHCreateDirectoryExW(appdata_path,NULL);
 	}
 	/* 为localdata建立目录 */
+	charTochar(localdata_path);
 	if ( wcsncat(localdata_path,L"\\LocalAppData",VALUE_LEN) )
 	{
 		NtSHCreateDirectoryExW(localdata_path,NULL);
@@ -254,7 +263,7 @@ BOOL WINAPI HookSHGetSpecialFolderPathW(HWND hwndOwner,LPWSTR lpszPath,
 
 unsigned WINAPI init_portable(void * pParam)
 {
-	hShell32 = LoadLibraryW(L"shell32.dll");
+	hShell32 = TrueLoadLibraryExW(L"shell32.dll",NULL,LOAD_LIBRARY_AS_DATAFILE);
 	if (hShell32 != NULL)
 	{
 		TrueSHGetFolderPathW = (_NtSHGetFolderPath)GetProcAddress(hShell32,
@@ -356,7 +365,6 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 			{
 				CloseHandle((HANDLE)_beginthreadex(NULL,0,&init_exeception,NULL,0,NULL));
 			}
-			
 		}
 		break;
 		case DLL_PROCESS_DETACH:

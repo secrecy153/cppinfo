@@ -10,11 +10,15 @@
 
 #include <windows.h>
 
+typedef HMODULE (WINAPI *_NtLoadLibraryExW)(LPCWSTR lpFileName,
+									    HANDLE hFile, 
+									    DWORD dwFlags);
+
+SAFE_EXTERN _NtLoadLibraryExW	TrueLoadLibraryExW;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-SAFE_EXTERN void WINAPI wstrstr(LPWSTR path);
-SAFE_EXTERN BOOL PathToCombineW(LPWSTR lpfile, size_t str_len);
 SAFE_EXTERN unsigned WINAPI init_safed(void * pParam);
 SAFE_EXTERN void safe_end(void);
 #ifdef __cplusplus

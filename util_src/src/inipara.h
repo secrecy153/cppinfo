@@ -20,6 +20,8 @@
 extern "C" {
 #endif 
 INI_EXTERN DWORD WINAPI GetOsVersion(void);
+INI_EXTERN void WINAPI charTochar(LPWSTR path);
+INI_EXTERN BOOL PathToCombineW(IN LPWSTR lpfile, IN size_t str_len);
 INI_EXTERN LPWSTR stristrW(LPCWSTR Str, LPCWSTR Pat);
 INI_EXTERN BOOL WINAPI ini_ready(LPWSTR inifull_name,size_t buf_len);
 INI_EXTERN BOOL read_appkey(LPCWSTR lpappname,              /* 区段名 */
