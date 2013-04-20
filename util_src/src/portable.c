@@ -263,6 +263,11 @@ BOOL WINAPI HookSHGetSpecialFolderPathW(HWND hwndOwner,LPWSTR lpszPath,
 
 unsigned WINAPI init_portable(void * pParam)
 {
+	if (!TrueLoadLibraryExW)
+	{
+		TrueLoadLibraryExW = (_NtLoadLibraryExW)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),
+							 "LoadLibraryExW");
+	}
 	hShell32 = TrueLoadLibraryExW(L"shell32.dll",NULL,LOAD_LIBRARY_AS_DATAFILE);
 	if (hShell32 != NULL)
 	{
@@ -271,10 +276,10 @@ unsigned WINAPI init_portable(void * pParam)
 		TrueSHGetSpecialFolderPathW = (_NtSHGetSpecialFolderPath)GetProcAddress(hShell32,
 									  "SHGetSpecialFolderPathW");
 		TrueSHGetSpecialFolderLocation = (_NtSHGetSpecialFolderLocation)GetProcAddress(hShell32,
-									  "SHGetSpecialFolderLocation");
+										 "SHGetSpecialFolderLocation");
 		/* 将会用到SHILCreateFromPath基地址 */
 		TrueSHILCreateFromPath = (_NtSHILCreateFromPath)GetProcAddress(hShell32,
-									  "SHILCreateFromPath");
+								 "SHILCreateFromPath");
 	}
 	/* hook 下面几个函数 */ 
 	if (TrueSHGetSpecialFolderLocation)
