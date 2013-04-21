@@ -56,7 +56,7 @@ BOOL WINAPI GetFileByHandle(PHANDLE phandle,LPWSTR lpFileName)
                             UINT uNameLen = wcslen(szName);
                             if(uNameLen<VALUE_LEN)
                             {
-                                bFound=wcsnicmp(buf.Buffer,szName,uNameLen)==0;
+                                bFound=_wcsnicmp(buf.Buffer,szName,uNameLen)==0;
                                 if(bFound)
                                 {
                                     _snwprintf(lpFileName,MAX_PATH,L"%ls%ls",szDrive,buf.Buffer+uNameLen);
@@ -257,14 +257,17 @@ unsigned WINAPI init_safed(void * pParam)
 	HMODULE		hNtdll;
 	DWORD		ver = GetOsVersion();
 	ZeroMemory(&user32ModInfo,sizeof(user32ModInfo));
-    if (GetModuleInformation(GetCurrentProcess(), GetModuleHandleA("user32.dll"),   
+	TrueLoadLibraryExW = (_NtLoadLibraryExW)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),
+						 "LoadLibraryExW");
+	TrueGetModuleInformation = (_NtGetModuleInformation)GetProcAddress(
+								TrueLoadLibraryExW(L"psapi.dll",NULL,LOAD_LIBRARY_AS_DATAFILE),
+								"GetModuleInformation");
+    if (TrueGetModuleInformation(GetCurrentProcess(), GetModuleHandleA("user32.dll"),   
                          &user32ModInfo, sizeof(user32ModInfo)))
     {
 		m_dwUser32Low = (UINT_PTR)user32ModInfo.lpBaseOfDll; 
 		m_dwUser32Hi = (UINT_PTR)user32ModInfo.lpBaseOfDll+user32ModInfo.SizeOfImage; 
 	}
-	TrueLoadLibraryExW = (_NtLoadLibraryExW)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),
-						 "LoadLibraryExW");
 	hNtdll = GetModuleHandleW(L"ntdll.dll");
 	if (hNtdll)
 	{

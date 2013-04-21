@@ -1,5 +1,4 @@
 // Copyright (C) 2004, Matt Conover (mconover@gmail.com)
-#undef NDEBUG
 #include <assert.h>
 #include "disasm.h"
 #include "cpu.h"

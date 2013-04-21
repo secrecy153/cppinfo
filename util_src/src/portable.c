@@ -13,12 +13,11 @@
 #include <stdlib.h>
 
 #ifdef _MSC_VER
-#  pragma comment(lib, "psapi.lib")
+#  pragma comment(lib, "shell32.lib")
 #  pragma comment(lib, "shlwapi.lib")
 #endif
 
 HMODULE	dll_module				= NULL;
-static  HMODULE	 hShell32		= NULL;
 static  wchar_t  appdata_path[VALUE_LEN+1];			/* 自定义的appdata变量路径  */
 static  wchar_t  localdata_path[VALUE_LEN+1];
 
@@ -34,14 +33,10 @@ typedef BOOL (WINAPI *_NtSHGetSpecialFolderPath)(HWND hwndOwner,
 typedef HRESULT (WINAPI *_NtSHGetSpecialFolderLocation)(HWND hwndOwner,
 									    int nFolder,
 									    LPITEMIDLIST *ppidl);
-typedef HRESULT (WINAPI *_NtSHILCreateFromPath)(PCWSTR pszPath,
-									    LPITEMIDLIST *ppidl,
-									    DWORD *rgflnOut);
 
 static _NtSHGetFolderPath				TrueSHGetFolderPathW				= NULL;
 static _NtSHGetSpecialFolderPath		TrueSHGetSpecialFolderPathW			= NULL;
 static _NtSHGetSpecialFolderLocation	TrueSHGetSpecialFolderLocation		= NULL;
-static _NtSHILCreateFromPath			TrueSHILCreateFromPath				= NULL;
 
 TETE_EXT_CLASS  
 uint32_t GetNonTemporalDataSizeMin_tt( void )
@@ -81,53 +76,6 @@ void __cdecl logmsg(const char * format, ...)
  }
 #endif
 
-static DWORD TrueSHNotifyCreateDirectoryW(LPCWSTR path, LPSECURITY_ATTRIBUTES sec)
-{
-    if (CreateDirectoryW(path, sec))
-    {
-      SHChangeNotify(SHCNE_MKDIR, SHCNF_PATHW, path, NULL);
-      return ERROR_SUCCESS;
-    }
-    return GetLastError();
-}
-
-static BOOL WINAPI NtSHCreateDirectoryExW(LPCWSTR pszPath,SECURITY_ATTRIBUTES *psa)
-{
-	int ret = ERROR_BAD_PATHNAME;
-    if (PathIsRelativeW(pszPath))
-    {
-		SetLastError(ret);
-		return FALSE;
-    }
-	ret = TrueSHNotifyCreateDirectoryW(pszPath, psa);
-    if (ret != ERROR_SUCCESS &&
-		ret != ERROR_FILE_EXISTS &&
-		ret != ERROR_ALREADY_EXISTS &&
-		ret != ERROR_FILENAME_EXCED_RANGE)
-    {
-        wchar_t *pEnd, *pSlash, szTemp[MAX_PATH + 1];
-        lstrcpynW(szTemp, pszPath, MAX_PATH);
-        pEnd = PathAddBackslashW(szTemp);
-        pSlash = szTemp + 3;
-        while (*pSlash)
-        {
-            while (*pSlash && *pSlash != '\\') pSlash++;
-            if (*pSlash)
-            {
-                *pSlash = 0;
-
-                ret = TrueSHNotifyCreateDirectoryW(szTemp, pSlash + 1 == pEnd ? psa : NULL);
-            }
-            *pSlash++ = '\\';
-        }
-    }
-    if (ret && (ERROR_CANCELLED != ret))
-    {
-        ret = ERROR_CANCELLED;
-    }
-	return ret;
-}
-
 unsigned WINAPI init_global_env(void * pParam)
 {
 	if ( !read_appkey(L"General",L"PortableDataPath",appdata_path,sizeof(appdata_path)) )
@@ -159,13 +107,13 @@ unsigned WINAPI init_global_env(void * pParam)
 	charTochar(appdata_path);
 	if ( wcsncat(appdata_path,L"\\AppData",VALUE_LEN) )
 	{
-		NtSHCreateDirectoryExW(appdata_path,NULL);
+		SHCreateDirectoryExW(NULL,appdata_path,NULL);
 	}
 	/* 为localdata建立目录 */
 	charTochar(localdata_path);
 	if ( wcsncat(localdata_path,L"\\LocalAppData",VALUE_LEN) )
 	{
-		NtSHCreateDirectoryExW(localdata_path,NULL);
+		SHCreateDirectoryExW(NULL,localdata_path,NULL);
 	}
 	return (1);
 }
@@ -183,7 +131,7 @@ HRESULT WINAPI HookSHGetSpecialFolderLocation(HWND hwndOwner,
 	{  
 		LPITEMIDLIST pidlnew = NULL;
 		HRESULT result = 0L;
-		if ( !TrueSHILCreateFromPath || appdata_path[0] == L'\0' )
+		if ( appdata_path[0] == L'\0' )
 		{
 			return TrueSHGetSpecialFolderLocation(hwndOwner, nFolder, ppidl);
 		}
@@ -191,11 +139,11 @@ HRESULT WINAPI HookSHGetSpecialFolderLocation(HWND hwndOwner,
 			CSIDL_COMMON_APPDATA == nFolder || 
 			(CSIDL_LOCAL_APPDATA|CSIDL_FLAG_CREATE)  == nFolder)
 		{
-			result = TrueSHILCreateFromPath( localdata_path, &pidlnew, NULL);
+			result = SHILCreateFromPath( localdata_path, &pidlnew, NULL);
 		}
 		else
 		{
-			result = TrueSHILCreateFromPath(appdata_path, &pidlnew, NULL);
+			result = SHILCreateFromPath(appdata_path, &pidlnew, NULL);
 		}
 		if (result == S_OK)
 		{
@@ -263,12 +211,7 @@ BOOL WINAPI HookSHGetSpecialFolderPathW(HWND hwndOwner,LPWSTR lpszPath,
 
 unsigned WINAPI init_portable(void * pParam)
 {
-	if (!TrueLoadLibraryExW)
-	{
-		TrueLoadLibraryExW = (_NtLoadLibraryExW)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),
-							 "LoadLibraryExW");
-	}
-	hShell32 = TrueLoadLibraryExW(L"shell32.dll",NULL,LOAD_LIBRARY_AS_DATAFILE);
+	HMODULE hShell32 = GetModuleHandleW(L"shell32.dll");
 	if (hShell32 != NULL)
 	{
 		TrueSHGetFolderPathW = (_NtSHGetFolderPath)GetProcAddress(hShell32,
@@ -277,41 +220,20 @@ unsigned WINAPI init_portable(void * pParam)
 									  "SHGetSpecialFolderPathW");
 		TrueSHGetSpecialFolderLocation = (_NtSHGetSpecialFolderLocation)GetProcAddress(hShell32,
 										 "SHGetSpecialFolderLocation");
-		/* 将会用到SHILCreateFromPath基地址 */
-		TrueSHILCreateFromPath = (_NtSHILCreateFromPath)GetProcAddress(hShell32,
-								 "SHILCreateFromPath");
 	}
 	/* hook 下面几个函数 */ 
 	if (TrueSHGetSpecialFolderLocation)
 	{
 		Mhook_SetHook((PVOID*)&TrueSHGetSpecialFolderLocation, (PVOID)HookSHGetSpecialFolderLocation);
 	}
-#ifdef _DEBUG
-	else
-	{
-		logmsg("TrueSHGetSpecialFolderLocation is null\n");
-	}
-#endif	
 	if (TrueSHGetFolderPathW)
 	{
 		Mhook_SetHook((PVOID*)&TrueSHGetFolderPathW, (PVOID)HookSHGetFolderPathW);
 	}
-#ifdef _DEBUG
-	else
-	{
-		logmsg("TrueSHGetFolderPathW is null\n");
-	}
-#endif
 	if (TrueSHGetSpecialFolderPathW)
 	{
 		Mhook_SetHook((PVOID*)&TrueSHGetSpecialFolderPathW, (PVOID)HookSHGetSpecialFolderPathW);
 	}
-#ifdef _DEBUG
-	else
-	{
-		logmsg("TrueSHGetSpecialFolderPathW is null\n");
-	}
-#endif
 	return (1);
 }
 
@@ -332,10 +254,6 @@ void WINAPI hook_end(void)
 	}
 	jmp_end();
 	safe_end();
-	if (hShell32)
-	{
-		FreeLibrary(hShell32);
-	}
 	return;
 }
 
@@ -370,6 +288,7 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 			{
 				CloseHandle((HANDLE)_beginthreadex(NULL,0,&init_exeception,NULL,0,NULL));
 			}
+			
 		}
 		break;
 		case DLL_PROCESS_DETACH:

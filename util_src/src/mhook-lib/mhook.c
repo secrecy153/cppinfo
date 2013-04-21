@@ -24,6 +24,9 @@
 #include "mhook.h"
 #include "disasm.h"
 
+#ifdef __GNUC__
+#define vswprintf_s _snwprintf
+#endif
 //=========================================================================
 #ifndef cntof
 #define cntof(a) (sizeof(a)/sizeof(a[0]))

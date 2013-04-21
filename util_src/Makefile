@@ -2,10 +2,10 @@ CC       = gcc -c
 CFLAGS   = -O3
 LD       = gcc -o
 BITS	 := 32
-LDFLAGS  = -static -Wl,-s
+LDFLAGS  = -Wl,-s
 CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 \
-	    -fomit-frame-pointer -mthreads
-LDLIBS   = -lpsapi -lshlwapi
+	    -fomit-frame-pointer -finline-functions -fno-stack-protector
+LDLIBS   = -lshlwapi -lshell32
 MD       = mkdir -p
 SRC      = src
 SUB_DIR  = $(SRC)/mhook-lib

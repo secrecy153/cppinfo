@@ -2,9 +2,9 @@ CC       = gcc
 CFLAGS   = -O3
 BITS	 := 32
 LD       = gcc
-LDFLAGS  = -static -Wl,-s
-CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 -fomit-frame-pointer
-CFLAGSEX = -DMINGW_HAS_SECURE_API -std=c99
+LDFLAGS  = -Wl,-s
+CFLAGS   += -Wall -Wno-unused -Wno-format -DNDEBUG -msse2 -finline-functions -fomit-frame-pointer
+CFLAGSEX = -std=c99
 LDLIBS   = -lmhook -municode
 MD       = mkdir -p
 SRC      = src

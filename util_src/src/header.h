@@ -294,6 +294,10 @@ extern	HMODULE  dll_module;
 static  UINT_PTR m_dwUser32Low;						/* dll 的加载基址 */
 static  UINT_PTR m_dwUser32Hi;						/* dll 的加载基址+ImageSize */
 
+typedef BOOL (WINAPI *_NtGetModuleInformation)(_In_  HANDLE hProcess,
+										_In_   HMODULE hModule,
+										_Out_  LPMODULEINFO lpmodinfo,
+										_In_   DWORD cb);
 typedef NTSTATUS (NTAPI *_NtQueryObject)(HANDLE ObjectHandle,
 										ULONG  ObjectInformationClass,
 										PVOID  ObjectInformation,
@@ -384,6 +388,7 @@ typedef NTSTATUS (WINAPI *_NtQueryInformationProcess)(HANDLE ProcessHandle,
 										PULONG ReturnLength);
 typedef  HMODULE (WINAPI *_NtRemoteLoadW)(LPCWSTR lpFileName);
 
+static _NtGetModuleInformation          TrueGetModuleInformation			= NULL;
 static _NtCLOSE							TrueNtclose							= NULL;
 static _NtQueryInformationFile			TrueNtQueryInformationFile			= NULL;
 static _NtQuerySection					TrueNtQuerySection					= NULL;
