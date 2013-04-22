@@ -87,7 +87,8 @@ unsigned WINAPI init_global_env(void * pParam)
 	{
 		if ( !PathToCombineW(appdata_path,VALUE_LEN) )
 		{
-			ZeroMemory(appdata_path,sizeof(appdata_path));
+			appdata_path[0] = L'\0';
+			return (0);
 		}
 	}
 	/* 处理localdata变量 */
@@ -100,21 +101,18 @@ unsigned WINAPI init_global_env(void * pParam)
 	{
 		if ( !PathToCombineW(localdata_path,VALUE_LEN) )
 		{
-			ZeroMemory(localdata_path,sizeof(localdata_path));
+			localdata_path[0] = L'\0';
+			return (0);
 		}
 	}
 	/* 为appdata建立目录 */
 	charTochar(appdata_path);
-	if ( wcsncat(appdata_path,L"\\AppData",VALUE_LEN) )
-	{
-		SHCreateDirectoryExW(NULL,appdata_path,NULL);
-	}
+	wcsncat(appdata_path,L"\\AppData",VALUE_LEN);
+	SHCreateDirectoryExW(NULL,appdata_path,NULL);
 	/* 为localdata建立目录 */
 	charTochar(localdata_path);
-	if ( wcsncat(localdata_path,L"\\LocalAppData",VALUE_LEN) )
-	{
-		SHCreateDirectoryExW(NULL,localdata_path,NULL);
-	}
+	wcsncat(localdata_path,L"\\LocalAppData",VALUE_LEN);
+	SHCreateDirectoryExW(NULL,localdata_path,NULL);
 	return (1);
 }
 
@@ -150,10 +148,6 @@ HRESULT WINAPI HookSHGetSpecialFolderLocation(HWND hwndOwner,
 			*ppidl = pidlnew;
 			return result;
 		}
-		else
-		{
-			return TrueSHGetSpecialFolderLocation(hwndOwner, nFolder, ppidl);
-		}
 	}
 	return TrueSHGetSpecialFolderLocation(hwndOwner, nFolder, ppidl);
 }
@@ -180,8 +174,7 @@ HRESULT WINAPI HookSHGetFolderPathW(HWND hwndOwner,int nFolder,HANDLE hToken,
 		pszPath[num] = L'\0';
 		return S_OK;
 	}
-	else
-		return TrueSHGetFolderPathW(hwndOwner, nFolder, hToken,dwFlags,pszPath);
+	return TrueSHGetFolderPathW(hwndOwner, nFolder, hToken,dwFlags,pszPath);
 }
 
 BOOL WINAPI HookSHGetSpecialFolderPathW(HWND hwndOwner,LPWSTR lpszPath,
@@ -276,13 +269,13 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 			}
 			if ( read_appint(L"General", L"Portable") )
 			{
-				HANDLE h_thread = (HANDLE)_beginthreadex(NULL,0,&init_global_env,NULL,0,NULL); 
+				HANDLE h_thread = (HANDLE)_beginthreadex(NULL,0,&init_global_env,NULL,0,NULL);
 				if (h_thread)
 				{
-					SetThreadPriority(h_thread,THREAD_PRIORITY_TIME_CRITICAL);
+					SetThreadPriority(h_thread,THREAD_PRIORITY_HIGHEST);
 					CloseHandle(h_thread);
 				}
-				CloseHandle((HANDLE)_beginthreadex(NULL,0,&init_portable,NULL,0,NULL));
+				init_portable(NULL);
 			}
 			if ( read_appint(L"General",L"CreateCrashDump") )
 			{

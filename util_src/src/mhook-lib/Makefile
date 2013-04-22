@@ -4,7 +4,7 @@ BITS	 := 32
 LD       = gcc
 LDFLAGS  = -Wl,-s
 CFLAGS   += -Wall -Wno-unused -Wno-format -DNDEBUG -msse2 -finline-functions -fomit-frame-pointer
-CFLAGSEX = -std=c99
+CFLAGSEX =
 LDLIBS   = -lmhook -municode
 MD       = mkdir -p
 SRC      = src

@@ -14,9 +14,6 @@
 #define NT_SUCCESS(Status)					(((NTSTATUS)(Status)) >= 0)
 #define STATUS_SUCCESS						((NTSTATUS)0x00000000)
 #define STATUS_OBJECT_PATH_NOT_FOUND		((NTSTATUS)0xC000003A)
-#define _Inout_
-#define _In_
-
 #define NtCurrentProcess() ( (HANDLE)(LONG_PTR) -1 )
 
 #define ProcThreadAttributeValue( p1, p2, p3, p4 ) \
@@ -294,10 +291,10 @@ extern	HMODULE  dll_module;
 static  UINT_PTR m_dwUser32Low;						/* dll 的加载基址 */
 static  UINT_PTR m_dwUser32Hi;						/* dll 的加载基址+ImageSize */
 
-typedef BOOL (WINAPI *_NtGetModuleInformation)(_In_  HANDLE hProcess,
-										_In_   HMODULE hModule,
-										_Out_  LPMODULEINFO lpmodinfo,
-										_In_   DWORD cb);
+typedef BOOL (WINAPI *_NtGetModuleInformation)(HANDLE hProcess,
+										HMODULE hModule,
+										LPMODULEINFO lpmodinfo,
+										DWORD cb);
 typedef NTSTATUS (NTAPI *_NtQueryObject)(HANDLE ObjectHandle,
 										ULONG  ObjectInformationClass,
 										PVOID  ObjectInformation,
@@ -346,16 +343,16 @@ typedef NTSTATUS (NTAPI *_NtTerminateProcess)(HANDLE hProcess,
 typedef NTSTATUS (NTAPI *_NtUnmapViewOfSection)( HANDLE ProcessHandle,
 										PVOID BaseAddress );
 typedef NTSTATUS (NTAPI *_NtCLOSE) ( HANDLE ); 
-typedef NTSTATUS (NTAPI *_NtAllocateVirtualMemory)(_In_  HANDLE ProcessHandle,
-										_Inout_  PVOID *BaseAddress,
-										_In_     ULONG_PTR ZeroBits,
-										_Inout_  PSIZE_T RegionSize,
-										_In_     ULONG AllocationType,
-										_In_     ULONG Protect);
-typedef NTSTATUS (NTAPI *_NtFreeVirtualMemory)(_In_ HANDLE ProcessHandle,
-										_Inout_  PVOID *BaseAddress,
-										_Inout_  PSIZE_T RegionSize,
-										_In_     ULONG FreeType);
+typedef NTSTATUS (NTAPI *_NtAllocateVirtualMemory)(HANDLE ProcessHandle,
+										PVOID *BaseAddress,
+										ULONG_PTR ZeroBits,
+										PSIZE_T RegionSize,
+										ULONG AllocationType,
+										ULONG Protect);
+typedef NTSTATUS (NTAPI *_NtFreeVirtualMemory)(HANDLE ProcessHandle,
+										PVOID *BaseAddress,
+										PSIZE_T RegionSize,
+										ULONG FreeType);
 typedef NTSTATUS (NTAPI *_NtWriteVirtualMemory)(IN HANDLE ProcessHandle,
 										IN PVOID BaseAddress,
 										IN PVOID Buffer, 

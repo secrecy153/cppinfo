@@ -5,7 +5,6 @@
 #include "header.h"
 #include "mhook-lib/mhook.h"
 #include <tchar.h>
-#include <process.h>
 #include <stdio.h>
 
 #ifdef _DEBUG
