@@ -17,26 +17,57 @@
 #  pragma comment(lib, "shlwapi.lib")
 #endif
 
-HMODULE	dll_module				= NULL;
+HMODULE	dll_module		            = NULL;
 static  wchar_t  appdata_path[VALUE_LEN+1];			/* 自定义的appdata变量路径  */
 static  wchar_t  localdata_path[VALUE_LEN+1];
+
+#ifdef _DEBUG
+static char  logfile_buf[VALUE_LEN+1];
+const  char *logname = "run_hook.log";
+#endif
 
 typedef HRESULT (WINAPI *_NtSHGetFolderPath)(HWND hwndOwner,
 									    int nFolder,
 									    HANDLE hToken,
 									    DWORD dwFlags,
 									    LPWSTR pszPath);
-typedef BOOL (WINAPI *_NtSHGetSpecialFolderPath)(HWND hwndOwner,
-									    LPWSTR lpszPath,
-									    int csidl,
-									    BOOL fCreate);
+
 typedef HRESULT (WINAPI *_NtSHGetSpecialFolderLocation)(HWND hwndOwner,
 									    int nFolder,
 									    LPITEMIDLIST *ppidl);
 
+typedef BOOL (WINAPI *_NtSHGetSpecialFolderPathA)(HWND hwndOwner,
+									    LPSTR lpszPath,
+									    int csidl,
+									    BOOL fCreate);
+
 static _NtSHGetFolderPath				TrueSHGetFolderPathW				= NULL;
-static _NtSHGetSpecialFolderPath		TrueSHGetSpecialFolderPathW			= NULL;
 static _NtSHGetSpecialFolderLocation	TrueSHGetSpecialFolderLocation		= NULL;
+static _NtSHGetSpecialFolderPathA       TrueSHGetSpecialFolderPathA			= NULL;
+
+
+#ifdef _DEBUG
+void __cdecl logmsg(const char * format, ...)
+{
+	va_list args;
+	va_start (args, format);
+	int len	 =	_vscprintf(format, args);
+	if (len > 0 && strlen(logfile_buf) > 0)
+	{
+		char	buffer[len+3];
+		FILE	*pFile = NULL;
+		len = _vsnprintf(buffer,len,format, args);
+		buffer[len] = '\0';
+		if ( (pFile = fopen(logfile_buf,"a+")) != NULL )
+		{
+			fprintf(pFile,buffer);
+			fclose(pFile);
+		}
+		va_end (args);
+	}
+	return;
+}
+#endif
 
 TETE_EXT_CLASS  
 uint32_t GetNonTemporalDataSizeMin_tt( void )
@@ -51,30 +82,15 @@ void * __cdecl memset_nontemporal_tt ( void *dest, int c, size_t count )
 	return memset(dest, c, count);
 }
 
-#ifdef _DEBUG
-void __cdecl logmsg(const char * format, ...)
+TETE_EXT_CLASS
+char * __cdecl getenv_enable_tt(const char *name)
 {
-	char buffer[MAX_PATH];
-	va_list args;
-	va_start (args, format);
-	vsprintf (buffer,format, args);
-	const char *logname = "run_hook.log";
-	char dir_str[MAX_PATH/2] = {0}; 
-	if ( GetEnvironmentVariableA("APPDATA",dir_str,sizeof(dir_str)-1) > 0 )
+	if ( strcmp("MOZ_PLUGIN_PATH",name) == 0 )
 	{
-		FILE* pFile = NULL;
-		strncat(dir_str,"\\",1);
-		strncat(dir_str,logname,strlen(logname));
-		if ( (pFile = fopen(dir_str,"a+")) != NULL )
-		{
-			fprintf(pFile,buffer);
-			fclose(pFile);
-		}
-		va_end (args);
+		SetPluginPathW(NULL);
 	}
-	return;
- }
-#endif
+    return getenv(name);
+}
 
 unsigned WINAPI init_global_env(void * pParam)
 {
@@ -201,7 +217,6 @@ BOOL WINAPI HookSHGetSpecialFolderPathW(HWND hwndOwner,LPWSTR lpszPath,
     return TrueSHGetSpecialFolderPathW(hwndOwner,lpszPath,csidl,fCreate);
 }
 
-
 unsigned WINAPI init_portable(void * pParam)
 {
 	HMODULE hShell32 = GetModuleHandleW(L"shell32.dll");
@@ -209,11 +224,23 @@ unsigned WINAPI init_portable(void * pParam)
 	{
 		TrueSHGetFolderPathW = (_NtSHGetFolderPath)GetProcAddress(hShell32,
 								"SHGetFolderPathW");
-		TrueSHGetSpecialFolderPathW = (_NtSHGetSpecialFolderPath)GetProcAddress(hShell32,
+		TrueSHGetSpecialFolderPathW = (_NtSHGetSpecialFolderPathW)GetProcAddress(hShell32,
 									  "SHGetSpecialFolderPathW");
 		TrueSHGetSpecialFolderLocation = (_NtSHGetSpecialFolderLocation)GetProcAddress(hShell32,
 										 "SHGetSpecialFolderLocation");
 	}
+#ifdef _DEBUG
+	TrueSHGetSpecialFolderPathA = (_NtSHGetSpecialFolderPathA)GetProcAddress
+								  (hShell32,"SHGetSpecialFolderPathA");
+	if ( TrueSHGetSpecialFolderPathA && *logfile_buf == '\0' )
+	{
+		if ( TrueSHGetSpecialFolderPathA(NULL,logfile_buf,CSIDL_APPDATA,FALSE) )
+		{
+			strncat(logfile_buf,"\\",1);
+			strncat(logfile_buf,logname,strlen(logname));
+		}
+	}
+#endif
 	/* hook 下面几个函数 */ 
 	if (TrueSHGetSpecialFolderLocation)
 	{
@@ -281,7 +308,6 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 			{
 				CloseHandle((HANDLE)_beginthreadex(NULL,0,&init_exeception,NULL,0,NULL));
 			}
-			
 		}
 		break;
 		case DLL_PROCESS_DETACH:

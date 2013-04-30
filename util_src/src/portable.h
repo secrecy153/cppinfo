@@ -27,6 +27,8 @@ TETE_EXT_CLASS uint32_t GetNonTemporalDataSizeMin_tt ( void );
 
 TETE_EXT_CLASS void *  __cdecl memset_nontemporal_tt ( void *dest, int c, size_t count );
 
+TETE_EXT_CLASS char * __cdecl getenv_enable_tt ( const char *name );
+
 #ifdef  __cplusplus
 }
 #endif

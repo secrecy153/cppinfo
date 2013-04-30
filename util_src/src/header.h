@@ -14,7 +14,7 @@
 #define NT_SUCCESS(Status)					(((NTSTATUS)(Status)) >= 0)
 #define STATUS_SUCCESS						((NTSTATUS)0x00000000)
 #define STATUS_OBJECT_PATH_NOT_FOUND		((NTSTATUS)0xC000003A)
-#define NtCurrentProcess() ( (HANDLE)(LONG_PTR) -1 )
+#define NtCurrentProcess()					((HANDLE)(LONG_PTR) -1)
 
 #define ProcThreadAttributeValue( p1, p2, p3, p4 ) \
         (((p1) & PROC_THREAD_ATTRIBUTE_NUMBER) | \
@@ -287,6 +287,42 @@ typedef enum _PROCESSINFOCLASS {
   MaxProcessInfoClass
 } PROCESSINFOCLASS;
 
+typedef struct _CLIENT_ID {
+  HANDLE UniqueProcess;
+  HANDLE UniqueThread;
+} CLIENT_ID, *PCLIENT_ID;
+
+typedef struct _PEB_LDR_DATA {
+  BYTE       Reserved1[8];
+  PVOID      Reserved2[3];
+  LIST_ENTRY InMemoryOrderModuleList;
+} PEB_LDR_DATA, *PPEB_LDR_DATA;
+
+typedef struct _PEB {
+  BYTE                          Reserved1[2];
+  BYTE                          BeingDebugged;
+  BYTE                          Reserved2[1];
+  PVOID                         Reserved3[2];
+  PPEB_LDR_DATA                 Ldr;
+  PRTL_USER_PROCESS_PARAMETERS  ProcessParameters;
+  BYTE                          Reserved4[104];
+  PVOID                         Reserved5[52];
+  PVOID						    PostProcessInitRoutine;
+  BYTE                          Reserved6[128];
+  PVOID                         Reserved7[1];
+  ULONG                         SessionId;
+} PEB, *PPEB;
+
+typedef struct _PROCESS_BASIC_INFORMATION {
+  NTSTATUS ExitStatus;
+  PPEB PebBaseAddress;
+  KAFFINITY AffinityMask;
+  LONG BasePriority;
+  ULONG_PTR UniqueProcessId;
+  ULONG_PTR InheritedFromUniqueProcessId;
+} PROCESS_BASIC_INFORMATION, *PPROCESS_BASIC_INFORMATION;
+
+
 extern	HMODULE  dll_module;
 static  UINT_PTR m_dwUser32Low;						/* dll 的加载基址 */
 static  UINT_PTR m_dwUser32Hi;						/* dll 的加载基址+ImageSize */
@@ -358,6 +394,8 @@ typedef NTSTATUS (NTAPI *_NtWriteVirtualMemory)(IN HANDLE ProcessHandle,
 										IN PVOID Buffer, 
 										IN ULONG NumberOfBytesToWrite,
 										OUT PULONG NumberOfBytesWritten);
+typedef NTSTATUS (NTAPI *_NtProtectVirtualMemory) (HANDLE, PVOID, PULONG, ULONG , PULONG); 
+
 typedef NTSTATUS (NTAPI *_NtCreateThreadEx)(OUT PHANDLE ThreadHandle,
 										IN ACCESS_MASK DesiredAccess,
 										IN POBJECT_ATTRIBUTES ObjectAttributes,
@@ -384,6 +422,36 @@ typedef NTSTATUS (WINAPI *_NtQueryInformationProcess)(HANDLE ProcessHandle,
 										ULONG ProcessInformationLength,
 										PULONG ReturnLength);
 typedef  HMODULE (WINAPI *_NtRemoteLoadW)(LPCWSTR lpFileName);
+typedef	 NTSTATUS (NTAPI *_NtOpenProcess)(PHANDLE ProcessHandle,
+										ACCESS_MASK DesiredAccess,	
+										POBJECT_ATTRIBUTES ObjectAttributes,
+										PCLIENT_ID ClientId);
+typedef NTSTATUS (NTAPI *_NtOpenThread)(PHANDLE ProcessHandle,
+										ACCESS_MASK DesiredAccess,	
+										POBJECT_ATTRIBUTES ObjectAttributes,
+										PCLIENT_ID ClientId);
+typedef NTSTATUS (NTAPI *_NtReadVirtualMemory)(IN HANDLE ProcessHandle,
+										IN PVOID BaseAddress,
+										OUT PVOID Buffer,
+										IN ULONG NumberOfBytesToRead,
+										OUT PULONG NumberOfBytesRead);
+typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
+typedef BOOL (WINAPI *_CreateProcessInternalW)(HANDLE hToken,
+										LPCWSTR lpApplicationName,
+										LPWSTR lpCommandLine,
+										LPSECURITY_ATTRIBUTES lpProcessAttributes,
+										LPSECURITY_ATTRIBUTES lpThreadAttributes,
+										BOOL bInheritHandles,
+										DWORD dwCreationFlags,
+										LPVOID lpEnvironment,
+										LPCWSTR lpCurrentDirectory,
+										LPSTARTUPINFOW lpStartupInfo,
+										LPPROCESS_INFORMATION lpProcessInformation,
+										PHANDLE hNewToken);
+typedef NTSTATUS (NTAPI *_NtSuspendThread)(IN HANDLE ThreadHandle,
+										OUT PULONG PreviousSuspendCount);
+typedef NTSTATUS (NTAPI *_NtResumeThread)(IN HANDLE ThreadHandle,
+										OUT PULONG SuspendCount);
 
 static _NtGetModuleInformation          TrueGetModuleInformation			= NULL;
 static _NtCLOSE							TrueNtclose							= NULL;
@@ -392,13 +460,21 @@ static _NtQuerySection					TrueNtQuerySection					= NULL;
 static _NtTerminateProcess				TrueNtTerminateProcess				= NULL;
 static _NtCreateSection					TrueNtCreateSection					= NULL;
 static _NtMapViewOfSection              TrueNtMapViewOfSection				= NULL;
-static _NtCreateUserProcess             TrueCreateUserProcess				= NULL;
+static _NtCreateUserProcess             TrueNtCreateUserProcess				= NULL;
 static _NtUnmapViewOfSection			TrueNtUnmapViewOfSection			= NULL;
 static _NtWriteVirtualMemory            TrueNtWriteVirtualMemory			= NULL;
 static _NtAllocateVirtualMemory         TrueNtAllocateVirtualMemory			= NULL;
 static _NtFreeVirtualMemory				TrueNtFreeVirtualMemory				= NULL;
+static _NtProtectVirtualMemory          TrueNtProtectVirtualMemory			= NULL;
 static _NtCreateProcessEx				TrueNtCreateProcessEx				= NULL;
 static _NtQueryInformationProcess		TrueNtQueryInformationProcess		= NULL;
 static _NtRemoteLoadW					RemoteLoadW							= NULL;
+static _NtOpenProcess					TrueNtOpenProcess					= NULL;
+static _NtOpenThread					TrueNtOpenThread					= NULL;
+static _RtlNtStatusToDosError			TrueRtlNtStatusToDosError			= NULL;
+static _CreateProcessInternalW 			TrueCreateProcessInternalW			= NULL;
+static _NtReadVirtualMemory				TrueNtReadVirtualMemory				= NULL;
+static _NtSuspendThread					TrueNtSuspendThread					= NULL;
+static _NtResumeThread					TrueNtResumeThread					= NULL;
 
 #endif  // _HEAD_ER_H_

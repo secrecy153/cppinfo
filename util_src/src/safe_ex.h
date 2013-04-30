@@ -14,7 +14,13 @@ typedef HMODULE (WINAPI *_NtLoadLibraryExW)(LPCWSTR lpFileName,
 									    HANDLE hFile, 
 									    DWORD dwFlags);
 
-SAFE_EXTERN _NtLoadLibraryExW	TrueLoadLibraryExW;
+typedef BOOL (WINAPI *_NtSHGetSpecialFolderPathW)(HWND hwndOwner,
+									    LPWSTR lpszPath,
+									    int csidl,
+									    BOOL fCreate);
+
+SAFE_EXTERN _NtLoadLibraryExW		   TrueLoadLibraryExW;
+SAFE_EXTERN _NtSHGetSpecialFolderPathW TrueSHGetSpecialFolderPathW;
 
 #ifdef __cplusplus
 extern "C" {

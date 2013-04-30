@@ -15,10 +15,18 @@
 
 #define	  EXCLUDE_NUM 16					/* 白名单个数(数组最大行数) */
 #define   VALUE_LEN 128                     /* 保存值的最大长度 */
+#define   BUFSIZE   MAX_PATH
+
+enum {
+	VARIABLES_NULL,
+	VARIABLES_APPEND,
+	VARIABLES_RESET
+};
 
 #ifdef __cplusplus
 extern "C" {
 #endif 
+
 INI_EXTERN DWORD WINAPI GetOsVersion(void);
 INI_EXTERN void WINAPI charTochar(LPWSTR path);
 INI_EXTERN BOOL PathToCombineW(IN LPWSTR lpfile, IN size_t str_len);
@@ -31,6 +39,12 @@ INI_EXTERN BOOL read_appkey(LPCWSTR lpappname,              /* 区段名 */
 				 );
 INI_EXTERN int read_appint(LPCWSTR cat, LPCWSTR name);
 INI_EXTERN BOOL for_eachSection(LPCWSTR cat, wchar_t (*lpdata)[VALUE_LEN+1], int m);
+INI_EXTERN BOOL WINAPI ChangeEnviromentVariablesA(LPCSTR szname,LPSTR sz_newval,int dw_flag);
+INI_EXTERN BOOL WINAPI ChangeEnviromentVariablesW(LPCWSTR szname,LPWSTR sz_newval,int dw_flag);
+INI_EXTERN unsigned WINAPI SetPluginPathW(void * pParam);
+INI_EXTERN unsigned WINAPI SetPluginPathA(void * pParam);
+INI_EXTERN BOOL WINAPI IsGUI(LPCWSTR lpFileName);
+
 #ifdef __cplusplus
 }
 #endif 

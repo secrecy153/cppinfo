@@ -1,4 +1,0 @@
-LIBRARY portable.dll
-EXPORTS
-GetNonTemporalDataSizeMin_tt
-memset_nontemporal_tt

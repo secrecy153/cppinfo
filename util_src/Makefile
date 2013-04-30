@@ -2,7 +2,7 @@ CC       = gcc -c
 CFLAGS   = -O3
 LD       = gcc -o
 BITS	 := 32
-LDFLAGS  = -Wl,-s
+LDFLAGS  = -static -Wl,-s
 CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 \
 	    -fomit-frame-pointer -finline-functions -fno-stack-protector
 LDLIBS   = -lshlwapi -lshell32
