@@ -3,9 +3,9 @@ CFLAGS   = -O3
 LD       = gcc -o
 BITS	 := 32
 LDFLAGS  = -static -Wl,-s
-CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 \
+CFLAGS   += -D_DEBUG -Wall -Wno-unused -Wno-format -msse2 \
 	    -fomit-frame-pointer -finline-functions -fno-stack-protector
-LDLIBS   = -lshlwapi -lshell32
+LDLIBS   = -lshlwapi -lshell32 -lgdi32
 MD       = mkdir -p
 SRC      = src
 SUB_DIR  = $(SRC)/mhook-lib
@@ -44,12 +44,12 @@ $(OUT1)		      : $(SUB_DIR)/Makefile
 	$(call SUBMK)
 $(OUT2)		      : $(OBJECTS)
 	$(LD) $@ $(OBJECTS) $(DLLFLAGS) $(OUT1) $(LDLIBS) $(LDFLAGS)
-$(DEP)/portable.o     : $(SRC)/portable.c $(SRC)/portable.h
+$(DEP)/portable.o     : $(SRC)/portable.c $(SRC)/portable.h $(SRC)/ttf_list.h
 	$(call EXEC)
 	$(CC) $< $(CFLAGS) -o $@
 $(DEP)/inipara.o      : $(SRC)/inipara.c $(SRC)/inipara.h
 	$(CC) $< $(CFLAGS) -o $@
-$(DEP)/safe_ex.o      : $(SRC)/safe_ex.c $(SRC)/safe_ex.h
+$(DEP)/safe_ex.o      : $(SRC)/safe_ex.c $(SRC)/safe_ex.h $(SRC)/header.h
 	$(CC) $< $(CFLAGS) -o $@
 $(DEP)/ice_error.o    : $(SRC)/ice_error.c $(SRC)/ice_error.h
 	$(CC) $< $(CFLAGS) -o $@

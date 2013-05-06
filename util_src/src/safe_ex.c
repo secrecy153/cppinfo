@@ -460,7 +460,7 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
     if(dwCaller > m_dwUser32Low && dwCaller < m_dwUser32Hi)  
     {
 	#ifdef _DEBUG
-		//logmsg("the  %ls disable load\n",lpFileName);
+		logmsg("the  %ls disable load\n",lpFileName);
 	#endif
         return NULL;  
     }
