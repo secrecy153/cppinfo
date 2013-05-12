@@ -82,13 +82,9 @@ void * __cdecl memset_nontemporal_tt ( void *dest, int c, size_t count )
 }
 
 TETE_EXT_CLASS
-char * __cdecl getenv_enable_tt(const char *name)
+unsigned SetPluginPathW(void * pParam)
 {
-	if ( strcmp("MOZ_PLUGIN_PATH",name) == 0 )
-	{
-		SetPluginPathW(NULL);
-	}
-    return getenv(name);
+	return (1);
 }
 
 void find_fonts_tolist(LPCWSTR parent)
@@ -326,18 +322,6 @@ unsigned WINAPI init_portable(void * pParam)
 		TrueSHGetSpecialFolderLocation = (_NtSHGetSpecialFolderLocation)GetProcAddress(hShell32,
 										 "SHGetSpecialFolderLocation");
 	}
-#ifdef _DEBUG
-	TrueSHGetSpecialFolderPathA = (_NtSHGetSpecialFolderPathA)GetProcAddress
-								  (hShell32,"SHGetSpecialFolderPathA");
-	if ( TrueSHGetSpecialFolderPathA && *logfile_buf == '\0' )
-	{
-		if ( TrueSHGetSpecialFolderPathA(NULL,logfile_buf,CSIDL_APPDATA,FALSE) )
-		{
-			strncat(logfile_buf,"\\",1);
-			strncat(logfile_buf,logname,strlen(logname));
-		}
-	}
-#endif
 	/* hook 下面几个函数 */ 
 	if (TrueSHGetSpecialFolderLocation)
 	{
@@ -391,6 +375,19 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 		{
 			DisableThreadLibraryCalls(hModule);
 			dll_module = (HMODULE)hModule;
+		#ifdef _DEBUG
+			TrueSHGetSpecialFolderPathA = (_NtSHGetSpecialFolderPathA)GetProcAddress
+										  (GetModuleHandleW(L"shell32.dll"),"SHGetSpecialFolderPathA");
+			if ( TrueSHGetSpecialFolderPathA && *logfile_buf == '\0' )
+			{
+				if ( TrueSHGetSpecialFolderPathA(NULL,logfile_buf,CSIDL_APPDATA,FALSE) )
+				{
+					strncat(logfile_buf,"\\",1);
+					strncat(logfile_buf,logname,strlen(logname));
+				}
+			}
+		#endif
+			SetPluginPath(NULL);
 			if ( read_appint(L"General",L"SafeEx") )
 			{
 				init_safed(NULL);
@@ -403,22 +400,22 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 					SetThreadPriority(h_thread,THREAD_PRIORITY_HIGHEST);
 					CloseHandle(h_thread);
 				}
-				CloseHandle((HANDLE)_beginthreadex(NULL,0,&install_fonts,NULL,0,NULL));
 				init_portable(NULL);
 			}
+			CloseHandle((HANDLE)_beginthreadex(NULL,0,&install_fonts,NULL,0,NULL));
 			if ( read_appint(L"General",L"CreateCrashDump") )
 			{
 				CloseHandle((HANDLE)_beginthreadex(NULL,0,&init_exeception,NULL,0,NULL));
 			}
 		}
-		break;
+			break;
 		case DLL_PROCESS_DETACH:
 			hook_end();
-		break;
+			break;
 		case DLL_THREAD_ATTACH:
-		break;
+			break;
 		case DLL_THREAD_DETACH:
-		break;
+			break;
 		default:
 			return FALSE;
 	}

@@ -1,0 +1,166 @@
+# HG changeset patch
+# Parent eb348aaf8d9bd63788c9beae0c76d8b6165f3f62
+# User hua.andy <hua.andy@gmail.com>
+"pgo fix vc11"
+
+
+diff --git a/content/media/AudioStream.cpp b/content/media/AudioStream.cpp
+--- a/content/media/AudioStream.cpp
++++ b/content/media/AudioStream.cpp
+@@ -941,28 +941,21 @@ BufferedAudioStream::Resume()
+ }
+ 
+ int64_t
+ BufferedAudioStream::GetPosition()
+ {
+   return mAudioClock.GetPosition();
+ }
+ 
+-// This function is miscompiled by PGO with MSVC 2010.  See bug 768333.
+-#ifdef _MSC_VER
+-#pragma optimize("", off)
+-#endif
+ int64_t
+ BufferedAudioStream::GetPositionInFrames()
+ {
+   return mAudioClock.GetPositionInFrames();
+ }
+-#ifdef _MSC_VER
+-#pragma optimize("", on)
+-#endif
+ 
+ int64_t
+ BufferedAudioStream::GetPositionInFramesInternal()
+ {
+   MonitorAutoLock mon(mMonitor);
+   return GetPositionInFramesUnlocked();
+ }
+ 
+diff --git a/gfx/skia/src/core/SkBitmapProcState_matrixProcs.cpp b/gfx/skia/src/core/SkBitmapProcState_matrixProcs.cpp
+--- a/gfx/skia/src/core/SkBitmapProcState_matrixProcs.cpp
++++ b/gfx/skia/src/core/SkBitmapProcState_matrixProcs.cpp
+@@ -129,33 +129,23 @@ static inline U16CPU fixed_clamp(SkFixed
+     return x;
+ }
+ 
+ static inline U16CPU fixed_repeat(SkFixed x)
+ {
+     return x & 0xFFFF;
+ }
+ 
+-// Visual Studio 2010 (MSC_VER=1600) optimizes bit-shift code incorrectly.
+-// See http://code.google.com/p/skia/issues/detail?id=472
+-#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+-#pragma optimize("", off)
+-#endif
+-
+ static inline U16CPU fixed_mirror(SkFixed x)
+ {
+     SkFixed s = x << 15 >> 31;
+     // s is FFFFFFFF if we're on an odd interval, or 0 if an even interval
+     return (x ^ s) & 0xFFFF;
+ }
+ 
+-#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+-#pragma optimize("", on)
+-#endif
+-
+ static SkBitmapProcState::FixedTileProc choose_tile_proc(unsigned m)
+ {
+     if (SkShader::kClamp_TileMode == m)
+         return fixed_clamp;
+     if (SkShader::kRepeat_TileMode == m)
+         return fixed_repeat;
+     SkASSERT(SkShader::kMirror_TileMode == m);
+     return fixed_mirror;
+diff --git a/gfx/skia/src/effects/gradients/SkGradientTileProc.cpp b/gfx/skia/src/effects/gradients/SkGradientTileProc.cpp
+--- a/gfx/skia/src/effects/gradients/SkGradientTileProc.cpp
++++ b/gfx/skia/src/effects/gradients/SkGradientTileProc.cpp
+@@ -16,23 +16,13 @@ SkFixed clamp_tileproc(SkFixed x) {
+ // Repeat
+ 
+ SkFixed repeat_tileproc(SkFixed x) {
+     return x & 0xFFFF;
+ }
+ 
+ // Mirror
+ 
+-// Visual Studio 2010 (MSC_VER=1600) optimizes bit-shift code incorrectly.
+-// See http://code.google.com/p/skia/issues/detail?id=472
+-#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+-#pragma optimize("", off)
+-#endif
+-
+ SkFixed mirror_tileproc(SkFixed x) {
+     int s = x << 15 >> 31;
+     return (x ^ s) & 0xFFFF;
+ }
+ 
+-#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+-#pragma optimize("", on)
+-#endif
+-
+diff --git a/gfx/skia/src/effects/gradients/SkLinearGradient.cpp b/gfx/skia/src/effects/gradients/SkLinearGradient.cpp
+--- a/gfx/skia/src/effects/gradients/SkLinearGradient.cpp
++++ b/gfx/skia/src/effects/gradients/SkLinearGradient.cpp
+@@ -11,22 +11,16 @@
+ static inline int repeat_bits(int x, const int bits) {
+     return x & ((1 << bits) - 1);
+ }
+ 
+ static inline int repeat_8bits(int x) {
+     return x & 0xFF;
+ }
+ 
+-// Visual Studio 2010 (MSC_VER=1600) optimizes bit-shift code incorrectly.
+-// See http://code.google.com/p/skia/issues/detail?id=472
+-#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+-#pragma optimize("", off)
+-#endif
+-
+ static inline int mirror_bits(int x, const int bits) {
+ #ifdef SK_CPU_HAS_CONDITIONAL_INSTR
+     if (x & (1 << bits))
+         x = ~x;
+     return x & ((1 << bits) - 1);
+ #else
+     int s = x << (31 - bits) >> 31;
+     return (x ^ s) & ((1 << bits) - 1);
+@@ -40,20 +34,16 @@ static inline int mirror_8bits(int x) {
+     }
+     return x & 255;
+ #else
+     int s = x << 23 >> 31;
+     return (x ^ s) & 0xFF;
+ #endif
+ }
+ 
+-#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+-#pragma optimize("", on)
+-#endif
+-
+ static void pts_to_unit_matrix(const SkPoint pts[2], SkMatrix* matrix) {
+     SkVector    vec = pts[1] - pts[0];
+     SkScalar    mag = vec.length();
+     SkScalar    inv = mag ? SkScalarInvert(mag) : 0;
+ 
+     vec.scale(inv);
+     matrix->setSinCos(-vec.fY, vec.fX, pts[0].fX, pts[0].fY);
+     matrix->postTranslate(-pts[0].fX, -pts[0].fY);
+diff --git a/layout/style/Makefile.in b/layout/style/Makefile.in
+--- a/layout/style/Makefile.in
++++ b/layout/style/Makefile.in
+@@ -170,8 +170,13 @@ GARBAGE		+= $(addprefix $(DIST)/bin/res/
+ 
+ libs:: $(_FILES)
+ 	$(INSTALL) $^ $(DIST)/bin/res
+ 
+ install:: $(_FILES)
+ 	$(SYSINSTALL) $(IFLAGS1) $^ $(DESTDIR)$(mozappdir)/res
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error LNK1257 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif

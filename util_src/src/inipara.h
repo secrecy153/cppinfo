@@ -41,8 +41,7 @@ INI_EXTERN int read_appint(LPCWSTR cat, LPCWSTR name);
 INI_EXTERN BOOL for_eachSection(LPCWSTR cat, wchar_t (*lpdata)[VALUE_LEN+1], int m);
 INI_EXTERN BOOL WINAPI ChangeEnviromentVariablesA(LPCSTR szname,LPSTR sz_newval,int dw_flag);
 INI_EXTERN BOOL WINAPI ChangeEnviromentVariablesW(LPCWSTR szname,LPWSTR sz_newval,int dw_flag);
-INI_EXTERN unsigned WINAPI SetPluginPathW(void * pParam);
-INI_EXTERN unsigned WINAPI SetPluginPathA(void * pParam);
+INI_EXTERN unsigned WINAPI SetPluginPath(void * pParam);
 INI_EXTERN BOOL WINAPI IsGUI(LPCWSTR lpFileName);
 
 #ifdef __cplusplus

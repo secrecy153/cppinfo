@@ -310,7 +310,7 @@ BOOL PathToCombineW(IN LPWSTR lpfile, IN size_t str_len)
 	return ret;
 }
 
-unsigned WINAPI SetPluginPathW(void * pParam)
+unsigned WINAPI SetPluginPath(void * pParam)
 {
 	wchar_t lpfile[VALUE_LEN+1];
 	if ( read_appkey(L"Env",L"NpluginPath",lpfile,sizeof(lpfile)) )
@@ -318,32 +318,6 @@ unsigned WINAPI SetPluginPathW(void * pParam)
 		if (PathToCombineW(lpfile, VALUE_LEN))
 		{
 			ChangeEnviromentVariablesW(L"MOZ_PLUGIN_PATH", lpfile, VARIABLES_APPEND);
-		}
-	}
-	return (1);
-}
-
-unsigned WINAPI SetPluginPathA(void * pParam)
-{
-	wchar_t lpfile[VALUE_LEN+1];
-	if ( read_appkey(L"Env",L"NpluginPath",lpfile,sizeof(lpfile)) )
-	{
-		char	*szpath = NULL;
-		if (PathToCombineW(lpfile, VALUE_LEN))
-		{
-			int  len = WideCharToMultiByte( CP_ACP, 0, lpfile, -1, NULL, 0, NULL, NULL );
-			szpath = (char *)SYS_MALLOC(len+1);
-			if (szpath)
-			{
-				if (WideCharToMultiByte( CP_ACP, 0, lpfile, -1, szpath, len, NULL, NULL ))
-				{
-					ChangeEnviromentVariablesA("MOZ_PLUGIN_PATH",szpath, VARIABLES_APPEND);
-				}
-			}
-		}
-		if (szpath)
-		{
-			SYS_FREE(szpath);
 		}
 	}
 	return (1);

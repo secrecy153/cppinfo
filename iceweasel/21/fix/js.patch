@@ -1,0 +1,347 @@
+# HG changeset patch
+# Parent 9b381be28beb80c4800462d39ef7c0cdcec1ef9b
+# User hua.andy <hua.andy@gmail.com>
+"pgo fix with vc11 compile"
+
+
+diff --git a/js/src/Makefile.in b/js/src/Makefile.in
+--- a/js/src/Makefile.in
++++ b/js/src/Makefile.in
+@@ -737,17 +737,16 @@ endif
+ # Prevent floating point errors caused by VC++ optimizations
+ ifdef _MSC_VER
+ # XXX We should add this to CXXFLAGS, too?
+ CFLAGS += -fp:precise
+ 
+ ifeq ($(CPU_ARCH),x86)
+ # Workaround compiler bug on PGO (Bug 721284)
+ MonoIC.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+-Compiler.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+ # Ditto (Bug 772303)
+ RegExp.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+ endif
+ # Ditto (Bug 810661)
+ ifeq ($(CPU_ARCH),x86_64)
+ CTypes.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+ endif
+ endif # _MSC_VER
+diff --git a/js/src/jsmath.cpp b/js/src/jsmath.cpp
+--- a/js/src/jsmath.cpp
++++ b/js/src/jsmath.cpp
+@@ -23,16 +23,20 @@
+ #include "jsmath.h"
+ #include "jsnum.h"
+ #include "jslibmath.h"
+ #include "jscompartment.h"
+ 
+ #include "jsinferinlines.h"
+ #include "jsobjinlines.h"
+ 
++#if (_M_IX86_FP >= 2)
++#pragma function(floor)
++#endif
++
+ using namespace js;
+ 
+ #ifndef M_E
+ #define M_E             2.7182818284590452354
+ #endif
+ #ifndef M_LOG2E
+ #define M_LOG2E         1.4426950408889634074
+ #endif
+@@ -406,20 +410,16 @@ js_math_min(JSContext *cx, unsigned argc
+         // Math.min(num, NaN) => NaN, Math.min(-0, +0) => -0
+         if (x < minval || MOZ_DOUBLE_IS_NaN(x) || (x == minval && MOZ_DOUBLE_IS_NEGATIVE_ZERO(x)))
+             minval = x;
+     }
+     args.rval().setNumber(minval);
+     return true;
+ }
+ 
+-// Disable PGO for Math.pow() and related functions (see bug 791214).
+-#if defined(_MSC_VER)
+-# pragma optimize("g", off)
+-#endif
+ double
+ js::powi(double x, int y)
+ {
+     unsigned n = (y < 0) ? -y : y;
+     double m = x;
+     double p = 1;
+     while (true) {
+         if ((n & 1) != 0) p *= m;
+@@ -437,43 +437,29 @@ js::powi(double x, int y)
+                        : result;
+             }
+ 
+             return p;
+         }
+         m *= m;
+     }
+ }
+-#if defined(_MSC_VER)
+-# pragma optimize("", on)
+-#endif
+ 
+-// Disable PGO for Math.pow() and related functions (see bug 791214).
+-#if defined(_MSC_VER)
+-# pragma optimize("g", off)
+-#endif
+ double
+ js::ecmaPow(double x, double y)
+ {
+     /*
+      * Because C99 and ECMA specify different behavior for pow(),
+      * we need to wrap the libm call to make it ECMA compliant.
+      */
+     if (!MOZ_DOUBLE_IS_FINITE(y) && (x == 1.0 || x == -1.0))
+         return js_NaN;
+     return pow(x, y);
+ }
+-#if defined(_MSC_VER)
+-# pragma optimize("", on)
+-#endif
+ 
+-// Disable PGO for Math.pow() and related functions (see bug 791214).
+-#if defined(_MSC_VER)
+-# pragma optimize("g", off)
+-#endif
+ JSBool
+ js_math_pow(JSContext *cx, unsigned argc, Value *vp)
+ {
+     double x, y, z;
+ 
+     if (argc <= 1) {
+         vp->setDouble(js_NaN);
+         return JS_TRUE;
+@@ -508,19 +494,16 @@ js_math_pow(JSContext *cx, unsigned argc
+     if (int32_t(y) == y)
+         z = powi(x, int32_t(y));
+     else
+         z = ecmaPow(x, y);
+ 
+     vp->setNumber(z);
+     return JS_TRUE;
+ }
+-#if defined(_MSC_VER)
+-# pragma optimize("", on)
+-#endif
+ 
+ static const uint64_t RNG_MULTIPLIER = 0x5DEECE66DLL;
+ static const uint64_t RNG_ADDEND = 0xBLL;
+ static const uint64_t RNG_MASK = (1LL << 48) - 1;
+ static const double RNG_DSCALE = double(1LL << 53);
+ 
+ /*
+  * Math.random() support, lifted from java.util.Random.java.
+diff --git a/js/src/jsnum.cpp b/js/src/jsnum.cpp
+--- a/js/src/jsnum.cpp
++++ b/js/src/jsnum.cpp
+@@ -1318,19 +1318,16 @@ js::NumberValueToStringBuffer(JSContext 
+      * Inflate to jschar string.  The input C-string characters are < 127, so
+      * even if jschars are UTF-8, all chars should map to one jschar.
+      */
+     size_t cstrlen = strlen(cstr);
+     JS_ASSERT(!cbuf.dbuf && cstrlen < cbuf.sbufSize);
+     return sb.appendInflated(cstr, cstrlen);
+ }
+ 
+-#if defined(_MSC_VER)
+-# pragma optimize("g", off)
+-#endif
+ JS_PUBLIC_API(bool)
+ js::ToNumberSlow(JSContext *cx, Value v, double *out)
+ {
+     AssertCanGC();
+ #ifdef DEBUG
+     /*
+      * MSVC bizarrely miscompiles this, complaining about the first brace below
+      * being unmatched (!).  The error message points at both this opening brace
+@@ -1381,19 +1378,16 @@ js::ToNumberSlow(JSContext *cx, Value v,
+         v = v2;
+         if (v.isObject())
+             break;
+     }
+ 
+     *out = js_NaN;
+     return true;
+ }
+-#if defined(_MSC_VER)
+-# pragma optimize("", on)
+-#endif
+ 
+ /*
+  * Convert a value to an int64_t, according to the WebIDL rules for long long
+  * conversion. Return converted value in *out on success, false on failure.
+  */
+ JS_PUBLIC_API(bool)
+ js::ToInt64Slow(JSContext *cx, const Value &v, int64_t *out)
+ {
+diff --git a/js/src/methodjit/Compiler.cpp b/js/src/methodjit/Compiler.cpp
+--- a/js/src/methodjit/Compiler.cpp
++++ b/js/src/methodjit/Compiler.cpp
+@@ -35,16 +35,20 @@
+ #include "vm/RegExpObject-inl.h"
+ 
+ #include "ion/Ion.h"
+ 
+ #if JS_TRACE_LOGGING
+ #include "TraceLogging.h"
+ #endif
+ 
++#if (_M_IX86_FP >= 2)
++#pragma function(floor)
++#endif
++
+ using namespace js;
+ using namespace js::mjit;
+ #if defined(JS_POLYIC) || defined(JS_MONOIC)
+ using namespace js::mjit::ic;
+ #endif
+ using namespace js::analyze;
+ 
+ using mozilla::DebugOnly;
+@@ -1115,16 +1119,17 @@ mjit::CanMethodJIT(JSContext *cx, JSScri
+     }
+ 
+     /* Non-OOM errors should have an associated exception. */
+     JS_ASSERT_IF(status == Compile_Error,
+                  cx->isExceptionPending() || cx->runtime->hadOutOfMemory);
+ 
+     return status;
+ }
++#pragma optimize("g", on)
+ 
+ CompileStatus
+ mjit::Compiler::generatePrologue()
+ {
+     fastEntryLabel = masm.label();
+ 
+     /*
+      * If there is no function, then this can only be called via JaegerShot(),
+@@ -4834,31 +4839,33 @@ mjit::Compiler::inlineScriptedFunction(u
+  * being set. This includes any API callbacks and any scripted or native call.
+  */
+ void
+ mjit::Compiler::addCallSite(const InternalCallSite &site)
+ {
+     callSites.append(site);
+ }
+ 
++#pragma optimize("g", off)
+ void
+ mjit::Compiler::inlineStubCall(void *stub, RejoinState rejoin, Uses uses)
+ {
+     DataLabelPtr inlinePatch;
+     Call cl = emitStubCall(stub, &inlinePatch);
+     InternalCallSite site(masm.callReturnOffset(cl), a->inlineIndex, PC,
+                           rejoin, false);
+     site.inlinePatch = inlinePatch;
+     if (loop && loop->generatingInvariants()) {
+         Jump j = masm.jump();
+         Label l = masm.label();
+         loop->addInvariantCall(j, l, false, false, callSites.length(), uses);
+     }
+     addCallSite(site);
+ }
++#pragma optimize("g", on)
+ 
+ bool
+ mjit::Compiler::compareTwoValues(JSContext *cx, JSOp op, const Value &lhs, const Value &rhs)
+ {
+     JS_ASSERT(lhs.isPrimitive());
+     JS_ASSERT(rhs.isPrimitive());
+ 
+     if (lhs.isString() && rhs.isString()) {
+diff --git a/js/src/methodjit/MonoIC.cpp b/js/src/methodjit/MonoIC.cpp
+--- a/js/src/methodjit/MonoIC.cpp
++++ b/js/src/methodjit/MonoIC.cpp
+@@ -373,21 +373,16 @@ ic::Equality(VMFrame &f, ic::EqualityICI
+ {
+     EqualityCompiler cc(f, *ic);
+     if (!cc.update())
+         THROWV(JS_FALSE);
+ 
+     return ic->stub(f);
+ }
+ 
+-// Disable PGO as a precaution (see bug 791214).
+-#if defined(_MSC_VER)
+-# pragma optimize("g", off)
+-#endif
+-
+ static void * JS_FASTCALL
+ SlowCallFromIC(VMFrame &f, ic::CallICInfo *ic)
+ {
+     stubs::SlowCall(f, ic->frameSize.getArgc(f));
+     return NULL;
+ }
+ 
+ static void * JS_FASTCALL
+@@ -1485,20 +1480,16 @@ ic::SplatApplyArgs(VMFrame &f)
+     /* Steps 7-8. */
+     if (!GetElements(cx, aobj, length, f.regs.sp - length))
+         THROWV(false);
+ 
+     f.u.call.dynamicArgc = length;
+     return true;
+ }
+ 
+-#if defined(_MSC_VER)
+-# pragma optimize("", on)
+-#endif
+-
+ void
+ ic::GenerateArgumentCheckStub(VMFrame &f)
+ {
+     AutoAssertNoGC nogc;
+     JS_ASSERT(f.cx->typeInferenceEnabled());
+ 
+     JITScript *jit = f.jit();
+     StackFrame *fp = f.fp();
+diff --git a/js/src/vm/ObjectImpl.cpp b/js/src/vm/ObjectImpl.cpp
+--- a/js/src/vm/ObjectImpl.cpp
++++ b/js/src/vm/ObjectImpl.cpp
+@@ -277,21 +277,16 @@ js::ObjectImpl::slotInRange(uint32_t slo
+ {
+     uint32_t capacity = numFixedSlots() + numDynamicSlots();
+     if (sentinel == SENTINEL_ALLOWED)
+         return slot <= capacity;
+     return slot < capacity;
+ }
+ #endif /* DEBUG */
+ 
+-// See bug 844580.
+-#if defined(_MSC_VER)
+-# pragma optimize("g", off)
+-#endif
+-
+ #if defined(_MSC_VER) && _MSC_VER >= 1500
+ /*
+  * Work around a compiler bug in MSVC9 and above, where inlining this function
+  * causes stack pointer offsets to go awry and spp to refer to something higher
+  * up the stack.
+  */
+ MOZ_NEVER_INLINE
+ #endif
+@@ -299,20 +294,16 @@ UnrootedShape
+ js::ObjectImpl::nativeLookup(JSContext *cx, jsid id)
+ {
+     AutoAssertNoGC nogc;
+     MOZ_ASSERT(isNative());
+     Shape **spp;
+     return Shape::search(cx, lastProperty(), id, &spp);
+ }
+ 
+-#if defined(_MSC_VER)
+-# pragma optimize("", on)
+-#endif
+-
+ void
+ js::ObjectImpl::markChildren(JSTracer *trc)
+ {
+     MarkTypeObject(trc, &type_, "type");
+ 
+     MarkShape(trc, &shape_, "shape");
+ 
+     Class *clasp = type_->clasp;

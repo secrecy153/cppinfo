@@ -1,0 +1,22 @@
+# HG changeset patch
+# Parent 6b5642e48e0e7ae808eb21950fbc8737c14e53e2
+# User hua.andy <hua.andy@gmail.com>
+"add GA"
+
+
+diff --git a/browser/app/Makefile.in b/browser/app/Makefile.in
+--- a/browser/app/Makefile.in
++++ b/browser/app/Makefile.in
+@@ -200,8 +200,11 @@ libs::
+ ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT)) #{
+ 	rsync -a --copy-unsafe-links $(LIBXUL_DIST)/XUL.framework $(dist_dest)/Contents/Frameworks
+ else
+ 	$(NSINSTALL) -D $(DIST)/bin/xulrunner
+ 	(cd $(LIBXUL_SDK)/bin && tar $(TAR_CREATE_FLAGS) - .) | (cd $(DIST)/bin/xulrunner && tar -xf -)
+ endif #} cocoa
+ endif #} SKIP_COPY_XULRUNNER
+ endif #} LIBXUL_SDK
++
++CFLAGS   += -GA
++CXXFLAGS += -GA
+\ No newline at end of file

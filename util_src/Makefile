@@ -3,7 +3,7 @@ CFLAGS   = -O3
 LD       = gcc -o
 BITS	 := 32
 LDFLAGS  = -static -Wl,-s
-CFLAGS   += -D_DEBUG -Wall -Wno-unused -Wno-format -msse2 \
+CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 \
 	    -fomit-frame-pointer -finline-functions -fno-stack-protector
 LDLIBS   = -lshlwapi -lshell32 -lgdi32
 MD       = mkdir -p

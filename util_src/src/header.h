@@ -323,14 +323,6 @@ typedef struct _PROCESS_BASIC_INFORMATION {
 } PROCESS_BASIC_INFORMATION, *PPROCESS_BASIC_INFORMATION;
 
 
-extern	HMODULE  dll_module;
-static  UINT_PTR m_dwUser32Low;						/* dll 的加载基址 */
-static  UINT_PTR m_dwUser32Hi;						/* dll 的加载基址+ImageSize */
-
-typedef BOOL (WINAPI *_NtGetModuleInformation)(HANDLE hProcess,
-										HMODULE hModule,
-										LPMODULEINFO lpmodinfo,
-										DWORD cb);
 typedef NTSTATUS (NTAPI *_NtQueryObject)(HANDLE ObjectHandle,
 										ULONG  ObjectInformationClass,
 										PVOID  ObjectInformation,
@@ -453,7 +445,6 @@ typedef NTSTATUS (NTAPI *_NtSuspendThread)(IN HANDLE ThreadHandle,
 typedef NTSTATUS (NTAPI *_NtResumeThread)(IN HANDLE ThreadHandle,
 										OUT PULONG SuspendCount);
 
-static _NtGetModuleInformation          TrueGetModuleInformation			= NULL;
 static _NtCLOSE							TrueNtclose							= NULL;
 static _NtQueryInformationFile			TrueNtQueryInformationFile			= NULL;
 static _NtQuerySection					TrueNtQuerySection					= NULL;

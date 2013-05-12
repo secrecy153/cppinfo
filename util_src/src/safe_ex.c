@@ -9,6 +9,13 @@
 #include <tchar.h>
 #include <stdio.h>
 
+#ifdef _MSC_VER
+void    *_ReturnAddress(void);
+#pragma intrinsic(_ReturnAddress)
+#endif
+
+extern	HMODULE  dll_module;
+
 #ifdef _DEBUG
 extern void __cdecl logmsg(const char * format, ...);
 #endif
@@ -421,6 +428,18 @@ BOOL WINAPI iSAuthorized(LPCWSTR lpFileName)
 			{
 				filename = PathFindFileNameW(lpFileName);
 			}
+			else if (GetOsVersion()>502)
+			{
+			#ifdef _M_IX86
+				if ( TrueSHGetSpecialFolderPathW(NULL, sysdir, 0x0025, FALSE) )
+				{
+					if ( _wcsnicmp(lpFileName,sysdir,wcslen(sysdir)) == 0 )
+					{
+						filename = PathFindFileNameW(lpFileName);
+					}
+				}
+			#endif
+			}
 		}
 	}
 	else
@@ -442,9 +461,25 @@ BOOL WINAPI iSAuthorized(LPCWSTR lpFileName)
 	return ret;
 }
 
+BOOL WINAPI IsUser32Dll(UINT_PTR callerAddress)
+{
+	BOOL	ret = FALSE;
+	HMODULE hCallerModule = NULL;
+	if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)callerAddress, &hCallerModule))
+	{
+		WCHAR szModuleName[VALUE_LEN+1] = {0};
+		GetModuleFileNameW(hCallerModule, szModuleName, VALUE_LEN);
+		if ( stristrW(szModuleName, L"user32.dll") )
+		{
+			ret = TRUE;
+		}
+	}
+	return ret;
+}
+
 HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)  
 {  
-    UINT_PTR dwCaller;
+    UINT_PTR	dwCaller;
 	/* 是否信任的dll */
 	if ( iSAuthorized(lpFileName) )
 	{
@@ -453,44 +488,39 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
 #ifdef __GNUC__
 	dwCaller = (UINT_PTR)__builtin_return_address(0);
 #else
-	__asm push dword ptr [ebp+4]
-	__asm pop  dword ptr [dwCaller]
+	dwCaller = (UINT_PTR)_ReturnAddress();
 #endif
     /* 判断是否是从User32.dll调用 */
-    if(dwCaller > m_dwUser32Low && dwCaller < m_dwUser32Hi)  
-    {
+	if ( IsUser32Dll(dwCaller) )
+	{
+		if (PathMatchSpecW(lpFileName, L"*.exe"))
+		{
+			/* javascript api 获取应用程序图标时 */
+			return TrueLoadLibraryExW(lpFileName, hFile, dwFlags);  
+		}
+		else
+		{
 	#ifdef _DEBUG
 		logmsg("the  %ls disable load\n",lpFileName);
 	#endif
-        return NULL;  
-    }
+		return NULL;  
+		}
+	}
     return TrueLoadLibraryExW(lpFileName, hFile, dwFlags);  
 }
 
 
 unsigned WINAPI init_safed(void * pParam)
 {
-	MODULEINFO	user32ModInfo;
 	HMODULE		hNtdll;
-	wchar_t		process_name[VALUE_LEN+1];
+	MODULEINFO	user32ModInfo;
 	DWORD		ver = GetOsVersion();
-	GetModuleFileNameW(NULL,process_name,VALUE_LEN);
-	if (stristrW(process_name, L"Iceweasel.exe")||
-		stristrW(process_name, L"firefox.exe")	||
-		stristrW(process_name, L"lawlietfox.exe") )
+	TrueLoadLibraryExW = (_NtLoadLibraryExW)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"LoadLibraryExW");
+	if (!TrueLoadLibraryExW)
 	{
-		ZeroMemory(&user32ModInfo,sizeof(user32ModInfo));
-		TrueLoadLibraryExW = (_NtLoadLibraryExW)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),
-							 "LoadLibraryExW");
-		TrueGetModuleInformation = (_NtGetModuleInformation)GetProcAddress(
-									TrueLoadLibraryExW(L"psapi.dll",NULL,LOAD_LIBRARY_AS_DATAFILE),
-									"GetModuleInformation");
-		if (TrueGetModuleInformation(GetCurrentProcess(), GetModuleHandleA("user32.dll"),   
-							 &user32ModInfo, sizeof(user32ModInfo)))
-		{
-			m_dwUser32Low = (UINT_PTR)user32ModInfo.lpBaseOfDll; 
-			m_dwUser32Hi = (UINT_PTR)user32ModInfo.lpBaseOfDll+user32ModInfo.SizeOfImage; 
-		}
+	#ifdef _DEBUG
+		logmsg("TrueLoadLibraryExW is null %lu\n",GetLastError());
+	#endif
 	}
 	hNtdll = GetModuleHandleW(L"ntdll.dll");
 	if (hNtdll)
