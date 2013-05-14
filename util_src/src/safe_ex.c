@@ -3,14 +3,18 @@
 #include "safe_ex.h"
 #include "inipara.h"
 #include "header.h"
+#ifdef _MSC_VER
+#include "mhook-vs/include/mhook.h"
+#else
 #include "mhook-lib/mhook.h"
+#endif
 #include <process.h>
 #include <tlhelp32.h>
 #include <tchar.h>
 #include <stdio.h>
 
 #ifdef _MSC_VER
-void    *_ReturnAddress(void);
+extern "C" void* _ReturnAddress(void);
 #pragma intrinsic(_ReturnAddress)
 #endif
 
@@ -19,9 +23,6 @@ extern	HMODULE  dll_module;
 #ifdef _DEBUG
 extern void __cdecl logmsg(const char * format, ...);
 #endif
-
-_NtSHGetSpecialFolderPathW TrueSHGetSpecialFolderPathW = NULL;
-_NtLoadLibraryExW		   TrueLoadLibraryExW = NULL;
 
 HANDLE NtCreateRemoteThread(HANDLE hProcess, 
 							LPTHREAD_START_ROUTINE lpRemoteThreadStart, 
@@ -80,7 +81,7 @@ unsigned WINAPI InjectDll(void *mpara)
 										PAGE_EXECUTE_READWRITE);
 	if ( NT_SUCCESS(status) )
 	{
-		status = TrueNtWriteVirtualMemory(pi.hProcess,dll_buff,dll_name,size,(PULONG)&size);
+		status = TrueNtWriteVirtualMemory(pi.hProcess,dll_buff,dll_name,(ULONG)size,(PULONG)&size);
 		if ( NT_SUCCESS(status) )
 		{
 			HANDLE hRemote;
@@ -513,7 +514,6 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
 unsigned WINAPI init_safed(void * pParam)
 {
 	HMODULE		hNtdll;
-	MODULEINFO	user32ModInfo;
 	DWORD		ver = GetOsVersion();
 	TrueLoadLibraryExW = (_NtLoadLibraryExW)GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"LoadLibraryExW");
 	if (!TrueLoadLibraryExW)

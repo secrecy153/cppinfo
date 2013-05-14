@@ -6,7 +6,7 @@
 
 extern HMODULE dll_module;
 
-BOOL WINAPI ini_ready(LPWSTR inifull_name,size_t str_len)
+BOOL WINAPI ini_ready(LPWSTR inifull_name,DWORD str_len)
 {
 	BOOL rect = FALSE;
 	GetModuleFileNameW(dll_module,inifull_name,str_len);
@@ -27,7 +27,7 @@ BOOL WINAPI ini_ready(LPWSTR inifull_name,size_t str_len)
 BOOL read_appkey(LPCWSTR lpappname,              /* 区段名 */
 				 LPCWSTR lpkey,					 /* 键名  */	
 				 LPWSTR  prefstring,			 /* 保存值缓冲区 */	
-				 size_t  bufsize				 /* 缓冲区大小 */
+				 DWORD   bufsize				 /* 缓冲区大小 */
 				 )
 {
 	DWORD  res = 0;
@@ -76,7 +76,7 @@ BOOL for_eachSection(LPCWSTR cat,						/* ini 区段 */
 	wchar_t inifull_name[MAX_PATH];
 	if (ini_ready(inifull_name,MAX_PATH))
 	{
-		size_t num = VALUE_LEN*sizeof(wchar_t)*m;
+		DWORD num = VALUE_LEN*sizeof(wchar_t)*m;
 		lpstring = (LPWSTR)SYS_MALLOC(num);
 		res = GetPrivateProfileSectionW(cat, lpstring, num, inifull_name);
 		if (res == 0 && GetLastError() != 0x0)
@@ -127,15 +127,15 @@ LPWSTR stristrW(LPCWSTR Str, LPCWSTR Pat)
 
 BOOL WINAPI ChangeEnviromentVariablesW(LPCWSTR szname,LPWSTR sz_newval,int dw_flag)
 {
-	DWORD  dw_err;
-	LPWSTR sz_val;
-	DWORD  dw_result;
-	DWORD  new_valsize;
-	BOOL   result = FALSE;
+	DWORD	dw_err;
+	LPWSTR	sz_val;
+	DWORD   dw_result;
+	DWORD   new_valsize;
+	BOOL	result = FALSE;
 	/* 附加到指定环境变量末尾 */
 	if(dw_flag == VARIABLES_APPEND)
 	{
-		new_valsize = wcslen(sz_newval)+1; 
+		new_valsize = (DWORD)wcslen(sz_newval)+1; 
 		sz_val = (LPWSTR)SYS_MALLOC(BUFSIZE+new_valsize);
 		/* 获取指定环境变量的值 */
 		dw_result = GetEnvironmentVariableW(szname,sz_val,BUFSIZE);
@@ -200,11 +200,11 @@ BOOL WINAPI ChangeEnviromentVariablesW(LPCWSTR szname,LPWSTR sz_newval,int dw_fl
 
 BOOL WINAPI ChangeEnviromentVariablesA(LPCSTR szname,LPSTR sz_newval,int dw_flag)
 {
-	DWORD  dw_err;
-	LPSTR  sz_val;
-	DWORD  dw_result;
-	DWORD  new_valsize;
-	BOOL   result = FALSE;
+	DWORD	dw_err;
+	LPSTR	sz_val;
+	size_t  dw_result;
+	size_t  new_valsize;
+	BOOL	result = FALSE;
 	/* 附加到指定环境变量末尾 */
 	if(dw_flag == VARIABLES_APPEND)
 	{
@@ -237,7 +237,7 @@ BOOL WINAPI ChangeEnviromentVariablesA(LPCSTR szname,LPSTR sz_newval,int dw_flag
 				printf("Memory error\n");
 				return result;
 			}
-			dw_result = GetEnvironmentVariableA(szname, sz_val, dw_result);
+			dw_result = GetEnvironmentVariableA(szname, sz_val, (DWORD)dw_result);
 			if(!dw_result)
 			{
 				SYS_FREE(sz_val);
@@ -273,15 +273,15 @@ BOOL WINAPI ChangeEnviromentVariablesA(LPCSTR szname,LPSTR sz_newval,int dw_flag
 
 void WINAPI charTochar(LPWSTR path)
 {
-	LPWSTR lp = NULL;
-	int post;
+	LPWSTR	lp = NULL;
+	INT_PTR	pos;
 	do
 	{
 		lp =  StrChrW(path,L'/');
 		if (lp)
 		{
-			post = lp-path;
-			path[post] = L'\\';
+			pos = lp-path;
+			path[pos] = L'\\';
 		}
 	}
 	while (lp!=NULL);

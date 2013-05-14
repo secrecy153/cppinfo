@@ -5,6 +5,10 @@
 #include <shlwapi.h>
 #include <psapi.h>
 
+#if defined(_MSC_VER)
+#define __C89_NAMELESS
+#endif
+
 #define CREATE_PROCESS_BREAKAWAY_FROM_JOB	0x0001
 #define CREATE_PROCESS_INHERIT_HANDLES		0x0004
 #define CREATE_PROCESS_PROTECTED			0x0040
@@ -62,17 +66,17 @@
 #ifndef __NT_PROC_THREAD_ATTRIBUTE_ENTRY
 #define __NT_PROC_THREAD_ATTRIBUTE_ENTRY
 typedef struct _NT_PROC_THREAD_ATTRIBUTE_ENTRY {
-    ULONG Attribute;    /* PROC_THREAD_ATTRIBUTE_XXX£¬²Î¼ûMSDNÖÐUpdateProcThreadAttributeµÄËµÃ÷ */
-    SIZE_T Size;        /* ValueµÄ´óÐ¡ */
-    ULONG_PTR Value;    /* ±£´æ4×Ö½ÚÊý¾Ý£¨±ÈÈçÒ»¸öHandle£©»òÊý¾ÝÖ¸Õë */
-    ULONG Unknown;      /* ×ÜÊÇ0£¬¿ÉÄÜÊÇÓÃÀ´·µ»ØÊý¾Ý¸øµ÷ÓÃÕß */
+    ULONG Attribute;    /* PROC_THREAD_ATTRIBUTE_XXXï¼Œå‚è§MSDNä¸­UpdateProcThreadAttributeçš„è¯´æ˜Ž */
+    SIZE_T Size;        /* Valueçš„å¤§å° */
+    ULONG_PTR Value;    /* ä¿å­˜4å­—èŠ‚æ•°æ®ï¼ˆæ¯”å¦‚ä¸€ä¸ªHandleï¼‰æˆ–æ•°æ®æŒ‡é’ˆ */
+    ULONG Unknown;      /* æ€»æ˜¯0ï¼Œå¯èƒ½æ˜¯ç”¨æ¥è¿”å›žæ•°æ®ç»™è°ƒç”¨è€… */
 } PROC_THREAD_ATTRIBUTE_ENTRY, *PPROC_THREAD_ATTRIBUTE_ENTRY;
 #endif
 
 #ifndef __NT_PROC_THREAD_ATTRIBUTE_LIST
 #define __NT_PROC_THREAD_ATTRIBUTE_LIST
 typedef struct _NT_PROC_THREAD_ATTRIBUTE_LIST {
-    ULONG Length;       /* ×ÜµÄ½á¹¹´óÐ¡ */
+    ULONG Length;       /* æ€»çš„ç»“æž„å¤§å° */
     PROC_THREAD_ATTRIBUTE_ENTRY Entry[1];
 } NT_PROC_THREAD_ATTRIBUTE_LIST;
 typedef NT_PROC_THREAD_ATTRIBUTE_LIST *PNT_PROC_THREAD_ATTRIBUTE_LIST;
@@ -207,6 +211,7 @@ typedef struct _IO_STATUS_BLOCK {
   ULONG_PTR Information;
 } IO_STATUS_BLOCK,*PIO_STATUS_BLOCK;
 
+#if !defined(_MSC_VER)
 #ifndef _LARGE_INTEGER_DEFINED
 #define _LARGE_INTEGER_DEFINED
 /* Large Integer Unions */
@@ -225,6 +230,7 @@ typedef union _LARGE_INTEGER {
 #endif
   LONGLONG QuadPart;
 } LARGE_INTEGER, *PLARGE_INTEGER;
+#endif
 #endif
 
 typedef struct _FILE_NAME_INFORMATION {

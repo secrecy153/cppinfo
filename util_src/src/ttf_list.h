@@ -168,7 +168,7 @@ printList( List Li )
     P = Li->Next;  /* Header assumed */
     while( P != NULL )
     {
-        WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), P->Element, wcslen(P->Element), NULL, NULL);
+        WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), P->Element, (DWORD)wcslen(P->Element), NULL, NULL);
         wprintf( L"%ls",L" ");
         P = P->Next;
     }
