@@ -277,17 +277,26 @@ HRESULT WINAPI HookSHGetFolderPathW(HWND hwndOwner,int nFolder,HANDLE hToken,
 		(CSIDL_APPDATA|CSIDL_FLAG_CREATE)  == nFolder 
 	  )
 	{  
-		int num = 0;
-		if( (CSIDL_APPDATA|CSIDL_FLAG_CREATE)  == nFolder )
+		UINT_PTR	dwCaller;
+		int			num = 0;
+	#ifdef __GNUC__
+		dwCaller = (UINT_PTR)__builtin_return_address(0);
+	#else
+		dwCaller = (UINT_PTR)_ReturnAddress();
+	#endif
+		if ( !IsSpecialDll(dwCaller, L"*.IME") )
 		{
-			num = _snwprintf(pszPath,MAX_PATH,L"%ls",appdata_path);
+			if( (CSIDL_APPDATA|CSIDL_FLAG_CREATE)  == nFolder )
+			{
+				num = _snwprintf(pszPath,MAX_PATH,L"%ls",appdata_path);
+			}
+			else
+			{
+				num = _snwprintf(pszPath,MAX_PATH,L"%ls",localdata_path);
+			}
+			pszPath[num] = L'\0';
+			return S_OK;
 		}
-		else
-		{
-			num = _snwprintf(pszPath,MAX_PATH,L"%ls",localdata_path);
-		}
-		pszPath[num] = L'\0';
-		return S_OK;
 	}
 	return TrueSHGetFolderPathW(hwndOwner, nFolder, hToken,dwFlags,pszPath);
 }

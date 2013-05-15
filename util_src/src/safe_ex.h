@@ -22,11 +22,17 @@ typedef BOOL (WINAPI *_NtSHGetSpecialFolderPathW)(HWND hwndOwner,
 SAFE_EXTERN _NtLoadLibraryExW		   TrueLoadLibraryExW;
 SAFE_EXTERN _NtSHGetSpecialFolderPathW TrueSHGetSpecialFolderPathW;
 
+#ifdef _MSC_VER
+extern "C" void* _ReturnAddress(void);
+#pragma intrinsic(_ReturnAddress)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 SAFE_EXTERN unsigned WINAPI init_safed(void * pParam);
 SAFE_EXTERN void safe_end(void);
+SAFE_EXTERN BOOL WINAPI IsSpecialDll(UINT_PTR callerAddress,LPCWSTR dll_file);
 #ifdef __cplusplus
 }
 #endif 

@@ -13,11 +13,6 @@
 #include <tchar.h>
 #include <stdio.h>
 
-#ifdef _MSC_VER
-extern "C" void* _ReturnAddress(void);
-#pragma intrinsic(_ReturnAddress)
-#endif
-
 extern	HMODULE  dll_module;
 
 #ifdef _DEBUG
@@ -462,17 +457,26 @@ BOOL WINAPI iSAuthorized(LPCWSTR lpFileName)
 	return ret;
 }
 
-BOOL WINAPI IsUser32Dll(UINT_PTR callerAddress)
+BOOL WINAPI IsSpecialDll(UINT_PTR callerAddress,LPCWSTR dll_file)
 {
 	BOOL	ret = FALSE;
 	HMODULE hCallerModule = NULL;
 	if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)callerAddress, &hCallerModule))
 	{
 		WCHAR szModuleName[VALUE_LEN+1] = {0};
-		GetModuleFileNameW(hCallerModule, szModuleName, VALUE_LEN);
-		if ( stristrW(szModuleName, L"user32.dll") )
+		if ( GetModuleFileNameW(hCallerModule, szModuleName, VALUE_LEN) )
 		{
-			ret = TRUE;
+			if ( StrChrW(dll_file,L'*') || StrChrW(dll_file,L'?') )
+			{
+				if ( PathMatchSpecW(szModuleName, dll_file) )
+				{
+					ret = TRUE;
+				}
+			}
+			else if ( stristrW(szModuleName, dll_file) )
+			{
+				ret = TRUE;
+			}
 		}
 	}
 	return ret;
@@ -492,7 +496,7 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
 	dwCaller = (UINT_PTR)_ReturnAddress();
 #endif
     /* 判断是否是从User32.dll调用 */
-	if ( IsUser32Dll(dwCaller) )
+	if ( IsSpecialDll(dwCaller,L"user32.dll") )
 	{
 		if (PathMatchSpecW(lpFileName, L"*.exe"))
 		{
@@ -501,10 +505,10 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
 		}
 		else
 		{
-	#ifdef _DEBUG
-		logmsg("the  %ls disable load\n",lpFileName);
-	#endif
-		return NULL;  
+		#ifdef _DEBUG
+			logmsg("the  %ls disable load\n",lpFileName);
+		#endif
+			return NULL;  
 		}
 	}
     return TrueLoadLibraryExW(lpFileName, hFile, dwFlags);  
