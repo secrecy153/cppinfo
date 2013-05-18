@@ -388,7 +388,7 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 	{
 		case DLL_PROCESS_ATTACH:
 		{
-			DisableThreadLibraryCalls(hModule);
+			HANDLE		 hc = NULL;
 			dll_module = (HMODULE)hModule;
 		#ifdef _DEBUG
 			TrueSHGetSpecialFolderPathA = (_NtSHGetSpecialFolderPathA)GetProcAddress
@@ -417,7 +417,23 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 				}
 				init_portable(NULL);
 			}
+			if ( read_appint(L"General",L"GdiBatchLimit") )
+			{
+				hc = OpenThread(THREAD_ALL_ACCESS, 0, GetCurrentThreadId());
+				if (hc)
+				{
+					CloseHandle((HANDLE)_beginthreadex(NULL,0,&GdiSetLimit_tt,hc,0,NULL));
+				}
+			}
 			CloseHandle((HANDLE)_beginthreadex(NULL,0,&install_fonts,NULL,0,NULL));
+			if ( read_appint(L"General",L"ProcessAffinityMask") )
+			{
+				hc = OpenThread(THREAD_ALL_ACCESS, 0, GetCurrentThreadId());
+				if (hc)
+				{
+					CloseHandle((HANDLE)_beginthreadex(NULL,0,&SetCpuAffinity_tt,hc,0,NULL));
+				}
+			}
 			if ( read_appint(L"General",L"CreateCrashDump") )
 			{
 				CloseHandle((HANDLE)_beginthreadex(NULL,0,&init_exeception,NULL,0,NULL));

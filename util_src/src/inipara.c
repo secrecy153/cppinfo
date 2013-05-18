@@ -53,7 +53,7 @@ BOOL read_appkey(LPCWSTR lpappname,              /* 区段名 */
 int read_appint(LPCWSTR cat,LPCWSTR name)
 {
 	int res = 0;
-	wchar_t inifull_name[MAX_PATH];
+	wchar_t inifull_name[MAX_PATH+1];
 	if (ini_ready(inifull_name,MAX_PATH))
 	{
 		res = GetPrivateProfileIntW(cat, name, 0, inifull_name);
@@ -73,7 +73,7 @@ BOOL for_eachSection(LPCWSTR cat,						/* ini 区段 */
 	LPWSTR strKey;
 	int  i = 0;
 	const wchar_t delim[] = L"=";
-	wchar_t inifull_name[MAX_PATH];
+	wchar_t inifull_name[MAX_PATH+1];
 	if (ini_ready(inifull_name,MAX_PATH))
 	{
 		DWORD num = VALUE_LEN*sizeof(wchar_t)*m;
@@ -290,35 +290,104 @@ void WINAPI charTochar(LPWSTR path)
 
 BOOL PathToCombineW(IN LPWSTR lpfile, IN size_t str_len)
 {
-	BOOL	ret = FALSE;
-	wchar_t buf_modname[VALUE_LEN+1] = {0};
-	wchar_t tmp_path[MAX_PATH] = {0};
 	if ( dll_module && lpfile[1] != L':' )
 	{
+		wchar_t buf_modname[VALUE_LEN+1] = {0};
 		charTochar(lpfile);
 		if ( GetModuleFileNameW( dll_module, buf_modname, VALUE_LEN) > 0)
 		{
+			wchar_t tmp_path[MAX_PATH] = {0};
 			PathRemoveFileSpecW(buf_modname);
 			if ( PathCombineW(tmp_path,buf_modname,lpfile) )
 			{
 				int n = _snwprintf(lpfile,str_len,L"%ls",tmp_path);
 				lpfile[n] = L'\0';
-				ret = TRUE;
 			}
 		}
 	}
-	return ret;
+	return TRUE;
 }
 
 unsigned WINAPI SetPluginPath(void * pParam)
 {
 	wchar_t lpfile[VALUE_LEN+1];
-	if ( read_appkey(L"Env",L"NpluginPath",lpfile,sizeof(lpfile)) )
+	if ( read_appkey(L"Env",L"NpluginPath",lpfile,sizeof(lpfile)) ||
+		 read_appkey(L"Env",L"MOZ_PLUGIN_PATH",lpfile,sizeof(lpfile)))
 	{
-		if (PathToCombineW(lpfile, VALUE_LEN))
+		PathToCombineW(lpfile, VALUE_LEN);
+		ChangeEnviromentVariablesW(L"MOZ_PLUGIN_PATH", lpfile, VARIABLES_APPEND);
+	}
+	if ( read_appint(L"Env",L"MOZ_NO_REMOTE") ) 
+	{
+		ChangeEnviromentVariablesW(L"MOZ_NO_REMOTE", L"1", VARIABLES_RESET);
+	}
+	if ( read_appint(L"Env",L"MOZ_NEW_INSTANCE") )
+	{
+		ChangeEnviromentVariablesW(L"MOZ_NEW_INSTANCE", L"1", VARIABLES_RESET);
+	}
+	return (1);
+}
+
+static inline int GetNumberOfWorkers(void) 
+{
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (int)(si.dwNumberOfProcessors);
+}
+
+unsigned WINAPI SetCpuAffinity_tt(void * pParam)
+{
+	CONTEXT context;
+	int     cpu_z = 0;
+	HANDLE	hc = (HANDLE)pParam;
+	memset(&context,0,sizeof(context));
+	context.ContextFlags = CONTEXT_CONTROL;
+	if (hc)
+	{
+		SuspendThread(hc);
+		GetThreadContext(hc,&context);
+		SetThreadContext(hc,&context);
+		cpu_z = GetNumberOfWorkers();
+		if ( !cpu_z )
 		{
-			ChangeEnviromentVariablesW(L"MOZ_PLUGIN_PATH", lpfile, VARIABLES_APPEND);
+			cpu_z = read_appint(L"General",L"ProcessAffinityMask");
 		}
+		if ( cpu_z>5 )
+		{
+			SetThreadAffinityMask(hc, 0x1c); 
+		}
+		else if ( cpu_z>3 )
+		{
+			SetThreadAffinityMask(hc, 0xe); 
+		}
+		else if ( cpu_z>2 )
+		{
+			SetThreadAffinityMask(hc, 0x6); 
+		}
+		else
+		{
+			SetThreadAffinityMask(hc, 0x1); 
+		}
+		ResumeThread(hc);
+		CloseHandle(hc);
+	}
+	return (1);
+}
+
+unsigned WINAPI GdiSetLimit_tt(void * pParam)
+{
+	HANDLE	hc = (HANDLE)pParam;
+	if (hc)
+	{
+		DWORD limit = read_appint(L"General",L"GdiBatchLimit");
+		if (limit)
+		{
+			SuspendThread(hc);
+			GdiSetBatchLimit(limit);
+			GdiFlush();
+			ResumeThread(hc);
+		}
+		CloseHandle(hc);
 	}
 	return (1);
 }
