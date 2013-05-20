@@ -506,7 +506,7 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
 		else
 		{
 		#ifdef _DEBUG
-			//logmsg("the  %ls disable load\n",lpFileName);
+			logmsg("the  %ls disable load\n",lpFileName);
 		#endif
 			return NULL;  
 		}

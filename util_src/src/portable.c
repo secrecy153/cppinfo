@@ -283,7 +283,8 @@ HRESULT WINAPI HookSHGetFolderPathW(HWND hwndOwner,int nFolder,HANDLE hToken,
 	#else
 		dwCaller = (UINT_PTR)_ReturnAddress();
 	#endif
-		if ( !IsSpecialDll(dwCaller, L"*.IME") )
+		if ( IsSpecialDll(dwCaller, L"shell32.dll") ||
+		     IsSpecialDll(dwCaller, L"*\\np*.dll") )
 		{
 			if( (CSIDL_APPDATA|CSIDL_FLAG_CREATE)  == nFolder )
 			{
