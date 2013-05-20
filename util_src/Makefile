@@ -2,10 +2,28 @@ CC       = gcc -c
 CFLAGS   = -O3
 LD       = gcc -o
 BITS	 := 32
-LDFLAGS  = -static -Wl,-s
-CFLAGS   += -Wall -Wno-unused -Wno-format -msse2 \
+CRT_LINK := 1600
+MSCRT    =
+DLL_MAIN_STDCALL_NAME =
+
+ifeq ($(CRT_LINK),1600)
+    MSCRT = -lmsvcr100
+else ifeq ($(CRT_LINK),1700)
+    MSCRT = -lmsvcr110
+else
+    MSCRT = -lmsvcrt
+endif
+
+ifeq ($(BITS),64)
+DLL_MAIN_STDCALL_NAME = DllMain
+else
+DLL_MAIN_STDCALL_NAME = _DllMain@12
+endif
+
+LDFLAGS  = -nodefaultlibs -Wl,-static -lmingw32 -lmingwex -lkernel32 -Wl,-s
+CFLAGS   += -DCRT_LINK=$(CRT_LINK) -Wall -Wno-unused -Wno-format -msse2 \
 	    -fomit-frame-pointer -finline-functions -fno-stack-protector
-LDLIBS   = -lshlwapi -lshell32 -lgdi32
+LDLIBS   = -lshlwapi -lshell32 -lgdi32 -lgcc $(MSCRT)
 MD       = mkdir -p
 SRC      = src
 SUB_DIR  = $(SRC)/mhook-lib
@@ -20,7 +38,7 @@ OUT1     = $(DISTDIR)/libmhook$(BITS).a
 OUT2     = $(DISTDIR)/portable$(BITS).dll
 RC       = windres
 RCFLAGS  = -l "LANGUAGE 4,2" -J rc -O coff
-DLLFLAGS += -shared -Wl,--out-implib,$(DISTDIR)/portable$(BITS).lib
+DLLFLAGS += -shared -Wl,--out-implib,$(DISTDIR)/portable$(BITS).lib --entry=$(DLL_MAIN_STDCALL_NAME)
 MKDLL	 += $(LD) $(DLLFLAGS) -shared -L$(DISTDIR) -lmhook
 
 EXEC     = \
@@ -43,7 +61,7 @@ all		      : $(OUT1) $(OUT2)
 $(OUT1)		      : $(SUB_DIR)/Makefile
 	$(call SUBMK)
 $(OUT2)		      : $(OBJECTS)
-	$(LD) $@ $(OBJECTS) $(DLLFLAGS) $(OUT1) $(LDLIBS) $(LDFLAGS)
+	$(LD) $@ $(OBJECTS) $(DLLFLAGS) $(OUT1) $(LDFLAGS) $(LDLIBS)
 $(DEP)/portable.o     : $(SRC)/portable.c $(SRC)/portable.h $(SRC)/ttf_list.h
 	$(call EXEC)
 	$(CC) $< $(CFLAGS) -o $@

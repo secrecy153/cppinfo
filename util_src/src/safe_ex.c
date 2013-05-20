@@ -278,7 +278,7 @@ NTSTATUS WINAPI HookNtCreateUserProcess(PHANDLE ProcessHandle,PHANDLE ThreadHand
 	{
 		tohook = TRUE;
 	}
-	else if ( read_appint(L"General",L"EnableWhiteList") )
+	else if ( read_appint(L"General",L"EnableWhiteList") > 0 )
 	{
 		if ( ProcessParameters->ImagePathName.Length > 0 && 
 			in_whitelist((LPCWSTR)ProcessParameters->ImagePathName.Buffer) )
@@ -359,7 +359,7 @@ BOOL WINAPI HookCreateProcessInternalW (HANDLE hToken,
 		tohook = TRUE;
 	}
 	/* 如果启用白名单制度(严格检查) */
-	else if ( read_appint(L"General",L"EnableWhiteList") )
+	else if ( read_appint(L"General",L"EnableWhiteList") > 0 )
 	{
 		if ( !in_whitelist((LPCWSTR)lpfile) )
 		{
@@ -506,7 +506,7 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
 		else
 		{
 		#ifdef _DEBUG
-			logmsg("the  %ls disable load\n",lpFileName);
+			//logmsg("the  %ls disable load\n",lpFileName);
 		#endif
 			return NULL;  
 		}

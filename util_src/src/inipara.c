@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 extern HMODULE dll_module;
+static wchar_t profile_path[MAX_PATH+1] = {0};              /* only init once */
 
 BOOL WINAPI ini_ready(LPWSTR inifull_name,DWORD str_len)
 {
@@ -32,34 +33,37 @@ BOOL read_appkey(LPCWSTR lpappname,              /* 区段名 */
 {
 	DWORD  res = 0;
 	LPWSTR lpstring;
-	wchar_t inifull_name[MAX_PATH+1];
-	if (ini_ready(inifull_name,MAX_PATH))
+	if ( profile_path[1] != L':' )
 	{
-		lpstring = (LPWSTR)SYS_MALLOC(bufsize);
-		res = GetPrivateProfileStringW(lpappname, lpkey ,L"", lpstring, bufsize, inifull_name);
-		if (res == 0 && GetLastError() != 0x0)
+		if (!ini_ready(profile_path,MAX_PATH))
 		{
-			SYS_FREE(lpstring);
-			printf("this ini config file not found\n");
-			return FALSE;
+			return res;
 		}
-		wcsncpy(prefstring,lpstring,bufsize/sizeof(wchar_t)-1);
-		prefstring[res] = '\0';
-		SYS_FREE(lpstring);
 	}
+	lpstring = (LPWSTR)SYS_MALLOC(bufsize);
+	res = GetPrivateProfileStringW(lpappname, lpkey ,L"", lpstring, bufsize, profile_path);
+	if (res == 0 && GetLastError() != 0x0)
+	{
+		SYS_FREE(lpstring);
+		return FALSE;
+	}
+	wcsncpy(prefstring,lpstring,bufsize/sizeof(wchar_t)-1);
+	prefstring[res] = '\0';
+	SYS_FREE(lpstring);
 	return ( res>0 );
 }	
 
 int read_appint(LPCWSTR cat,LPCWSTR name)
 {
-	int res = 0;
-	wchar_t inifull_name[MAX_PATH+1];
-	if (ini_ready(inifull_name,MAX_PATH))
+	int res = -1;
+	if ( profile_path[1] != L':' )
 	{
-		res = GetPrivateProfileIntW(cat, name, 0, inifull_name);
-		if(res == 0 && GetLastError() == 0x2)
-			printf("this ini config file not found\n");
+		if (!ini_ready(profile_path,MAX_PATH))
+		{
+			return res;
+		}
 	}
+	res = GetPrivateProfileIntW(cat, name, -1, profile_path);
 	return res;
 }
 
@@ -73,35 +77,38 @@ BOOL for_eachSection(LPCWSTR cat,						/* ini 区段 */
 	LPWSTR strKey;
 	int  i = 0;
 	const wchar_t delim[] = L"=";
-	wchar_t inifull_name[MAX_PATH+1];
-	if (ini_ready(inifull_name,MAX_PATH))
+	if ( profile_path[1] != L':' )
 	{
-		DWORD num = VALUE_LEN*sizeof(wchar_t)*m;
-		lpstring = (LPWSTR)SYS_MALLOC(num);
-		res = GetPrivateProfileSectionW(cat, lpstring, num, inifull_name);
-		if (res == 0 && GetLastError() != 0x0)
+		if (!ini_ready(profile_path,MAX_PATH))
 		{
-			SYS_FREE(lpstring);
-			printf("this ini config file not found\n");
-			return FALSE;
+			return res;
 		}
-		ZeroMemory(*lpdata,num);
-		strKey = lpstring;
-		while(*strKey != L'\0'&& i < m) 
-		{
-			LPWSTR strtmp;
-			wchar_t t_str[VALUE_LEN] = {0};
-			wcsncpy(t_str,strKey,VALUE_LEN-1);
-			strtmp = StrStrW(t_str, delim);
-			if (strtmp)
-			{
-				wcsncpy(lpdata[i],&strtmp[1],VALUE_LEN-1);
-			}
-			strKey += wcslen(strKey)+1;
-			++i;
-		}
-		SYS_FREE(lpstring);
 	}
+	DWORD num = VALUE_LEN*sizeof(wchar_t)*m;
+	lpstring = (LPWSTR)SYS_MALLOC(num);
+	res = GetPrivateProfileSectionW(cat, lpstring, num, profile_path);
+	if (res == 0 && GetLastError() != 0x0)
+	{
+		SYS_FREE(lpstring);
+		printf("this ini config file not found\n");
+		return FALSE;
+	}
+	ZeroMemory(*lpdata,num);
+	strKey = lpstring;
+	while(*strKey != L'\0'&& i < m) 
+	{
+		LPWSTR strtmp;
+		wchar_t t_str[VALUE_LEN] = {0};
+		wcsncpy(t_str,strKey,VALUE_LEN-1);
+		strtmp = StrStrW(t_str, delim);
+		if (strtmp)
+		{
+			wcsncpy(lpdata[i],&strtmp[1],VALUE_LEN-1);
+		}
+		strKey += wcslen(strKey)+1;
+		++i;
+	}
+	SYS_FREE(lpstring);
 	return TRUE;
 }
 
@@ -123,152 +130,6 @@ LPWSTR stristrW(LPCWSTR Str, LPCWSTR Pat)
         }
     }
     return NULL;
-}
-
-BOOL WINAPI ChangeEnviromentVariablesW(LPCWSTR szname,LPWSTR sz_newval,int dw_flag)
-{
-	DWORD	dw_err;
-	LPWSTR	sz_val;
-	DWORD   dw_result;
-	DWORD   new_valsize;
-	BOOL	result = FALSE;
-	/* 附加到指定环境变量末尾 */
-	if(dw_flag == VARIABLES_APPEND)
-	{
-		new_valsize = (DWORD)wcslen(sz_newval)+1; 
-		sz_val = (LPWSTR)SYS_MALLOC(BUFSIZE+new_valsize);
-		/* 获取指定环境变量的值 */
-		dw_result = GetEnvironmentVariableW(szname,sz_val,BUFSIZE);
-		if(dw_result == 0) /* 出错处理 */
-		{
-			dw_err = GetLastError();
-			if( ERROR_ENVVAR_NOT_FOUND == dw_err )
-			{
-				printf("Environment variable %s does not exist.\n", szname);
-				if( SetEnvironmentVariableW(szname,sz_newval) )
-				{
-					result = TRUE;
-				}
-			}
-			SYS_FREE(sz_val);
-			return result;
-		}
-		/* 缓冲区太小 */
-		if( BUFSIZE <= dw_result )
-		{
-			SYS_FREE(sz_val);
-			dw_result += new_valsize;
-			sz_val = (LPWSTR)SYS_MALLOC(dw_result);
-			if(NULL == sz_val)
-			{
-				printf("Memory error\n");
-				return result;
-			}
-			dw_result = GetEnvironmentVariableW(szname, sz_val, dw_result);
-			if(!dw_result)
-			{
-				SYS_FREE(sz_val);
-				return result;
-			}
-		}
-		wcscat(sz_val,L";");   /* 分隔符 */
-		wcscat(sz_val,sz_newval);
-		if( SetEnvironmentVariableW(szname,sz_val) )
-		{
-			result = TRUE;
-		}
-		SYS_FREE(sz_val);
-	}
-	/* 设置新的环境变量 */
-	else if(dw_flag == VARIABLES_RESET)
-	{
-	    if( SetEnvironmentVariableW(szname,sz_newval) )
-	    {
-		    result = TRUE;
-	    }
-	}
-	/* 指定环境变量清零 */
-	else if(dw_flag == VARIABLES_NULL)
-	{
-	    if( SetEnvironmentVariableW(szname,NULL) )
-		{
-			result = TRUE;
-		}
-	}
-	return result;
-}
-
-BOOL WINAPI ChangeEnviromentVariablesA(LPCSTR szname,LPSTR sz_newval,int dw_flag)
-{
-	DWORD	dw_err;
-	LPSTR	sz_val;
-	size_t  dw_result;
-	size_t  new_valsize;
-	BOOL	result = FALSE;
-	/* 附加到指定环境变量末尾 */
-	if(dw_flag == VARIABLES_APPEND)
-	{
-		new_valsize = strlen(sz_newval)+1; 
-		sz_val = (LPSTR)SYS_MALLOC(BUFSIZE+new_valsize);
-		/* 获取指定环境变量的值 */
-		dw_result = GetEnvironmentVariableA(szname,sz_val,BUFSIZE);
-		if(dw_result == 0) /* 出错处理 */
-		{
-			dw_err = GetLastError();
-			if( ERROR_ENVVAR_NOT_FOUND == dw_err )
-			{
-				/* Environment variable does not exist */
-				if( SetEnvironmentVariableA(szname,sz_newval) )
-				{
-					result = TRUE;
-				}
-			}
-			SYS_FREE(sz_val);
-			return result;
-		}
-		/* 缓冲区太小 */
-		if( BUFSIZE <= dw_result )
-		{
-			SYS_FREE(sz_val);
-			dw_result += new_valsize;
-			sz_val = (LPSTR)SYS_MALLOC(dw_result);
-			if(NULL == sz_val)
-			{
-				printf("Memory error\n");
-				return result;
-			}
-			dw_result = GetEnvironmentVariableA(szname, sz_val, (DWORD)dw_result);
-			if(!dw_result)
-			{
-				SYS_FREE(sz_val);
-				return result;
-			}
-		}
-		strcat(sz_val,";");   /* 分隔符 */
-		strcat(sz_val,sz_newval);
-		if( SetEnvironmentVariableA(szname,sz_val) )
-		{
-			result = TRUE;
-		}
-		SYS_FREE(sz_val);
-	}
-	/* 设置新的环境变量 */
-	else if(dw_flag == VARIABLES_RESET)
-	{
-	    if( SetEnvironmentVariableA(szname,sz_newval) )
-	    {
-		    result = TRUE;
-	    }
-	}
-	/* 指定环境变量清零 */
-	else if(dw_flag == VARIABLES_NULL)
-	{
-	    if( SetEnvironmentVariableA(szname,NULL) )
-		{
-			result = TRUE;
-		}
-	}
-	return result;
 }
 
 void WINAPI charTochar(LPWSTR path)
@@ -306,26 +167,6 @@ BOOL PathToCombineW(IN LPWSTR lpfile, IN size_t str_len)
 		}
 	}
 	return TRUE;
-}
-
-unsigned WINAPI SetPluginPath(void * pParam)
-{
-	wchar_t lpfile[VALUE_LEN+1];
-	if ( read_appkey(L"Env",L"NpluginPath",lpfile,sizeof(lpfile)) ||
-		 read_appkey(L"Env",L"MOZ_PLUGIN_PATH",lpfile,sizeof(lpfile)))
-	{
-		PathToCombineW(lpfile, VALUE_LEN);
-		ChangeEnviromentVariablesW(L"MOZ_PLUGIN_PATH", lpfile, VARIABLES_APPEND);
-	}
-	if ( read_appint(L"Env",L"MOZ_NO_REMOTE") ) 
-	{
-		ChangeEnviromentVariablesW(L"MOZ_NO_REMOTE", L"1", VARIABLES_RESET);
-	}
-	if ( read_appint(L"Env",L"MOZ_NEW_INSTANCE") )
-	{
-		ChangeEnviromentVariablesW(L"MOZ_NEW_INSTANCE", L"1", VARIABLES_RESET);
-	}
-	return (1);
 }
 
 static inline int GetNumberOfWorkers(void) 
@@ -379,8 +220,8 @@ unsigned WINAPI GdiSetLimit_tt(void * pParam)
 	HANDLE	hc = (HANDLE)pParam;
 	if (hc)
 	{
-		DWORD limit = read_appint(L"General",L"GdiBatchLimit");
-		if (limit)
+		int limit = read_appint(L"General",L"GdiBatchLimit");
+		if (limit > 0)
 		{
 			SuspendThread(hc);
 			GdiSetBatchLimit(limit);

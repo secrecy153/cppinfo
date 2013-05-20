@@ -143,7 +143,6 @@ void add_fonts_toapp(List *Li_header)
 		DWORD	 numFonts = 0;
 		if ( AddFontResourceExW(ttf_element->Element,FR_PRIVATE,&numFonts) )
 		{
-			SendMessageW(HWND_BROADCAST, WM_FONTCHANGE, (WPARAM)0, (LPARAM)0);
 		#ifdef _DEBUG
 			logmsg("AddFontResourceW ok\n");
 		#endif
@@ -325,6 +324,172 @@ BOOL WINAPI HookSHGetSpecialFolderPathW(HWND hwndOwner,LPWSTR lpszPath,
     return TrueSHGetSpecialFolderPathW(hwndOwner,lpszPath,csidl,fCreate);
 }
 
+unsigned WINAPI SetPluginPath(void * pParam)
+{
+	typedef		 errno_t (__cdecl *_pwrite_env)(LPCWSTR name,LPCWSTR value);
+	typedef		 errno_t (__cdecl *_pfn_itow_s)(int value,wchar_t *buffer,size_t size,int radix);
+	wchar_t		 lpfile[VALUE_LEN+1];
+	wchar_t		 wstr[16];
+	int          value;
+	HMODULE		 hCrt;
+	_pwrite_env  Truewrite_env = NULL;
+	_pfn_itow_s  True_itow_s = NULL;
+#if (_MSC_VER == 1600) || (CRT_LINK == 1600)
+	hCrt = GetModuleHandleW(L"msvcr100.dll");
+#elif (_MSC_VER == 1700) || (CRT_LINK == 1700)
+	hCrt = GetModuleHandleW(L"msvcr110.dll");
+#else
+	#error MSCRT version is too low,not exist _wputenv_s function.
+	hCrt = NULL;
+#endif
+	if (!hCrt)
+	{
+		return (0);
+	}
+	Truewrite_env = (_pwrite_env)GetProcAddress(hCrt,"_wputenv_s");
+	True_itow_s = (_pfn_itow_s)GetProcAddress(hCrt,"_itow_s");
+	if ( !Truewrite_env || !True_itow_s )
+	{
+		return (0);
+	}
+	if ( read_appkey(L"Env",L"NpluginPath",lpfile,sizeof(lpfile)) ||
+		 read_appkey(L"Env",L"MOZ_PLUGIN_PATH",lpfile,sizeof(lpfile))
+	    )
+	{
+		PathToCombineW(lpfile, VALUE_LEN);
+		Truewrite_env(L"MOZ_PLUGIN_PATH", lpfile);
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_NO_REMOTE"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_NO_REMOTE", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_SAFE_MODE_RESTART"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_SAFE_MODE_RESTART", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_PURGE_CACHES"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_PURGE_CACHES", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_DISABLE_OOP_TABS"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_DISABLE_OOP_TABS", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_DISABLE_OOP_PLUGINS"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_DISABLE_OOP_PLUGINS", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_GFX_SPOOF_VENDOR_ID"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,10,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_GFX_SPOOF_VENDOR_ID", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_GFX_SPOOF_DEVICE_ID"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,10,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_GFX_SPOOF_DEVICE_ID", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_GFX_SPOOF_WINDOWS_VERSION"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,10,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_GFX_SPOOF_WINDOWS_VERSION", wstr);
+		}
+	}
+	if ( read_appkey(L"Env",L"MOZ_GFX_SPOOF_DRIVER_VERSION",lpfile,sizeof(lpfile)) )
+	{
+		Truewrite_env(L"MOZ_GFX_SPOOF_DRIVER_VERSION", lpfile);
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_WEBGL_PREFER_EGL"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_WEBGL_PREFER_EGL", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"MOZ_WEBGL_FORCE_OPENGL"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"MOZ_WEBGL_FORCE_OPENGL", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"JSIMD_FORCEMMX"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"JSIMD_FORCEMMX", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"JSIMD_FORCE3DNOW"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"JSIMD_FORCE3DNOW", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"JSIMD_FORCESSE"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"JSIMD_FORCESSE", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"JSIMD_FORCESSE2"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"JSIMD_FORCESSE2", wstr);
+		}
+	}
+	if ( (value = read_appint(L"Env",L"XRE_START_OFFLINE"))>=0 ) 
+	{
+		if ( True_itow_s(value,wstr,2,10) == 0 )
+		{
+			Truewrite_env(L"XRE_START_OFFLINE", wstr);
+		}
+	}
+	if ( read_appkey(L"Env",L"XRE_PROFILE_NAME",lpfile,sizeof(lpfile)) )
+	{
+		Truewrite_env(L"XRE_PROFILE_NAME", lpfile);
+	}
+	if ( read_appkey(L"Env",L"XRE_PROFILE_PATH",lpfile,sizeof(lpfile)) )
+	{
+		PathToCombineW(lpfile, VALUE_LEN);
+		Truewrite_env(L"XRE_PROFILE_PATH", lpfile);
+	}
+	if ( read_appkey(L"Env",L"XRE_PROFILE_LOCAL_PATH",lpfile,sizeof(lpfile)) )
+	{
+		PathToCombineW(lpfile, VALUE_LEN);
+		Truewrite_env(L"XRE_PROFILE_LOCAL_PATH", lpfile);
+	}
+	if ( read_appkey(L"Env",L"XUL_APP_FILE",lpfile,sizeof(lpfile)) )
+	{
+		PathToCombineW(lpfile, VALUE_LEN);
+		Truewrite_env(L"XUL_APP_FILE", lpfile);
+	}
+	return (1);
+}
+
 unsigned WINAPI init_portable(void * pParam)
 {
 	HMODULE hShell32 = GetModuleHandleW(L"shell32.dll");
@@ -390,6 +555,7 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 		{
 			HANDLE		 hc = NULL;
 			dll_module = (HMODULE)hModule;
+			DisableThreadLibraryCalls(hModule);
 		#ifdef _DEBUG
 			TrueSHGetSpecialFolderPathA = (_NtSHGetSpecialFolderPathA)GetProcAddress
 										  (GetModuleHandleW(L"shell32.dll"),"SHGetSpecialFolderPathA");
@@ -403,11 +569,11 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 			}
 		#endif
 			SetPluginPath(NULL);
-			if ( read_appint(L"General",L"SafeEx") )
+			if ( read_appint(L"General",L"SafeEx") > 0 )
 			{
 				init_safed(NULL);
 			}
-			if ( read_appint(L"General", L"Portable") )
+			if ( read_appint(L"General", L"Portable") > 0 )
 			{
 				HANDLE h_thread = (HANDLE)_beginthreadex(NULL,0,&init_global_env,NULL,0,NULL);
 				if (h_thread)
@@ -417,7 +583,7 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 				}
 				init_portable(NULL);
 			}
-			if ( read_appint(L"General",L"GdiBatchLimit") )
+			if ( read_appint(L"General",L"GdiBatchLimit") > 0 )
 			{
 				hc = OpenThread(THREAD_ALL_ACCESS, 0, GetCurrentThreadId());
 				if (hc)
@@ -426,7 +592,7 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 				}
 			}
 			CloseHandle((HANDLE)_beginthreadex(NULL,0,&install_fonts,NULL,0,NULL));
-			if ( read_appint(L"General",L"ProcessAffinityMask") )
+			if ( read_appint(L"General",L"ProcessAffinityMask") > 0 )
 			{
 				hc = OpenThread(THREAD_ALL_ACCESS, 0, GetCurrentThreadId());
 				if (hc)
@@ -434,7 +600,7 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD dwReason, LPVOID lpvReserved)
 					CloseHandle((HANDLE)_beginthreadex(NULL,0,&SetCpuAffinity_tt,hc,0,NULL));
 				}
 			}
-			if ( read_appint(L"General",L"CreateCrashDump") )
+			if ( read_appint(L"General",L"CreateCrashDump") > 0 )
 			{
 				CloseHandle((HANDLE)_beginthreadex(NULL,0,&init_exeception,NULL,0,NULL));
 			}
