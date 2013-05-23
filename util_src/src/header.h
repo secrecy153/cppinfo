@@ -450,6 +450,9 @@ typedef NTSTATUS (NTAPI *_NtSuspendThread)(IN HANDLE ThreadHandle,
 										OUT PULONG PreviousSuspendCount);
 typedef NTSTATUS (NTAPI *_NtResumeThread)(IN HANDLE ThreadHandle,
 										OUT PULONG SuspendCount);
+typedef HMODULE (WINAPI *_NtLoadLibraryExW)(LPCWSTR lpFileName,
+									    HANDLE hFile, 
+									    DWORD dwFlags);
 
 static _NtCLOSE							TrueNtclose							= NULL;
 static _NtQueryInformationFile			TrueNtQueryInformationFile			= NULL;
@@ -473,5 +476,6 @@ static _CreateProcessInternalW 			TrueCreateProcessInternalW			= NULL;
 static _NtReadVirtualMemory				TrueNtReadVirtualMemory				= NULL;
 static _NtSuspendThread					TrueNtSuspendThread					= NULL;
 static _NtResumeThread					TrueNtResumeThread					= NULL;
+static _NtLoadLibraryExW				TrueLoadLibraryExW					= NULL;
 
 #endif  // _HEAD_ER_H_

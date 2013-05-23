@@ -10,18 +10,6 @@
 
 #include <windows.h>
 
-typedef HMODULE (WINAPI *_NtLoadLibraryExW)(LPCWSTR lpFileName,
-									    HANDLE hFile, 
-									    DWORD dwFlags);
-
-typedef BOOL (WINAPI *_NtSHGetSpecialFolderPathW)(HWND hwndOwner,
-									    LPWSTR lpszPath,
-									    int csidl,
-									    BOOL fCreate);
-
-SAFE_EXTERN _NtLoadLibraryExW		   TrueLoadLibraryExW;
-SAFE_EXTERN _NtSHGetSpecialFolderPathW TrueSHGetSpecialFolderPathW;
-
 #ifdef _MSC_VER
 extern "C" void* _ReturnAddress(void);
 #pragma intrinsic(_ReturnAddress)

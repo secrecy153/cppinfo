@@ -178,16 +178,11 @@ static inline int GetNumberOfWorkers(void)
 
 unsigned WINAPI SetCpuAffinity_tt(void * pParam)
 {
-	CONTEXT context;
 	int     cpu_z = 0;
 	HANDLE	hc = (HANDLE)pParam;
-	memset(&context,0,sizeof(context));
-	context.ContextFlags = CONTEXT_CONTROL;
 	if (hc)
 	{
 		SuspendThread(hc);
-		GetThreadContext(hc,&context);
-		SetThreadContext(hc,&context);
 		cpu_z = GetNumberOfWorkers();
 		if ( !cpu_z )
 		{

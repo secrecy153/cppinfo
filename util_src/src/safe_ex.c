@@ -10,8 +10,7 @@
 #endif
 #include <process.h>
 #include <tlhelp32.h>
-#include <tchar.h>
-#include <stdio.h>
+#include <shlobj.h>
 
 extern	HMODULE  dll_module;
 
@@ -409,15 +408,10 @@ BOOL WINAPI iSAuthorized(LPCWSTR lpFileName)
 	if (lpFileName[1] == L':')
 	{
 		wchar_t sysdir[MAX_PATH];
-		if (!TrueSHGetSpecialFolderPathW)
-		{
-			TrueSHGetSpecialFolderPathW = (_NtSHGetSpecialFolderPathW)GetProcAddress
-										  (GetModuleHandleW(L"shell32.dll"),"SHGetSpecialFolderPathW");
-		}
 	#ifdef _M_IX86
-		if ( TrueSHGetSpecialFolderPathW(NULL, sysdir, 0x0029, FALSE) )
+		if ( SHGetSpecialFolderPathW(NULL, sysdir, 0x0029, FALSE) )
 	#elif defined _M_X64
-		if ( TrueSHGetSpecialFolderPathW(NULL, sysdir, 0x0025, FALSE) )
+		if ( SHGetSpecialFolderPathW(NULL, sysdir, 0x0025, FALSE) )
 	#endif
 		{
 			if ( _wcsnicmp(lpFileName,sysdir,wcslen(sysdir)) == 0 )
@@ -427,7 +421,7 @@ BOOL WINAPI iSAuthorized(LPCWSTR lpFileName)
 			else if (GetOsVersion()>502)
 			{
 			#ifdef _M_IX86
-				if ( TrueSHGetSpecialFolderPathW(NULL, sysdir, 0x0025, FALSE) )
+				if ( SHGetSpecialFolderPathW(NULL, sysdir, 0x0025, FALSE) )
 				{
 					if ( _wcsnicmp(lpFileName,sysdir,wcslen(sysdir)) == 0 )
 					{

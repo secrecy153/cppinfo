@@ -17,12 +17,6 @@
 #define   VALUE_LEN 128                     /* 保存值的最大长度 */
 #define   BUFSIZE   MAX_PATH
 
-enum {
-	VARIABLES_NULL,
-	VARIABLES_APPEND,
-	VARIABLES_RESET
-};
-
 #ifdef __cplusplus
 extern "C" {
 #endif 
