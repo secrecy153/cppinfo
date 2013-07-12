@@ -1,0 +1,40 @@
+# HG changeset patch
+# Parent ff3d489b98cbbeb4a37643e84d7a5687ab12a824
+# User hua.andy <hua.andy@gmail.com>
+"change appname"
+
+
+diff --git a/browser/app/firefox.exe.manifest b/browser/app/firefox.exe.manifest
+--- a/browser/app/firefox.exe.manifest
++++ b/browser/app/firefox.exe.manifest
+@@ -1,17 +1,17 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+ <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+ <assemblyIdentity
+         version="1.0.0.0"
+         processorArchitecture="*"
+-        name="Firefox"
++        name="Iceweasel"
+         type="win32"
+ />
+-<description>Firefox</description>
++<description>Iceweasel</description>
+ <dependency>
+         <dependentAssembly>
+                 <assemblyIdentity
+                         type="win32"
+                         name="Microsoft.Windows.Common-Controls"
+                         version="6.0.0.0"
+                         processorArchitecture="*"
+                         publicKeyToken="6595b64144ccf1df"
+diff --git a/browser/branding/official/configure.sh b/browser/branding/official/configure.sh
+--- a/browser/branding/official/configure.sh
++++ b/browser/branding/official/configure.sh
+@@ -1,6 +1,6 @@
+ # This Source Code Form is subject to the terms of the Mozilla Public
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+-MOZ_APP_DISPLAYNAME=Firefox
++MOZ_APP_DISPLAYNAME=Iceweasel
+ MOZ_UA_BUILDID=20100101

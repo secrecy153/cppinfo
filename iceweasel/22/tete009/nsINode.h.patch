@@ -1,0 +1,21 @@
+diff --git a/content/base/public/nsINode.h b/content/base/public/nsINode.h
+--- a/content/base/public/nsINode.h
++++ b/content/base/public/nsINode.h
+@@ -2073,12 +2073,16 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsINode, N
+   NS_IMETHOD Contains(nsIDOMNode* aOther, bool* aResult) __VA_ARGS__ \
+   { \
+     return nsINode::Contains(aOther, aResult); \
+   }
+ 
+ #define NS_FORWARD_NSIDOMNODE_TO_NSINODE \
+   NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER(MOZ_FINAL)
+ 
++#define SLASH()     /
++#define ASTERISK()  *
++#define NO_ARG()    SLASH()ASTERISK()ASTERISK()SLASH()
++
+ #define NS_FORWARD_NSIDOMNODE_TO_NSINODE_OVERRIDABLE \
+-  NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER()
++  NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER(NO_ARG())
+ 
+ #endif /* nsINode_h___ */

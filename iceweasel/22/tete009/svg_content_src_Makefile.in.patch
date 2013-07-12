@@ -1,0 +1,17 @@
+diff --git a/content/svg/content/src/Makefile.in b/content/svg/content/src/Makefile.in
+--- a/content/svg/content/src/Makefile.in
++++ b/content/svg/content/src/Makefile.in
+@@ -259,8 +259,13 @@ INCLUDES += 	\
+ 		-I$(srcdir)/../../../../layout/style \
+ 		-I$(srcdir)/../../../events/src \
+ 		-I$(srcdir)/../../../html/content/src \
+ 		-I$(topsrcdir)/content/xbl/src \
+ 		-I$(srcdir)/../../../smil \
+ 		$(NULL)
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif

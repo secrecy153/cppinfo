@@ -1,0 +1,39 @@
+diff --git a/gfx/harfbuzz/src/hb-open-type-private.hh b/gfx/harfbuzz/src/hb-open-type-private.hh
+--- a/gfx/harfbuzz/src/hb-open-type-private.hh
++++ b/gfx/harfbuzz/src/hb-open-type-private.hh
+@@ -942,29 +942,31 @@ struct HeadlessArrayOf
+ };
+ 
+ 
+ /* An array with sorted elements.  Supports binary searching. */
+ template <typename Type>
+ struct SortedArrayOf : ArrayOf<Type> {
+ 
+   template <typename SearchType>
++  struct Cmp {
++    static int cmp (const SearchType *a, const Type *b) { return b->cmp (*a); }
++  };
++
++  template <typename SearchType>
+   inline int search (const SearchType &x) const {
+     unsigned int count = this->len;
+     /* Linear search is *much* faster for small counts. */
+     if (likely (count < 32)) {
+       for (unsigned int i = 0; i < count; i++)
+ 	if (this->array[i].cmp (x) == 0)
+ 	  return i;
+       return -1;
+     } else {
+-      struct Cmp {
+-	static int cmp (const SearchType *a, const Type *b) { return b->cmp (*a); }
+-      };
+-      const Type *p = (const Type *) bsearch (&x, this->array, this->len, sizeof (this->array[0]), (hb_compare_func_t) Cmp::cmp);
++      const Type *p = (const Type *) bsearch (&x, this->array, this->len, sizeof (this->array[0]), (hb_compare_func_t) Cmp<SearchType>::cmp);
+       return p ? p - this->array : -1;
+     }
+   }
+ };
+ 
+ 
+ } /* namespace OT */
+ 

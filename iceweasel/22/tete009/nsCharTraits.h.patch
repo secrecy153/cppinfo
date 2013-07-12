@@ -1,0 +1,24 @@
+diff --git a/xpcom/string/public/nsCharTraits.h b/xpcom/string/public/nsCharTraits.h
+--- a/xpcom/string/public/nsCharTraits.h
++++ b/xpcom/string/public/nsCharTraits.h
+@@ -160,16 +160,20 @@ struct nsCharTraits<PRUnichar>
+       {
+         return static_cast<char_type*>(memmove(s1, s2, n * sizeof(char_type)));
+       }
+ 
+     static
+     char_type*
+     copy( char_type* s1, const char_type* s2, size_t n )
+       {
++        if (1 == n) {
++          *s1 = *s2;
++          return s1;
++        }
+         return static_cast<char_type*>(memcpy(s1, s2, n * sizeof(char_type)));
+       }
+ 
+     static
+     char_type*
+     copyASCII( char_type* s1, const char* s2, size_t n )
+       {
+         for (char_type* s = s1; n--; ++s, ++s2) {

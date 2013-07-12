@@ -1,0 +1,30 @@
+diff --git a/js/src/vm/ObjectImpl.h b/js/src/vm/ObjectImpl.h
+--- a/js/src/vm/ObjectImpl.h
++++ b/js/src/vm/ObjectImpl.h
+@@ -1487,24 +1487,24 @@ GetElement(JSContext *cx, Handle<ObjectI
+ extern bool
+ GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+             Handle<PropertyId> pid, unsigned resolveFlags, MutableHandle<Value> vp);
+ inline bool
+ GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+             Handle<PropertyName*> name, unsigned resolveFlags, MutableHandle<Value> vp)
+ {
+     Rooted<PropertyId> pid(cx, PropertyId(name));
+-    return GetProperty(cx, obj, receiver, pid, resolveFlags, vp);
++    return GetProperty(cx, obj, receiver, (Handle<PropertyId>)pid, resolveFlags, vp);
+ }
+ inline bool
+ GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+             Handle<SpecialId> sid, unsigned resolveFlags, MutableHandle<Value> vp)
+ {
+     Rooted<PropertyId> pid(cx, PropertyId(sid));
+-    return GetProperty(cx, obj, receiver, pid, resolveFlags, vp);
++    return GetProperty(cx, obj, receiver, (Handle<PropertyId>)pid, resolveFlags, vp);
+ }
+ 
+ extern bool
+ DefineElement(JSContext *cx, Handle<ObjectImpl*> obj, uint32_t index, const PropDesc &desc,
+               bool shouldThrow, unsigned resolveFlags, bool *succeeded);
+ 
+ /* Proposed default [[SetP]](Receiver, P, V) method. */
+ extern bool

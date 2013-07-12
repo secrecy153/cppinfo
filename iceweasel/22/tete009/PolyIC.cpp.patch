@@ -1,0 +1,22 @@
+diff --git a/js/src/methodjit/PolyIC.cpp b/js/src/methodjit/PolyIC.cpp
+--- a/js/src/methodjit/PolyIC.cpp
++++ b/js/src/methodjit/PolyIC.cpp
+@@ -518,17 +518,17 @@ class SetPropCompiler : public PICStubCo
+             unsigned flags = 0;
+             PropertyOp getter = clasp->getProperty;
+ 
+             /*
+              * Define the property but do not set it yet. For setmethod,
+              * populate the slot to satisfy the method invariant (in case we
+              * hit an early return below).
+              */
+-            shape = JSObject::putProperty(cx, obj, name, getter, clasp->setProperty,
++            shape = JSObject::putProperty(cx, obj, (PropertyName *)name, getter, clasp->setProperty,
+                                           SHAPE_INVALID_SLOT, JSPROP_ENUMERATE, flags, 0);
+             if (!shape)
+                 return error();
+ 
+             if (monitor.recompiled())
+                 return Lookup_Uncacheable;
+ 
+             /*

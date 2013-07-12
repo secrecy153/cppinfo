@@ -1,0 +1,13 @@
+# HG changeset patch
+# Parent 84ea6bd766cf935e60af02ee25a315f1506b51e4
+# User hua.andy <hua.andy@gmail.com>
+"remove ipc defs.mk"
+
+
+diff --git a/ipc/defs.mk b/ipc/defs.mk
+--- a/ipc/defs.mk
++++ b/ipc/defs.mk
+@@ -1,3 +0,0 @@
+-ifeq ($(OS_TARGET),WINNT)
+-NO_PROFILE_GUIDED_OPTIMIZE := 1 # Don't PGO
+-endif

@@ -1,0 +1,24 @@
+diff --git a/js/public/Vector.h b/js/public/Vector.h
+--- a/js/public/Vector.h
++++ b/js/public/Vector.h
+@@ -145,16 +145,20 @@ struct VectorImpl<T, N, AP, true>
+          * requiring T == U.
+          *
+          * memcpy(dst, srcbeg, sizeof(T) * (srcend - srcbeg));
+          */
+         for (const U *p = srcbeg; p != srcend; ++p, ++dst)
+             *dst = *p;
+     }
+ 
++    static inline void copyConstruct(wchar_t *dst, const wchar_t *srcbeg, const wchar_t *srcend) {
++        PodCopy(dst, srcbeg, srcend - srcbeg);
++    }
++
+     template <class U>
+     static inline void moveConstruct(T *dst, const U *srcbeg, const U *srcend) {
+         copyConstruct(dst, srcbeg, srcend);
+     }
+ 
+     static inline void copyConstructN(T *dst, size_t n, const T &t) {
+         for (T *p = dst, *end = dst + n; p != end; ++p)
+             *p = t;

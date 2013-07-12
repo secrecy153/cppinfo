@@ -1,0 +1,20 @@
+diff --git a/gfx/cairo/libpixman/src/pixman-private.h b/gfx/cairo/libpixman/src/pixman-private.h
+--- a/gfx/cairo/libpixman/src/pixman-private.h
++++ b/gfx/cairo/libpixman/src/pixman-private.h
+@@ -1179,9 +1179,16 @@ void pixman_timer_register (pixman_timer
+ 
+ #define TIMER_BEGIN(tname)
+ #define TIMER_END(tname)
+ 
+ #endif /* PIXMAN_TIMERS */
+ 
+ #endif /* __ASSEMBLER__ */
+ 
++#ifdef TT_MEMUTIL
++extern pixman_bool_t nt_initialized;
++extern uint32_t dwNonTemporalDataSizeMin;
++extern uint32_t dwNonTemporalMemcpySizeMin;
++void InitializeNonTemporalData();
++#endif /* TT_MEMUTIL */
++
+ #endif /* PIXMAN_PRIVATE_H */

@@ -1,0 +1,42 @@
+diff --git a/js/src/builtin/Eval.cpp b/js/src/builtin/Eval.cpp
+--- a/js/src/builtin/Eval.cpp
++++ b/js/src/builtin/Eval.cpp
+@@ -156,33 +156,33 @@ TryEvalJSON(JSContext *cx, JSScript *cal
+     // isn't JSON, JSON parsing will probably fail quickly, so little time
+     // will be lost.
+     //
+     // Don't use the JSON parser if the caller is strict mode code, because in
+     // strict mode object literals must not have repeated properties, and the
+     // JSON parser cheerfully (and correctly) accepts them.  If you're parsing
+     // JSON with eval and using strict mode, you deserve to be slow.
+     if (length > 2 &&
+-        ((chars[0] == '[' && chars[length - 1] == ']') ||
+-        (chars[0] == '(' && chars[length - 1] == ')')) &&
++        ((chars.operator[](0) == '[' && chars.operator[](length - 1) == ']') ||
++        (chars.operator[](0) == '(' && chars.operator[](length - 1) == ')')) &&
+          (!callerScript || !callerScript->strict))
+     {
+         // Remarkably, JavaScript syntax is not a superset of JSON syntax:
+         // strings in JavaScript cannot contain the Unicode line and paragraph
+         // terminator characters U+2028 and U+2029, but strings in JSON can.
+         // Rather than force the JSON parser to handle this quirk when used by
+         // eval, we simply don't use the JSON parser when either character
+         // appears in the provided string.  See bug 657367.
+-        for (const jschar *cp = &chars[1], *end = &chars[length - 2]; ; cp++) {
++        for (const jschar *cp = &(chars.operator[](1)), *end = &(chars.operator[](length - 2)); ; cp++) {
+             if (*cp == 0x2028 || *cp == 0x2029)
+                 break;
+ 
+             if (cp == end) {
+-                bool isArray = (chars[0] == '[');
+-                JSONParser parser(cx, isArray ? chars : chars + 1U, isArray ? length : length - 2,
++                bool isArray = (chars.operator[](0) == '[');
++                JSONParser parser(cx, isArray ? chars : chars.operator+(1U), isArray ? length : length - 2,
+                                   JSONParser::StrictJSON, JSONParser::NoError);
+                 RootedValue tmp(cx);
+                 if (!parser.parse(&tmp))
+                     return EvalJSON_Failure;
+                 if (tmp.isUndefined())
+                     return EvalJSON_NotJSON;
+                 rval.set(tmp);
+                 return EvalJSON_Success;

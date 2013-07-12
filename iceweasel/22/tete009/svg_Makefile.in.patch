@@ -1,0 +1,17 @@
+diff --git a/layout/svg/Makefile.in b/layout/svg/Makefile.in
+--- a/layout/svg/Makefile.in
++++ b/layout/svg/Makefile.in
+@@ -84,8 +84,13 @@ LOCAL_INCLUDES	= \
+ libs::
+ 	$(INSTALL) $(srcdir)/svg.css $(DIST)/bin/res
+ 
+ install::
+ 	$(SYSINSTALL) $(IFLAGS1) $(srcdir)/svg.css $(DESTDIR)$(mozappdir)/res
+ 
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif

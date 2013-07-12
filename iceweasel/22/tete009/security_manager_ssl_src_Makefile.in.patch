@@ -1,0 +1,18 @@
+diff --git a/security/manager/ssl/src/Makefile.in b/security/manager/ssl/src/Makefile.in
+--- a/security/manager/ssl/src/Makefile.in
++++ b/security/manager/ssl/src/Makefile.in
+@@ -101,8 +101,14 @@ EXPORTS += \
+ EXPORTS_NAMESPACES = mozilla
+ 
+ EXPORTS_mozilla += \
+   PublicSSL.h \
+   $(NULL)
+ 
+ include $(topsrcdir)/config/rules.mk
+ 
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif

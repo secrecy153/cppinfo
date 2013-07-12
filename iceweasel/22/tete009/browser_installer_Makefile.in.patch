@@ -1,0 +1,24 @@
+diff --git a/browser/installer/Makefile.in b/browser/installer/Makefile.in
+--- a/browser/installer/Makefile.in
++++ b/browser/installer/Makefile.in
+@@ -72,20 +72,16 @@ endif
+ include $(topsrcdir)/ipc/app/defs.mk
+ DEFINES += -DMOZ_CHILD_PROCESS_NAME=$(MOZ_CHILD_PROCESS_NAME)
+ 
+ # Set MSVC dlls version to package, if any.
+ ifdef WIN32_REDIST_DIR
+ DEFINES += -DMOZ_MSVC_REDIST=$(_MSC_VER)
+ endif
+ 
+-ifneq (,$(filter beta,$(MOZ_UPDATE_CHANNEL)))
+-DEFINES += -DSHIP_FEEDBACK=1
+-endif
+-
+ ifneq (,$(filter WINNT Darwin Android,$(OS_TARGET)))
+ DEFINES += -DMOZ_SHARED_MOZGLUE=1
+ endif
+ 
+ ifdef MOZ_JSDEBUGGER
+ DEFINES += -DMOZ_JSDEBUGGER
+ endif
+ 

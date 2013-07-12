@@ -1,0 +1,17 @@
+diff --git a/dom/ipc/Makefile.in b/dom/ipc/Makefile.in
+--- a/dom/ipc/Makefile.in
++++ b/dom/ipc/Makefile.in
+@@ -103,8 +103,13 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),$(findstring
+ DEFINES += -DMOZ_ENABLE_FREETYPE
+ endif
+ 
+ ifdef MOZ_PERMISSIONS
+ DEFINES += -DMOZ_PERMISSIONS
+ endif
+ 
+ CXXFLAGS += $(TK_CFLAGS)
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error of compiler when applying PGO
++COMPILE_CXXFLAGS += -GL-
++endif

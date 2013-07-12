@@ -1,0 +1,17 @@
+diff --git a/dom/plugins/ipc/Makefile.in b/dom/plugins/ipc/Makefile.in
+--- a/dom/plugins/ipc/Makefile.in
++++ b/dom/plugins/ipc/Makefile.in
+@@ -131,8 +131,13 @@ include $(topsrcdir)/ipc/chromium/chromi
+ 
+ include $(topsrcdir)/config/rules.mk
+ 
+ CXXFLAGS += $(TK_CFLAGS)
+ 
+ DEFINES += -DFORCE_PR_LOG
+ 
+ CXXFLAGS += $(MOZ_CAIRO_CFLAGS)
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error of compiler when applying PGO
++COMPILE_CXXFLAGS += -GL-
++endif

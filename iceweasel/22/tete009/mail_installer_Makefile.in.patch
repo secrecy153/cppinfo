@@ -1,0 +1,24 @@
+diff -r abce8eb5ad68 mail/installer/Makefile.in
+--- a/mail/installer/Makefile.in	Wed Feb 01 06:23:24 2012 +0900
++++ b/mail/installer/Makefile.in	Wed Feb 01 06:27:02 2012 +0900
+@@ -84,20 +84,16 @@ endif
+ 
+ ifdef MOZ_UPDATER
+ DEFINES += -DMOZ_UPDATER=1
+ endif
+ 
+ include $(MOZILLA_SRCDIR)/ipc/app/defs.mk
+ DEFINES += -DMOZ_CHILD_PROCESS_NAME=$(MOZ_CHILD_PROCESS_NAME)
+ 
+-ifneq (,$(filter nightly aurora beta,$(MOZ_UPDATE_CHANNEL)))
+-DEFINES += -DSHIP_FEEDBACK=1
+-endif
+-
+ ifdef MOZ_PKG_MANIFEST_P
+ MOZ_PKG_MANIFEST = package-manifest
+ 
+ $(MOZ_PKG_MANIFEST): $(MOZ_PKG_MANIFEST_P) $(GLOBAL_DEPS)
+ 	$(PYTHON) $(MOZILLA_SRCDIR)/config/Preprocessor.py $(DEFINES) $(ACDEFINES) $< > $@
+ endif
+ 
+ ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))

@@ -1,0 +1,99 @@
+diff --git a/content/base/src/nsContentUtils.cpp b/content/base/src/nsContentUtils.cpp
+--- a/content/base/src/nsContentUtils.cpp
++++ b/content/base/src/nsContentUtils.cpp
+@@ -3357,29 +3357,37 @@ nsContentUtils::ReportToConsoleNonLocali
+                                      aLineNumber, aColumnNumber,
+                                      aErrorFlags, aCategory,
+                                      innerWindowID);
+   NS_ENSURE_SUCCESS(rv, rv);
+ 
+   return sConsoleService->LogMessage(errorObject);
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
++
+ bool
+ nsContentUtils::IsChromeDoc(nsIDocument *aDocument)
+ {
+   if (!aDocument) {
+     return false;
+   }
+   
+   nsCOMPtr<nsIPrincipal> systemPrincipal;
+   sSecurityManager->GetSystemPrincipal(getter_AddRefs(systemPrincipal));
+ 
+   return aDocument->NodePrincipal() == systemPrincipal;
+ }
+ 
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
++
+ bool
+ nsContentUtils::IsChildOfSameType(nsIDocument* aDoc)
+ {
+   nsCOMPtr<nsISupports> container = aDoc->GetContainer();
+   nsCOMPtr<nsIDocShellTreeItem> docShellAsItem(do_QueryInterface(container));
+   nsCOMPtr<nsIDocShellTreeItem> sameTypeParent;
+   if (docShellAsItem) {
+     docShellAsItem->GetSameTypeParent(getter_AddRefs(sameTypeParent));
+@@ -3645,45 +3653,57 @@ nsContentUtils::DispatchChromeEvent(nsID
+   rv = piTarget->DispatchDOMEvent(nullptr, event, nullptr, &status);
+   if (aDefaultAction) {
+     *aDefaultAction = (status != nsEventStatus_eConsumeNoDefault);
+   }
+   return rv;
+ }
+ 
+ /* static */
++#ifdef _MSC_VER
++#pragma inline_recursion(on)
++#endif
+ Element*
+ nsContentUtils::MatchElementId(nsIContent *aContent, const nsIAtom* aId)
+ {
+   for (nsIContent* cur = aContent;
+        cur;
+        cur = cur->GetNextNode(aContent)) {
+     if (aId == cur->GetID()) {
+       return cur->AsElement();
+     }
+   }
+ 
+   return nullptr;
+ }
++#ifdef _MSC_VER
++#pragma inline_recursion(off)
++#endif
+ 
+ /* static */
++#ifdef _MSC_VER
++#pragma inline_recursion(on)
++#endif
+ Element *
+ nsContentUtils::MatchElementId(nsIContent *aContent, const nsAString& aId)
+ {
+   NS_PRECONDITION(!aId.IsEmpty(), "Will match random elements");
+   
+   // ID attrs are generally stored as atoms, so just atomize this up front
+   nsCOMPtr<nsIAtom> id(do_GetAtom(aId));
+   if (!id) {
+     // OOM, so just bail
+     return nullptr;
+   }
+ 
+   return MatchElementId(aContent, id);
+ }
++#ifdef _MSC_VER
++#pragma inline_recursion(off)
++#endif
+ 
+ // Convert the string from the given charset to Unicode.
+ /* static */
+ nsresult
+ nsContentUtils::ConvertStringFromCharset(const nsACString& aCharset,
+                                          const nsACString& aInput,
+                                          nsAString& aOutput)
+ {

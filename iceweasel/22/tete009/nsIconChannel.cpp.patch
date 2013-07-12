@@ -1,0 +1,43 @@
+diff --git a/image/decoders/icon/win/nsIconChannel.cpp b/image/decoders/icon/win/nsIconChannel.cpp
+--- a/image/decoders/icon/win/nsIconChannel.cpp
++++ b/image/decoders/icon/win/nsIconChannel.cpp
+@@ -445,16 +445,19 @@ static BITMAPINFO* CreateBitmapInfo(BITM
+                                                  mozilla::fallible_t());
+   if (bmi) {
+     memcpy(bmi, aHeader, sizeof(BITMAPINFOHEADER));
+     memset(bmi->bmiColors, 0, aColorTableSize);
+   }
+   return bmi;
+ }
+ 
++#ifdef _MSC_VER
++#pragma function(memcpy)
++#endif
+ nsresult nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool nonBlocking)
+ {
+   // Check whether the icon requested's a file icon or a stock icon
+   nsresult rv = NS_ERROR_NOT_AVAILABLE;
+ 
+   // GetDIBits does not exist on windows mobile.
+   HICON hIcon = NULL;
+ 
+@@ -581,16 +584,19 @@ nsresult nsIconChannel::MakeInputStream(
+     DestroyIcon(hIcon);
+   } // if we got an hIcon
+ 
+   // If we didn't make a stream, then fail.
+   if (!*_retval && NS_SUCCEEDED(rv))
+     rv = NS_ERROR_NOT_AVAILABLE;
+   return rv;
+ }
++#ifdef _MSC_VER
++#pragma intrinsic(memcpy)
++#endif
+ 
+ NS_IMETHODIMP nsIconChannel::GetContentType(nsACString &aContentType) 
+ {
+   aContentType.AssignLiteral(IMAGE_ICO);
+   return NS_OK;
+ }
+ 
+ NS_IMETHODIMP

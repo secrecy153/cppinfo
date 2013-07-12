@@ -1,0 +1,28 @@
+diff --git a/content/canvas/src/CanvasUtils.h b/content/canvas/src/CanvasUtils.h
+--- a/content/canvas/src/CanvasUtils.h
++++ b/content/canvas/src/CanvasUtils.h
+@@ -18,16 +18,24 @@ class Matrix;
+ 
+ namespace dom {
+ class HTMLCanvasElement;
+ }
+ 
+ namespace CanvasUtils {
+ 
+ 
++void GetImageData_component(uint8_t* _src, uint8_t* _dst,
++                            int32_t width, int32_t height,
++                            uint32_t srcStride, uint32_t dstStride);
++
++void PutImageData_component(uint8_t* _src, uint8_t* _dst,
++                            int32_t width, int32_t height,
++                            uint32_t srcStride, uint32_t dstStride);
++
+ // Check that the rectangle [x,y,w,h] is a subrectangle of [0,0,realWidth,realHeight]
+ 
+ inline bool CheckSaneSubrectSize(int32_t x, int32_t y, int32_t w, int32_t h,
+                             int32_t realWidth, int32_t realHeight) {
+     CheckedInt32 checked_xmost  = CheckedInt32(x) + w;
+     CheckedInt32 checked_ymost  = CheckedInt32(y) + h;
+ 
+     return w >= 0 && h >= 0 && x >= 0 && y >= 0 &&

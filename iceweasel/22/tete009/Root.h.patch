@@ -1,0 +1,124 @@
+diff --git a/js/src/gc/Root.h b/js/src/gc/Root.h
+--- a/js/src/gc/Root.h
++++ b/js/src/gc/Root.h
+@@ -194,18 +194,17 @@ struct NullPtr
+ template <typename T>
+ class Handle : public js::HandleBase<T>
+ {
+     friend class MutableHandle<T>;
+ 
+   public:
+     /* Creates a handle from a handle of a type convertible to T. */
+     template <typename S>
+-    Handle(Handle<S> handle,
+-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
++    Handle(Handle<S> handle)
+     {
+         ptr = reinterpret_cast<const T *>(handle.address());
+     }
+ 
+     /* Create a handle for a NULL pointer. */
+     Handle(NullPtr) {
+         typedef typename js::tl::StaticAssert<mozilla::IsPointer<T>::value>::result _;
+         ptr = reinterpret_cast<const T *>(&NullPtr::constNullValue);
+@@ -229,24 +228,22 @@ class Handle : public js::HandleBase<T>
+     }
+ 
+     /*
+      * Construct a handle from an explicitly rooted location. This is the
+      * normal way to create a handle, and normally happens implicitly.
+      */
+     template <typename S>
+     inline
+-    Handle(js::Rooted<S> &root,
+-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
++    Handle(js::Rooted<S> &root);
+ 
+     /* Construct a read only handle from a mutable handle. */
+     template <typename S>
+     inline
+-    Handle(MutableHandle<S> &root,
+-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
++    Handle(MutableHandle<S> &root);
+ 
+     const T *address() const { return ptr; }
+     T get() const { return *ptr; }
+ 
+     operator T() const { return get(); }
+     T operator->() const { return get(); }
+ 
+     bool operator!=(const T &other) { return *ptr != other; }
+@@ -410,22 +407,20 @@ class Unrooted
+      * |Handle<S>|. This is so that we can call AutoAssertNoGC methods that
+      * take |Unrooted<T>| parameters with a convertible rooted argument
+      * without explicit unpacking.
+      *
+      * Note: Even though this allows implicit conversion to |Unrooted<T>|
+      * type, this is safe because Unrooted<T> acts as an AutoAssertNoGC scope.
+      */
+     template <typename S>
+-    inline Unrooted(const Rooted<S> &root,
+-                    typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
++    inline Unrooted(const Rooted<S> &root);
+ 
+     template <typename S>
+-    Unrooted(const JS::Handle<S> &root,
+-             typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
++    Unrooted(const JS::Handle<S> &root)
+       : ptr_(root.get())
+     {
+         JS_ASSERT(ptr_ != UninitializedTag());
+         JS::EnterAssertNoGCScope();
+     }
+ 
+     /*
+      * |Unrooted<T>| can initialize by copying from a convertible type
+@@ -737,18 +732,17 @@ class Rooted : public RootedBase<T>
+ // Defined in vm/String.h.
+ template <>
+ class Rooted<JSStableString *>;
+ #endif
+ 
+ #ifdef DEBUG
+ template <typename T> template <typename S>
+ inline
+-Unrooted<T>::Unrooted(const Rooted<S> &root,
+-                      typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
++Unrooted<T>::Unrooted(const Rooted<S> &root)
+   : ptr_(root.get())
+ {
+     JS_ASSERT(ptr_ != UninitializedTag());
+     JS::EnterAssertNoGCScope();
+ }
+ #endif /* DEBUG */
+ 
+ typedef Rooted<JSObject*>    RootedObject;
+@@ -970,26 +964,24 @@ template <typename T> class MaybeRooted<
+ };
+ 
+ } /* namespace js */
+ 
+ namespace JS {
+ 
+ template <typename T> template <typename S>
+ inline
+-Handle<T>::Handle(js::Rooted<S> &root,
+-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
++Handle<T>::Handle(js::Rooted<S> &root)
+ {
+     ptr = reinterpret_cast<const T *>(root.address());
+ }
+ 
+ template <typename T> template <typename S>
+ inline
+-Handle<T>::Handle(MutableHandle<S> &root,
+-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
++Handle<T>::Handle(MutableHandle<S> &root)
+ {
+     ptr = reinterpret_cast<const T *>(root.address());
+ }
+ 
+ template <typename T>
+ inline
+ MutableHandle<T>::MutableHandle(js::Rooted<T> *root)
+ {

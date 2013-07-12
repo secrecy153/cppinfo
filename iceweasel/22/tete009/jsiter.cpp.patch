@@ -1,0 +1,22 @@
+diff --git a/js/src/jsiter.cpp b/js/src/jsiter.cpp
+--- a/js/src/jsiter.cpp
++++ b/js/src/jsiter.cpp
+@@ -310,17 +310,17 @@ size_t sCustomIteratorCount = 0;
+ 
+ static inline bool
+ GetCustomIterator(JSContext *cx, HandleObject obj, unsigned flags, MutableHandleValue vp)
+ {
+     JS_CHECK_RECURSION(cx, return false);
+ 
+     /* Check whether we have a valid __iterator__ method. */
+     HandlePropertyName name = cx->names().iteratorIntrinsic;
+-    if (!GetMethod(cx, obj, name, 0, vp))
++    if (!GetMethod(cx, obj, (PropertyName *)name, 0, vp))
+         return false;
+ 
+     /* If there is no custom __iterator__ method, we are done here. */
+     if (!vp.isObject()) {
+         vp.setUndefined();
+         return true;
+     }
+ 

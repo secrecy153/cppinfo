@@ -1,0 +1,37 @@
+diff --git a/js/src/Makefile.in b/js/src/Makefile.in
+--- a/js/src/Makefile.in
++++ b/js/src/Makefile.in
+@@ -1018,8 +1018,33 @@ endif
+ TestMain$(HOST_BIN_SUFFIX): $(TESTMAIN_OBJS)
+ 	$(CXX) -o TestMain$(HOST_BIN_SUFFIX) $(TESTMAIN_OBJS)
+ endif
+ 
+ #
+ # END kludges for the Nitro assembler
+ ###############################################
+ 
++ifdef _MSC_VER
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# Optimizer bug with MSVC PGO (Bug 595653)
++YarrPattern.$(OBJ_SUFFIX): COMPILE_CXXFLAGS := $(COMPILE_CXXFLAGS:arch:SSE2=arch:SSE)
++
++# -LTCG:PGINSTRUMENT bug of MSVC PGO
++PolyIC.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++# -LTCG:PGINSTRUMENT bug of MSVC PGO
++MonoIC.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++# Optimizer bug with MSVC PGO
++FrameState.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++FastOps.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++ifneq (x86_64, $(TARGET_CPU))
++ifdef ENABLE_ION
++# Optimizer bug with MSVC PGO
++Trampoline-x86.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++endif
++endif
++
++endif
++endif # _MSC_VER

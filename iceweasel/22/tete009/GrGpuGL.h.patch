@@ -1,0 +1,69 @@
+diff --git a/gfx/skia/src/gpu/gl/GrGpuGL.h b/gfx/skia/src/gpu/gl/GrGpuGL.h
+--- a/gfx/skia/src/gpu/gl/GrGpuGL.h
++++ b/gfx/skia/src/gpu/gl/GrGpuGL.h
+@@ -318,60 +318,60 @@ private:
+ 
+     enum TriState {
+         kNo_TriState,
+         kYes_TriState,
+         kUnknown_TriState
+     };
+ 
+     // last scissor / viewport scissor state seen by the GL.
+-    struct {
++    struct ScissorSettings {
+         TriState    fEnabled;
+         GrGLIRect   fRect;
+         void invalidate() {
+             fEnabled = kUnknown_TriState;
+             fRect.invalidate();
+         }
+     } fHWScissorSettings;
+ 
+     GrGLIRect   fHWViewport;
+ 
+-    struct {
++    struct GeometryState {
+         size_t                  fVertexOffset;
+         GrVertexLayout          fVertexLayout;
+         const GrVertexBuffer*   fVertexBuffer;
+         const GrIndexBuffer*    fIndexBuffer;
+         bool                    fArrayPtrsDirty;
+     } fHWGeometryState;
+ 
+-    struct {
++    struct BlendState {
+         GrBlendCoeff    fSrcCoeff;
+         GrBlendCoeff    fDstCoeff;
+         GrColor         fConstColor;
+         bool            fConstColorValid;
+         TriState        fEnabled;
+ 
+         void invalidate() {
+             fSrcCoeff = kInvalid_GrBlendCoeff;
+             fDstCoeff = kInvalid_GrBlendCoeff;
+             fConstColorValid = false;
+             fEnabled = kUnknown_TriState;
+         }
+     } fHWBlendState;
+ 
+-    struct {
++    struct AAState {
+         TriState fMSAAEnabled;
+         TriState fSmoothLineEnabled;
+         void invalidate() {
+             fMSAAEnabled = kUnknown_TriState;
+             fSmoothLineEnabled = kUnknown_TriState;
+         }
+     } fHWAAState;
+ 
+-    struct {
++    struct PathMatrixState {
+         GrMatrix    fViewMatrix;
+         SkISize     fRTSize;
+         void invalidate() {
+             fViewMatrix = GrMatrix::InvalidMatrix();
+             fRTSize.fWidth = -1; // just make the first value compared illegal.
+         }
+     } fHWPathMatrixState;
+ 

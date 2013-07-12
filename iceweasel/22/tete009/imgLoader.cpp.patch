@@ -1,0 +1,36 @@
+diff --git a/image/src/imgLoader.cpp b/image/src/imgLoader.cpp
+--- a/image/src/imgLoader.cpp
++++ b/image/src/imgLoader.cpp
+@@ -750,23 +750,25 @@ imgCacheExpirationTracker::imgCacheExpir
+ 
+ void imgCacheExpirationTracker::NotifyExpired(imgCacheEntry *entry)
+ {
+   // Hold on to a reference to this entry, because the expiration tracker
+   // mechanism doesn't.
+   nsRefPtr<imgCacheEntry> kungFuDeathGrip(entry);
+ 
+ #if defined(PR_LOGGING)
+-  nsRefPtr<imgRequest> req(entry->GetRequest());
+-  if (req) {
+-    nsCOMPtr<nsIURI> uri;
+-    req->GetURI(getter_AddRefs(uri));
+-    nsAutoCString spec;
+-    uri->GetSpec(spec);
+-    LOG_FUNC_WITH_PARAM(GetImgLog(), "imgCacheExpirationTracker::NotifyExpired", "entry", spec.get());
++  if (entry) {
++    nsRefPtr<imgRequest> req(entry->GetRequest());
++    if (req) {
++      nsCOMPtr<nsIURI> uri;
++      req->GetURI(getter_AddRefs(uri));
++      nsAutoCString spec;
++      uri->GetSpec(spec);
++      LOG_FUNC_WITH_PARAM(GetImgLog(), "imgCacheExpirationTracker::NotifyExpired", "entry", spec.get());
++    }
+   }
+ #endif
+ 
+   // We can be called multiple times on the same entry. Don't do work multiple
+   // times.
+   if (!entry->Evicted())
+     entry->Loader()->RemoveFromCache(entry);
+ 

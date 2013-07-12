@@ -1,0 +1,28 @@
+diff --git a/gfx/thebes/gfxUtils.cpp b/gfx/thebes/gfxUtils.cpp
+--- a/gfx/thebes/gfxUtils.cpp
++++ b/gfx/thebes/gfxUtils.cpp
+@@ -414,18 +414,22 @@ gfxUtils::DrawPixelSnapped(gfxContext*  
+                            const gfxRect&   aSourceRect,
+                            const gfxRect&   aImageRect,
+                            const gfxRect&   aFill,
+                            const gfxImageSurface::gfxImageFormat aFormat,
+                            gfxPattern::GraphicsFilter aFilter,
+                            uint32_t         aImageFlags)
+ {
+     PROFILER_LABEL("gfxUtils", "DrawPixelSnapped");
+-    bool doTile = !aImageRect.Contains(aSourceRect) &&
+-                  !(aImageFlags & imgIContainer::FLAG_CLAMP);
++
++    bool drawSingleImage = (aContext->GetFlags() & gfxContext::FLAG_DRAW_SINGLE_IMAGE_TT);
++    aContext->ClearFlag(gfxContext::FLAG_DRAW_SINGLE_IMAGE_TT);
++
++    bool doTile = (drawSingleImage ? false : (!aImageRect.Contains(aSourceRect) &&
++                  !(aImageFlags & imgIContainer::FLAG_CLAMP)));
+ 
+     nsRefPtr<gfxASurface> currentTarget = aContext->CurrentSurface();
+     gfxMatrix deviceSpaceToImageSpace =
+         DeviceToImageTransform(aContext, aUserSpaceToImageSpace);
+ 
+     AutoCairoPixmanBugWorkaround workaround(aContext, deviceSpaceToImageSpace,
+                                             aFill, currentTarget);
+     if (!workaround.Succeeded())

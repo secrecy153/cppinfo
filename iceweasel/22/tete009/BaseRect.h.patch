@@ -1,0 +1,79 @@
+diff --git a/gfx/2d/BaseRect.h b/gfx/2d/BaseRect.h
+--- a/gfx/2d/BaseRect.h
++++ b/gfx/2d/BaseRect.h
+@@ -5,16 +5,19 @@
+ 
+ #ifndef MOZILLA_GFX_BASERECT_H_
+ #define MOZILLA_GFX_BASERECT_H_
+ 
+ #include <cmath>
+ #include <mozilla/Assertions.h>
+ #include <algorithm>
+ 
++#include <stddef.h>
++#include <emmintrin.h>
++
+ namespace mozilla {
+ namespace gfx {
+ 
+ /**
+  * Rectangles have two interpretations: a set of (zero-size) points,
+  * and a rectangular area of the plane. Most rectangle operations behave
+  * the same no matter what interpretation is being used, but some operations
+  * differ:
+@@ -45,16 +48,55 @@ struct BaseRect {
+   BaseRect(const Point& aOrigin, const SizeT &aSize) :
+       x(aOrigin.x), y(aOrigin.y), width(aSize.width), height(aSize.height)
+   {
+   }
+   BaseRect(T aX, T aY, T aWidth, T aHeight) :
+       x(aX), y(aY), width(aWidth), height(aHeight)
+   {
+   }
++  BaseRect(const __m128i& a128i)
++  {
++    _mm_storeu_si128((__m128i *)&x, a128i);
++  }
++
++  bool IsInt32x4() const {
++    return _is_int32<T>::value &&
++           offsetof(Sub, x) == offsetof(Sub, y) - 4 &&
++           offsetof(Sub, x) == offsetof(Sub, width) - 8 &&
++           offsetof(Sub, x) == offsetof(Sub, height) - 12;
++  }
++  template <typename T>
++  struct _is_int32 {
++    enum { value = false };
++  };
++  template <>
++  struct _is_int32<long> {
++    enum { value = (sizeof(long) == 4) };
++  };
++  template <>
++  struct _is_int32<long const> {
++    enum { value = (sizeof(long) == 4) };
++  };
++  template <>
++  struct _is_int32<int> {
++    enum { value = (sizeof(int) == 4) };
++  };
++  template <>
++  struct _is_int32<int const> {
++    enum { value = (sizeof(int) == 4) };
++  };
++  template <>
++  struct _is_int32<long long> {
++    enum { value = (sizeof(long long) == 4) };
++  };
++  template <>
++  struct _is_int32<long long const> {
++    enum { value = (sizeof(long long) == 4) };
++  };
+ 
+   // Emptiness. An empty rect is one that has no area, i.e. its height or width
+   // is <= 0
+   bool IsEmpty() const { return height <= 0 || width <= 0; }
+   void SetEmpty() { width = height = 0; }
+ 
+   // Returns true if this rectangle contains the interior of aRect. Always
+   // returns true if aRect is empty, and always returns false is aRect is

@@ -1,0 +1,33 @@
+diff --git a/widget/windows/nsWindow.cpp b/widget/windows/nsWindow.cpp
+--- a/widget/windows/nsWindow.cpp
++++ b/widget/windows/nsWindow.cpp
+@@ -1956,17 +1956,28 @@ nsWindow::ResetLayout()
+ 
+   // Invalidate and update
+   Invalidate();
+ }
+ 
+ // Internally track the caption status via a window property. Required
+ // due to our internal handling of WM_NCACTIVATE when custom client
+ // margins are set.
+-static const PRUnichar kManageWindowInfoProperty[] = L"ManageWindowInfoProperty";
++class CAtom_ManageWindowInfoProperty {
++public:
++  CAtom_ManageWindowInfoProperty() {
++    atom = ::GlobalAddAtomW(L"ManageWindowInfoProperty");
++  }
++  ~CAtom_ManageWindowInfoProperty() {
++    ::GlobalDeleteAtom(atom);
++  }
++  ATOM atom;
++};
++static CAtom_ManageWindowInfoProperty gaMwip;
++#define kManageWindowInfoProperty ((LPCWSTR)(UINT_PTR)gaMwip.atom)
+ typedef BOOL (WINAPI *GetWindowInfoPtr)(HWND hwnd, PWINDOWINFO pwi);
+ static GetWindowInfoPtr sGetWindowInfoPtrStub = NULL;
+ 
+ BOOL WINAPI
+ GetWindowInfoHook(HWND hWnd, PWINDOWINFO pwi)
+ {
+   if (!sGetWindowInfoPtrStub) {
+     NS_ASSERTION(FALSE, "Something is horribly wrong in GetWindowInfoHook!");

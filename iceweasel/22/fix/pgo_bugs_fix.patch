@@ -1,0 +1,40 @@
+# HG changeset patch
+# Parent 84ea6bd766cf935e60af02ee25a315f1506b51e4
+# User hua.andy <hua.andy@gmail.com>
+"pgo fix"
+
+
+diff --git a/layout/style/Makefile.in b/layout/style/Makefile.in
+--- a/layout/style/Makefile.in
++++ b/layout/style/Makefile.in
+@@ -163,8 +163,13 @@ GARBAGE		+= $(addprefix $(DIST)/bin/res/
+ 
+ libs:: $(_FILES)
+ 	$(INSTALL) $^ $(DIST)/bin/res
+ 
+ install:: $(_FILES)
+ 	$(SYSINSTALL) $(IFLAGS1) $^ $(DESTDIR)$(mozappdir)/res
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error LNK1257 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
+diff --git a/parser/html/Makefile.in b/parser/html/Makefile.in
+--- a/parser/html/Makefile.in
++++ b/parser/html/Makefile.in
+@@ -88,8 +88,13 @@ FORCE_STATIC_LIB = 1
+ 
+ include $(topsrcdir)/config/rules.mk
+ 
+ INCLUDES	+= \
+ 		-I$(srcdir)/../../content/base/src \
+ 		$(NULL)
+ 
+ #DEFINES		+= -DENABLE_VOID_MENUITEM
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error LNK1257 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif

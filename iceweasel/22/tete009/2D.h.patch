@@ -1,0 +1,65 @@
+diff --git a/gfx/2d/2D.h b/gfx/2d/2D.h
+--- a/gfx/2d/2D.h
++++ b/gfx/2d/2D.h
+@@ -11,16 +11,18 @@
+ #include "Rect.h"
+ #include "Matrix.h"
+ #include "UserData.h"
+ // This RefPtr class isn't ideal for usage in Azure, as it doesn't allow T**
+ // outparams using the &-operator. But it will have to do as there's no easy
+ // solution.
+ #include "mozilla/RefPtr.h"
+ 
++#include <string.h>
++
+ #ifdef MOZ_ENABLE_FREETYPE
+ #include <string>
+ #endif
+ 
+ struct _cairo_surface;
+ typedef _cairo_surface cairo_surface_t;
+ 
+ struct _cairo_scaled_font;
+@@ -798,18 +800,22 @@ public:
+                         ExtendMode aExtendMode = EXTEND_CLAMP) const = 0;
+ 
+   const Matrix &GetTransform() const { return mTransform; }
+ 
+   /*
+    * Set a transform on the surface, this transform is applied at drawing time
+    * to both the mask and source of the operation.
+    */
+-  virtual void SetTransform(const Matrix &aTransform)
+-    { mTransform = aTransform; mTransformDirty = true; }
++  virtual void SetTransform(const Matrix &aTransform) {
++    if (memcmp(&mTransform, &aTransform, sizeof(Matrix)) != 0) {
++      mTransform = aTransform;
++      mTransformDirty = true;
++    }
++  }
+ 
+   SurfaceFormat GetFormat() { return mFormat; }
+ 
+   /* Tries to get a native surface for a DrawTarget, this may fail if the
+    * draw target cannot convert to this surface type.
+    */
+   virtual void *GetNativeSurface(NativeSurfaceType aType) { return NULL; }
+ 
+@@ -856,16 +862,17 @@ class DrawEventRecorder : public RefCoun
+ public:
+   virtual ~DrawEventRecorder() { }
+ };
+ 
+ class GFX2D_API Factory
+ {
+ public:
+   static bool HasSSE2();
++  static bool HasSSSE3();
+ 
+   static TemporaryRef<DrawTarget> CreateDrawTargetForCairoSurface(cairo_surface_t* aSurface, const IntSize& aSize);
+ 
+   static TemporaryRef<DrawTarget>
+     CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFormat aFormat);
+ 
+   static TemporaryRef<DrawTarget>
+     CreateRecordingDrawTarget(DrawEventRecorder *aRecorder, DrawTarget *aDT);

@@ -1,0 +1,27 @@
+diff --git a/js/src/yarr/YarrInterpreter.cpp b/js/src/yarr/YarrInterpreter.cpp
+--- a/js/src/yarr/YarrInterpreter.cpp
++++ b/js/src/yarr/YarrInterpreter.cpp
+@@ -1937,17 +1937,23 @@ public:
+     }
+ 
+ private:
+     YarrPattern& m_pattern;
+     OwnPtr<ByteDisjunction> m_bodyDisjunction;
+     unsigned m_currentAlternativeIndex;
+     Vector<ParenthesesStackEntry> m_parenthesesStack;
+     Vector<ByteDisjunction*> m_allParenthesesInfo;
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
+ };
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
+ 
+ PassOwnPtr<BytecodePattern> byteCompile(YarrPattern& pattern, BumpPointerAllocator* allocator)
+ {
+     return ByteCompiler(pattern).compile(allocator);
+ }
+ 
+ unsigned interpret(JSContext *cx, BytecodePattern* bytecode, const String& input, unsigned start, unsigned* output)
+ {
