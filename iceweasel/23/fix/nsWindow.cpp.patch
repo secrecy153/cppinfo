@@ -1,0 +1,29 @@
+# HG changeset patch
+# Parent 9df9f6f940fa8e81714958ad7cdff42dafbf6efb
+# User hua.andy <hua.andy@gmail.com>
+"memory optimizer on window minimize"
+
+
+diff --git a/widget/windows/nsWindow.cpp b/widget/windows/nsWindow.cpp
+--- a/widget/windows/nsWindow.cpp
++++ b/widget/windows/nsWindow.cpp
+@@ -591,18 +591,17 @@ nsWindow::Create(nsIWidget *aParent,
+   // before any visible windows, and after the profile has been initialized),
+   // do some initialization work.
+   if (sTrimOnMinimize == 2 && mWindowType == eWindowType_invisible) {
+     // Our internal trim prevention logic is effective on 2K/XP at maintaining
+     // the working set when windows are minimized, but on Vista and up it has
+     // little to no effect. Since this feature has been the source of numerous
+     // bugs over the years, disable it (sTrimOnMinimize=1) on Vista and up.
+     sTrimOnMinimize =
+-      Preferences::GetBool("config.trim_on_minimize",
+-        (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION)) ? 1 : 0;
++      Preferences::GetBool("config.trim_on_minimize", false);
+     sSwitchKeyboardLayout =
+       Preferences::GetBool("intl.keyboard.per_window_layout", false);
+   }
+ 
+   return NS_OK;
+ }
+ 
+ // Close this nsWindow

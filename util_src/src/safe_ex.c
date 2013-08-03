@@ -125,31 +125,46 @@ unsigned WINAPI InjectDll(void *mpara)
 
 BOOL WINAPI in_whitelist(LPCWSTR lpfile)
 {
-	wchar_t white_list[EXCLUDE_NUM][VALUE_LEN+1];
+	static  WCHAR white_list[EXCLUDE_NUM][VALUE_LEN+1];
 	int		i;
-	BOOL    ret = FALSE;
 	LPCWSTR pname = lpfile;
-	/* iceweasel,plugin-container,plugin-hang-ui进程的路径 */
-	GetModuleFileNameW(NULL,white_list[0],VALUE_LEN);
-	GetModuleFileNameW(dll_module,white_list[1],VALUE_LEN);
-	PathRemoveFileSpecW(white_list[1]);
-	PathAppendW(white_list[1],L"plugin-container.exe");
-	GetModuleFileNameW(dll_module,white_list[2],VALUE_LEN);
-	PathRemoveFileSpecW(white_list[2]);
-	PathAppendW(white_list[2],L"plugin-hang-ui.exe");
+	BOOL    ret = FALSE;
 	if (lpfile[0] == L'"')
 	{
 		pname = &lpfile[1];
 	}
-	if ( for_eachSection(L"whitelist", &white_list[3], EXCLUDE_NUM-3) )
+	/* 遍历白名单一次,只需遍历一次 */
+	ret = stristrW(white_list[1],L"plugin-container.exe") != NULL;
+	if ( !ret )
 	{
+		/* iceweasel,plugin-container,plugin-hang-ui进程的路径 */
+		GetModuleFileNameW(NULL,white_list[0],VALUE_LEN);
+		GetModuleFileNameW(dll_module,white_list[1],VALUE_LEN);
+		PathRemoveFileSpecW(white_list[1]);
+		PathAppendW(white_list[1],L"plugin-container.exe");
+		GetModuleFileNameW(dll_module,white_list[2],VALUE_LEN);
+		PathRemoveFileSpecW(white_list[2]);
+		PathAppendW(white_list[2],L"plugin-hang-ui.exe");
+		ret = for_eachSection(L"whitelist", &white_list[3], EXCLUDE_NUM-3);
+	}
+	if ( (ret = !ret) == FALSE )
+	{
+		/* 核对白名单 */
 		for ( i=0; i<EXCLUDE_NUM ; i++ )
 		{
 			if (wcslen(white_list[i]) == 0)
 			{
 				continue;
 			}
-			if (white_list[i][1] != L':')
+			if ( StrChrW(white_list[i],L'*') || StrChrW(white_list[i],L'?') )
+			{
+				if ( PathMatchSpecW(pname,white_list[i]) )
+				{
+					ret = TRUE;
+					break;
+				}
+			}
+			else if (white_list[i][1] != L':')
 			{
 				PathToCombineW(white_list[i],VALUE_LEN);
 			}
@@ -240,21 +255,6 @@ NTSTATUS WINAPI HookNtWriteVirtualMemory(IN HANDLE ProcessHandle,
 									NumberOfBytesWritten);
 }
 
-NTSTATUS NTAPI HookNtReadVirtualMemory (IN HANDLE ProcessHandle,
-										IN PVOID BaseAddress,
-										OUT PVOID Buffer,
-										IN ULONG NumberOfBytesToRead,
-										OUT PULONG NumberOfBytesRead)
-{
-	ULONG_PTR        dwCurrentPid	= GetCurrentProcessId();
-	ULONG_PTR        dwParent		= GetParentProcess(ProcessHandle);
-	if ( (dwCurrentPid>4 && dwParent == dwCurrentPid) )
-	{
-		return TrueNtReadVirtualMemory(ProcessHandle,BaseAddress,Buffer,
-				NumberOfBytesToRead,NumberOfBytesRead);
-	}
-	return STATUS_ERROR;
-}
 
 NTSTATUS WINAPI HookNtCreateUserProcess(PHANDLE ProcessHandle,PHANDLE ThreadHandle,
 								  ACCESS_MASK ProcessDesiredAccess,ACCESS_MASK ThreadDesiredAccess,
@@ -294,12 +294,14 @@ NTSTATUS WINAPI HookNtCreateUserProcess(PHANDLE ProcessHandle,PHANDLE ThreadHand
 			ProcessParameters = &mY_ProcessParameters;
 		}
 	}
-	else if ( !IsGUI((LPCWSTR)ProcessParameters->ImagePathName.Buffer) )
+	else if ( in_whitelist((LPCWSTR)ProcessParameters->ImagePathName.Buffer) )
 	{
-	#ifdef _DEBUG
-		logmsg("CUI process,disabled-runes\n");
-	#endif
-		ProcessParameters = &mY_ProcessParameters;
+		;
+	}
+	else
+	{
+		if ( !IsGUI((LPCWSTR)ProcessParameters->ImagePathName.Buffer) )
+			ProcessParameters = &mY_ProcessParameters;
 	}
 	status = TrueNtCreateUserProcess(ProcessHandle, ThreadHandle,
 								  ProcessDesiredAccess, ThreadDesiredAccess,
@@ -369,15 +371,20 @@ BOOL WINAPI HookCreateProcessInternalW (HANDLE hToken,
 			return ret;
 		}
 	}
-	/* 如果不启用白名单,则自动阻止命令行程序启动 */
-	else if ( ProcessIsCUI(lpfile) )
+	else if ( in_whitelist((LPCWSTR)lpfile) )
 	{
+		;
+	}
+	/* 如果不存在于白名单,则自动阻止命令行程序启动 */
+	else
+	{
+		if ( ProcessIsCUI(lpfile) )
 		{
-		#ifdef _DEBUG
-			logmsg("CUI process, disabled-runes\n");
-		#endif
-			SetLastError( TrueRtlNtStatusToDosError(STATUS_ERROR) );
-			return ret;
+			#ifdef _DEBUG
+				logmsg("%ls process, disabled-runes\n",lpfile);
+			#endif
+				SetLastError( TrueRtlNtStatusToDosError(STATUS_ERROR) );
+				return ret;
 		}
 	}
 	ret =  TrueCreateProcessInternalW(hToken,lpApplicationName,lpCommandLine,lpProcessAttributes,
@@ -492,9 +499,12 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName,HANDLE hFile,DWORD dwFlags)
     /* 判断是否是从User32.dll调用 */
 	if ( IsSpecialDll(dwCaller,L"user32.dll") )
 	{
-		if (PathMatchSpecW(lpFileName, L"*.exe"))
+		if ( PathMatchSpecW(lpFileName, L"*.exe") || in_whitelist(lpFileName) )
 		{
 			/* javascript api 获取应用程序图标时 */
+		#ifdef _DEBUG
+			logmsg("%ls in whitelist\n",lpFileName);
+		#endif
 			return TrueLoadLibraryExW(lpFileName, hFile, dwFlags);  
 		}
 		else
@@ -565,10 +575,6 @@ unsigned WINAPI init_safed(void * pParam)
 	{
 		Mhook_SetHook((PVOID*)&TrueLoadLibraryExW, (PVOID)HookLoadLibraryExW);
 	}
-	if (TrueNtReadVirtualMemory)
-	{
-		Mhook_SetHook((PVOID*)&TrueNtReadVirtualMemory, (PVOID)HookNtReadVirtualMemory);
-	}
 	if (TrueNtWriteVirtualMemory)
 	{
 		Mhook_SetHook((PVOID*)&TrueNtWriteVirtualMemory, (PVOID)HookNtWriteVirtualMemory);
@@ -589,10 +595,6 @@ void safe_end(void)
 	if (TrueNtCreateUserProcess)
 	{
 		Mhook_Unhook((PVOID*)&TrueNtCreateUserProcess);
-	}
-	if (TrueNtReadVirtualMemory)
-	{
-		Mhook_Unhook((PVOID*)&TrueNtReadVirtualMemory);
 	}
 	if (TrueNtWriteVirtualMemory)
 	{

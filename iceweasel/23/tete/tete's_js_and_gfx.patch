@@ -1,0 +1,2551 @@
+# HG changeset patch
+# Parent fda4c59f7166ff7c679cc12eb80b19a6cd23c697
+# User hua.andy <hua.andy@gmail.com>
+"tete's patch,include js gfx ..."
+
+
+diff --git a/client.mk b/client.mk
+--- a/client.mk
++++ b/client.mk
+@@ -283,16 +283,17 @@ CONFIG_STATUS_DEPS := \
+   $(TOPSRCDIR)/browser/config/version.txt \
+   $(TOPSRCDIR)/build/virtualenv/packages.txt \
+   $(TOPSRCDIR)/build/virtualenv/populate_virtualenv.py \
+   $(TOPSRCDIR)/testing/mozbase/packages.txt \
+   $(NULL)
+ 
+ CONFIGURE_ENV_ARGS += \
+   MAKE="$(MAKE)" \
++  _PYMAKE="$(.PYMAKE)" \
+   $(NULL)
+ 
+ # configure uses the program name to determine @srcdir@. Calling it without
+ #   $(TOPSRCDIR) will set @srcdir@ to "."; otherwise, it is set to the full
+ #   path of $(TOPSRCDIR).
+ ifeq ($(TOPSRCDIR),$(OBJDIR))
+   CONFIGURE = ./configure
+ else
+diff --git a/content/canvas/src/CanvasRenderingContext2D.cpp b/content/canvas/src/CanvasRenderingContext2D.cpp
+--- a/content/canvas/src/CanvasRenderingContext2D.cpp
++++ b/content/canvas/src/CanvasRenderingContext2D.cpp
+@@ -3447,39 +3447,17 @@ CanvasRenderingContext2D::GetImageDataAr
+   }
+ 
+   // NOTE! dst is the same as src, and this relies on reading
+   // from src and advancing that ptr before writing to dst.
+   // NOTE! I'm not sure that it is, I think this comment might have been
+   // inherited from Thebes canvas and is no longer true
+   uint8_t* dst = data + dstWriteRect.y * (aWidth * 4) + dstWriteRect.x * 4;
+ 
+-  for (int32_t j = 0; j < dstWriteRect.height; ++j) {
+-    for (int32_t i = 0; i < dstWriteRect.width; ++i) {
+-      // XXX Is there some useful swizzle MMX we can use here?
+-#ifdef IS_LITTLE_ENDIAN
+-      uint8_t b = *src++;
+-      uint8_t g = *src++;
+-      uint8_t r = *src++;
+-      uint8_t a = *src++;
+-#else
+-      uint8_t a = *src++;
+-      uint8_t r = *src++;
+-      uint8_t g = *src++;
+-      uint8_t b = *src++;
+-#endif
+-      // Convert to non-premultiplied color
+-      *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + r];
+-      *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + g];
+-      *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + b];
+-      *dst++ = a;
+-    }
+-    src += srcStride - (dstWriteRect.width * 4);
+-    dst += (aWidth * 4) - (dstWriteRect.width * 4);
+-  }
++  GetImageData_component(src, dst, dstWriteRect.width, dstWriteRect.height, srcStride, aWidth * 4);
+ 
+   *aRetval = darray;
+   return NS_OK;
+ }
+ 
+ void
+ CanvasRenderingContext2D::EnsureErrorTarget()
+ {
+@@ -3600,37 +3578,17 @@ CanvasRenderingContext2D::PutImageData_e
+                                                           false);
+   if (!imgsurf || imgsurf->CairoStatus()) {
+     return NS_ERROR_FAILURE;
+   }
+ 
+   uint8_t *src = aData;
+   uint8_t *dst = imgsurf->Data();
+ 
+-  for (uint32_t j = 0; j < h; j++) {
+-    for (uint32_t i = 0; i < w; i++) {
+-      uint8_t r = *src++;
+-      uint8_t g = *src++;
+-      uint8_t b = *src++;
+-      uint8_t a = *src++;
+-
+-      // Convert to premultiplied color (losslessly if the input came from getImageData)
+-#ifdef IS_LITTLE_ENDIAN
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
+-      *dst++ = a;
+-#else
+-      *dst++ = a;
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
+-#endif
+-    }
+-  }
++  PutImageData_component(src, dst, w, h, w * 4, w * 4);
+ 
+   EnsureTarget();
+   if (!IsTargetValid()) {
+     return NS_ERROR_FAILURE;
+   }
+ 
+   RefPtr<SourceSurface> sourceSurface =
+     mTarget->CreateSourceSurfaceFromData(imgsurf->Data(), IntSize(w, h), imgsurf->Stride(), FORMAT_B8G8R8A8);
+diff --git a/content/canvas/src/CanvasUtils.cpp b/content/canvas/src/CanvasUtils.cpp
+--- a/content/canvas/src/CanvasUtils.cpp
++++ b/content/canvas/src/CanvasUtils.cpp
+@@ -1,13 +1,29 @@
+ /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
++#if _MSC_VER == 1400
++#include <emmintrin.h>
++extern "C" {
++  extern __m128i _mm_shuffle_epi8(__m128i a, __m128i b);
++  extern __m128i _mm_alignr_epi8(__m128i a, __m128i b, const int ralign);
++}
++#else
++#include <tmmintrin.h>
++#endif
++#include "mozilla/SSE.h"
++#include "gfxUtils.h"
++
+ #include <stdlib.h>
+ #include <stdarg.h>
+ 
+ #include "prprf.h"
+ 
+ #include "nsIServiceManager.h"
+ 
+ #include "nsIConsoleService.h"
+@@ -80,10 +96,263 @@ CoerceDouble(JS::Value v, double* d)
+     } else if (JSVAL_IS_VOID(v)) {
+         *d = 0.0;
+     } else {
+         return false;
+     }
+     return true;
+ }
+ 
++void
++GetImageData_component(uint8_t* _src, uint8_t* _dst,
++                       int32_t width, int32_t height,
++                       uint32_t srcStride, uint32_t dstStride)
++{
++    uint8_t *srcFirst = _src;
++    uint8_t *dstFirst = _dst;
++
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++    int omp_thread_counts = omp_get_max_threads();
++
++#pragma omp parallel for schedule(guided) default(none) \
++shared(srcFirst, dstFirst, width, height, srcStride, dstStride, gfxUtils::sUnpremultiplyTable) \
++if (omp_thread_counts >= 2 && \
++    height >= (int32_t)omp_thread_counts && \
++    width * height >= 4096)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
++    for (int32_t j = 0; j < height; ++j) {
++        uint8_t *src = srcFirst + (srcStride * j);
++        uint8_t *dst = dstFirst + (dstStride * j);
++
++        for (int32_t i = 0; i < width; ++i) {
++            // XXX Is there some useful swizzle MMX we can use here?
++#ifdef IS_LITTLE_ENDIAN
++            uint8_t b = *src++;
++            uint8_t g = *src++;
++            uint8_t r = *src++;
++            uint8_t a = *src++;
++#else
++            uint8_t a = *src++;
++            uint8_t r = *src++;
++            uint8_t g = *src++;
++            uint8_t b = *src++;
++#endif
++            // Convert to non-premultiplied color
++            *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + r];
++            *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + g];
++            *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + b];
++            *dst++ = a;
++        }
++    }
++}
++
++void
++PutImageData_component(uint8_t* _src, uint8_t* _dst,
++                       int32_t width, int32_t height,
++                       uint32_t srcStride, uint32_t dstStride)
++{
++    uint8_t *srcFirst = _src;
++    uint8_t *dstFirst = _dst;
++
++#if (_MSC_VER != 1400) || !defined(_M_AMD64)
++    if (mozilla::supports_ssse3()) {
++        static const __m128i msk_alpha = _mm_set1_epi32(0xFF000000);
++        static const __m128i sfl_alphaLo = _mm_set_epi8(0x80, 7, 0x80, 7, 0x80, 7, 0x80, 7, 0x80, 3, 0x80, 3, 0x80, 3, 0x80, 3);
++        static const __m128i sfl_alphaHi = _mm_set_epi8(0x80, 15, 0x80, 15, 0x80, 15, 0x80, 15, 0x80, 11, 0x80, 11, 0x80, 11, 0x80, 11);
++        static const __m128i word_add = _mm_set1_epi16(0x00FF);
++        static const __m128i word_mul = _mm_set_epi16(0, 257, 257, 257, 0, 257, 257, 257);
++        static const __m128i sfl_bgra = _mm_set_epi8(15, 12, 13, 14, 11, 8, 9, 10, 7, 4, 5, 6, 3, 0, 1, 2);
++
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++        int omp_thread_counts = omp_get_max_threads();
++
++#pragma omp parallel for schedule(guided) default(none) \
++shared(srcFirst, dstFirst, width, height, srcStride, dstStride, gfxUtils::sPremultiplyTable) \
++if (omp_thread_counts >= 2 && \
++    height >= (int32_t)omp_thread_counts && \
++    width * height >= 12000)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
++        for (int j = 0; j < height; j++) {
++            uint8_t *src = srcFirst + (srcStride * j);
++            uint8_t *dst = dstFirst + (dstStride * j);
++            int32_t i = width;
++
++            while (i >= 1 && ((unsigned)dst & 15)) {
++                uint8_t r = *src++;
++                uint8_t g = *src++;
++                uint8_t b = *src++;
++                uint8_t a = *src++;
++
++                // Convert to premultiplied color (losslessly if the input came from getImageData)
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = a;
++                i -= 1;
++            }
++
++            const int srcMissalignedBytes = ((unsigned)src & 15);
++
++            if (srcMissalignedBytes == 0) {
++                while (i >= 4) {
++                    __m128i xmb = _mm_load_si128((__m128i*)src);
++                    __m128i xmwLo = _mm_unpacklo_epi8(xmb, _mm_setzero_si128());
++                    __m128i xmwHi = _mm_unpackhi_epi8(xmb, _mm_setzero_si128());
++
++                    __m128i xmwAlpha = _mm_and_si128(xmb, msk_alpha);
++                    __m128i xmwAlphaLo = _mm_shuffle_epi8(xmb, sfl_alphaLo);
++                    __m128i xmwAlphaHi = _mm_shuffle_epi8(xmb, sfl_alphaHi);
++
++                    xmwLo = _mm_mullo_epi16(xmwLo, xmwAlphaLo);
++                    xmwLo = _mm_adds_epu16(xmwLo, word_add);
++                    xmwLo = _mm_mulhi_epu16(xmwLo, word_mul);
++
++                    xmwHi = _mm_mullo_epi16(xmwHi, xmwAlphaHi);
++                    xmwHi = _mm_adds_epu16(xmwHi, word_add);
++                    xmwHi = _mm_mulhi_epu16(xmwHi, word_mul);
++
++                    __m128i xmRes = _mm_packus_epi16(xmwLo, xmwHi);
++                    xmRes = _mm_or_si128(xmRes, xmwAlpha);
++                    xmRes = _mm_shuffle_epi8(xmRes, sfl_bgra);
++                    _mm_store_si128((__m128i*)dst, xmRes);
++
++                    src += 16;
++                    dst += 16;
++                    i -= 4;
++                }
++            } else {
++                __m128i xmLoadPre = _mm_load_si128((__m128i*)(src - srcMissalignedBytes));
++
++                while (i >= 4) {
++                    __m128i xmLoadNext = _mm_load_si128((__m128i*)(src - srcMissalignedBytes + 16));
++                    __m128i xmb;
++
++                    switch (srcMissalignedBytes) {
++                    case 1:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 1);
++                        break;
++                    case 2:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 2);
++                        break;
++                    case 3:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 3);
++                        break;
++                    case 4:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 4);
++                        break;
++                    case 5:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 5);
++                        break;
++                    case 6:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 6);
++                        break;
++                    case 7:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 7);
++                        break;
++                    case 8:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 8);
++                        break;
++                    case 9:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 9);
++                        break;
++                    case 10:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 10);
++                        break;
++                    case 11:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 11);
++                        break;
++                    case 12:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 12);
++                        break;
++                    case 13:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 13);
++                        break;
++                    case 14:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 14);
++                        break;
++                    case 15:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 15);
++                        break;
++                    }
++                    xmLoadPre = xmLoadNext;
++
++                    __m128i xmwLo = _mm_unpacklo_epi8(xmb, _mm_setzero_si128());
++                    __m128i xmwHi = _mm_unpackhi_epi8(xmb, _mm_setzero_si128());
++
++                    __m128i xmwAlpha = _mm_and_si128(xmb, msk_alpha);
++                    __m128i xmwAlphaLo = _mm_shuffle_epi8(xmb, sfl_alphaLo);
++                    __m128i xmwAlphaHi = _mm_shuffle_epi8(xmb, sfl_alphaHi);
++
++                    xmwLo = _mm_mullo_epi16(xmwLo, xmwAlphaLo);
++                    xmwLo = _mm_adds_epu16(xmwLo, word_add);
++                    xmwLo = _mm_mulhi_epu16(xmwLo, word_mul);
++
++                    xmwHi = _mm_mullo_epi16(xmwHi, xmwAlphaHi);
++                    xmwHi = _mm_adds_epu16(xmwHi, word_add);
++                    xmwHi = _mm_mulhi_epu16(xmwHi, word_mul);
++
++                    __m128i xmRes = _mm_packus_epi16(xmwLo, xmwHi);
++                    xmRes = _mm_or_si128(xmRes, xmwAlpha);
++                    xmRes = _mm_shuffle_epi8(xmRes, sfl_bgra);
++                    _mm_store_si128((__m128i*)dst, xmRes);
++
++                    src += 16;
++                    dst += 16;
++                    i -= 4;
++                }
++            }
++
++            while (i >= 1) {
++                uint8_t r = *src++;
++                uint8_t g = *src++;
++                uint8_t b = *src++;
++                uint8_t a = *src++;
++
++                // Convert to premultiplied color (losslessly if the input came from getImageData)
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = a;
++                i -= 1;
++            }
++        }
++    } else
++#endif // (_MSC_VER != 1400) || !defined(_M_AMD64)
++    {
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++        int omp_thread_counts = omp_get_max_threads();
++
++#pragma omp parallel for schedule(guided) default(none) \
++shared(srcFirst, dstFirst, width, height, srcStride, dstStride, gfxUtils::sPremultiplyTable) \
++if (omp_thread_counts >= 2 && \
++    height >= (int32_t)omp_thread_counts && \
++    width * height >= 4096)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
++        for (int64_t j = 0; j < height; j++) {
++            uint8_t *src = srcFirst + (srcStride * j);
++            uint8_t *dst = dstFirst + (dstStride * j);
++
++            for (int32_t i = 0; i < width; i++) {
++                // XXX Is there some useful swizzle MMX we can use here?
++                uint8_t r = *src++;
++                uint8_t g = *src++;
++                uint8_t b = *src++;
++                uint8_t a = *src++;
++
++                // Convert to premultiplied color (losslessly if the input came from getImageData)
++#ifdef IS_LITTLE_ENDIAN
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = a;
++#else
++                *dst++ = a;
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++#endif
++            }
++        }
++    }
++}
++
+ } // namespace CanvasUtils
+ } // namespace mozilla
+diff --git a/content/canvas/src/CanvasUtils.h b/content/canvas/src/CanvasUtils.h
+--- a/content/canvas/src/CanvasUtils.h
++++ b/content/canvas/src/CanvasUtils.h
+@@ -17,16 +17,24 @@ class Matrix;
+ }
+ 
+ namespace dom {
+ class HTMLCanvasElement;
+ }
+ 
+ namespace CanvasUtils {
+ 
++void GetImageData_component(uint8_t* _src, uint8_t* _dst,
++                            int32_t width, int32_t height,
++                            uint32_t srcStride, uint32_t dstStride);
++
++void PutImageData_component(uint8_t* _src, uint8_t* _dst,
++                            int32_t width, int32_t height,
++                            uint32_t srcStride, uint32_t dstStride);
++
+ 
+ // Check that the rectangle [x,y,w,h] is a subrectangle of [0,0,realWidth,realHeight]
+ 
+ inline bool CheckSaneSubrectSize(int32_t x, int32_t y, int32_t w, int32_t h,
+                             int32_t realWidth, int32_t realHeight) {
+     CheckedInt32 checked_xmost  = CheckedInt32(x) + w;
+     CheckedInt32 checked_ymost  = CheckedInt32(y) + h;
+ 
+diff --git a/content/canvas/src/Makefile.in b/content/canvas/src/Makefile.in
+--- a/content/canvas/src/Makefile.in
++++ b/content/canvas/src/Makefile.in
+@@ -80,8 +80,14 @@ INCLUDES	+= \
+ 		-I$(srcdir)/../../base/src \
+ 		-I$(srcdir)/../../html/content/src \
+ 		-I$(srcdir)/../../../js/xpconnect/src \
+ 		-I$(srcdir)/../../../dom/base \
+ 		-I$(topsrcdir)/content/xul/content/src \
+ 		$(NULL)
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++ifdef _MSC_VER
++ifneq (,$(filter -DTT_MEMUTIL,$(MOZ_OPTIMIZE_FLAGS)))
++CanvasUtils.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL- -openmp
++endif
++endif
+diff --git a/content/media/Makefile.in b/content/media/Makefile.in
+--- a/content/media/Makefile.in
++++ b/content/media/Makefile.in
+@@ -44,8 +44,15 @@ FORCE_STATIC_LIB = 1
+ 
+ include $(topsrcdir)/config/config.mk
+ include $(topsrcdir)/ipc/chromium/chromium-config.mk
+ include $(topsrcdir)/config/rules.mk
+ 
+ DEFINES  += -D_IMPL_NS_LAYOUT
+ CFLAGS   += $(GSTREAMER_CFLAGS)
+ CXXFLAGS += $(GSTREAMER_CFLAGS)
++
++ifdef MOZ_THUNDERBIRD
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
++endif
+diff --git a/dom/ipc/Makefile.in b/dom/ipc/Makefile.in
+--- a/dom/ipc/Makefile.in
++++ b/dom/ipc/Makefile.in
+@@ -68,8 +68,13 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),$(findstring
+ DEFINES += -DMOZ_ENABLE_FREETYPE
+ endif
+ 
+ ifdef MOZ_PERMISSIONS
+ DEFINES += -DMOZ_PERMISSIONS
+ endif
+ 
+ CXXFLAGS += $(TK_CFLAGS)
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
+diff --git a/dom/plugins/ipc/Makefile.in b/dom/plugins/ipc/Makefile.in
+--- a/dom/plugins/ipc/Makefile.in
++++ b/dom/plugins/ipc/Makefile.in
+@@ -85,8 +85,13 @@ include $(topsrcdir)/ipc/chromium/chromi
+ 
+ include $(topsrcdir)/config/rules.mk
+ 
+ CXXFLAGS += $(TK_CFLAGS)
+ 
+ DEFINES += -DFORCE_PR_LOG
+ 
+ CXXFLAGS += $(MOZ_CAIRO_CFLAGS)
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif
+diff --git a/gfx/2d/2D.h b/gfx/2d/2D.h
+--- a/gfx/2d/2D.h
++++ b/gfx/2d/2D.h
+@@ -798,18 +798,22 @@ public:
+                         ExtendMode aExtendMode = EXTEND_CLAMP) const = 0;
+ 
+   const Matrix &GetTransform() const { return mTransform; }
+ 
+   /*
+    * Set a transform on the surface, this transform is applied at drawing time
+    * to both the mask and source of the operation.
+    */
+-  virtual void SetTransform(const Matrix &aTransform)
+-    { mTransform = aTransform; mTransformDirty = true; }
++  virtual void SetTransform(const Matrix &aTransform) {
++    if (memcmp(&mTransform, &aTransform, sizeof(Matrix)) != 0) {
++      mTransform = aTransform;
++      mTransformDirty = true;
++    }
++  }
+ 
+   SurfaceFormat GetFormat() { return mFormat; }
+ 
+   /* Tries to get a native surface for a DrawTarget, this may fail if the
+    * draw target cannot convert to this surface type.
+    */
+   virtual void *GetNativeSurface(NativeSurfaceType aType) { return NULL; }
+ 
+@@ -856,17 +860,17 @@ class DrawEventRecorder : public RefCoun
+ public:
+   virtual ~DrawEventRecorder() { }
+ };
+ 
+ class GFX2D_API Factory
+ {
+ public:
+   static bool HasSSE2();
+-
++  static bool HasSSSE3();
+   static TemporaryRef<DrawTarget> CreateDrawTargetForCairoSurface(cairo_surface_t* aSurface, const IntSize& aSize);
+ 
+   static TemporaryRef<DrawTarget>
+     CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFormat aFormat);
+ 
+   static TemporaryRef<DrawTarget>
+     CreateRecordingDrawTarget(DrawEventRecorder *aRecorder, DrawTarget *aDT);
+      
+diff --git a/gfx/2d/BaseRect.h b/gfx/2d/BaseRect.h
+--- a/gfx/2d/BaseRect.h
++++ b/gfx/2d/BaseRect.h
+@@ -4,16 +4,18 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #ifndef MOZILLA_GFX_BASERECT_H_
+ #define MOZILLA_GFX_BASERECT_H_
+ 
+ #include <cmath>
+ #include <mozilla/Assertions.h>
+ #include <algorithm>
++#include <stddef.h>
++#include <emmintrin.h>
+ 
+ namespace mozilla {
+ namespace gfx {
+ 
+ /**
+  * Rectangles have two interpretations: a set of (zero-size) points,
+  * and a rectangular area of the plane. Most rectangle operations behave
+  * the same no matter what interpretation is being used, but some operations
+@@ -45,17 +47,55 @@ struct BaseRect {
+   BaseRect(const Point& aOrigin, const SizeT &aSize) :
+       x(aOrigin.x), y(aOrigin.y), width(aSize.width), height(aSize.height)
+   {
+   }
+   BaseRect(T aX, T aY, T aWidth, T aHeight) :
+       x(aX), y(aY), width(aWidth), height(aHeight)
+   {
+   }
++  BaseRect(const __m128i& a128i)
++  {
++    _mm_storeu_si128((__m128i *)&x, a128i);
++  }
+ 
++  bool IsInt32x4() const {
++    return _is_int32<T>::value &&
++           offsetof(Sub, x) == offsetof(Sub, y) - 4 &&
++           offsetof(Sub, x) == offsetof(Sub, width) - 8 &&
++           offsetof(Sub, x) == offsetof(Sub, height) - 12;
++  }
++  template <typename T>
++  struct _is_int32 {
++    enum { value = false };
++  };
++  template <>
++  struct _is_int32<long> {
++    enum { value = (sizeof(long) == 4) };
++  };
++  template <>
++  struct _is_int32<long const> {
++    enum { value = (sizeof(long) == 4) };
++  };
++  template <>
++  struct _is_int32<int> {
++    enum { value = (sizeof(int) == 4) };
++  };
++  template <>
++  struct _is_int32<int const> {
++    enum { value = (sizeof(int) == 4) };
++  };
++  template <>
++  struct _is_int32<long long> {
++    enum { value = (sizeof(long long) == 4) };
++  };
++  template <>
++  struct _is_int32<long long const> {
++    enum { value = (sizeof(long long) == 4) };
++  };
+   // Emptiness. An empty rect is one that has no area, i.e. its height or width
+   // is <= 0
+   bool IsEmpty() const { return height <= 0 || width <= 0; }
+   void SetEmpty() { width = height = 0; }
+ 
+   // Returns true if this rectangle contains the interior of aRect. Always
+   // returns true if aRect is empty, and always returns false is aRect is
+   // nonempty but this rect is empty.
+diff --git a/gfx/2d/Blur.cpp b/gfx/2d/Blur.cpp
+--- a/gfx/2d/Blur.cpp
++++ b/gfx/2d/Blur.cpp
+@@ -8,17 +8,17 @@
+ 
+ #include <algorithm>
+ #include <math.h>
+ #include <string.h>
+ 
+ #include "mozilla/CheckedInt.h"
+ #include "mozilla/Constants.h"
+ #include "mozilla/Util.h"
+-
++#include "nsAutoPtr.h"
+ #include "2D.h"
+ #include "Tools.h"
+ 
+ using namespace std;
+ 
+ namespace mozilla {
+ namespace gfx {
+ 
+@@ -36,29 +36,37 @@ namespace gfx {
+  */
+ static void
+ BoxBlurHorizontal(unsigned char* aInput,
+                   unsigned char* aOutput,
+                   int32_t aLeftLobe,
+                   int32_t aRightLobe,
+                   int32_t aWidth,
+                   int32_t aRows,
+-                  const IntRect& aSkipRect)
++                  const IntRect& aSkipRect,
++                  int32_t* TT_RESTRICTED_PTR aLasts,
++                  int32_t* TT_RESTRICTED_PTR aNexts)
+ {
+     MOZ_ASSERT(aWidth > 0);
+ 
+     int32_t boxSize = aLeftLobe + aRightLobe + 1;
+     bool skipRectCoversWholeRow = 0 >= aSkipRect.x &&
+                                   aWidth <= aSkipRect.XMost();
+     if (boxSize == 1) {
+         memcpy(aOutput, aInput, aWidth*aRows);
+         return;
+     }
+     uint32_t reciprocal = uint32_t((uint64_t(1) << 32) / boxSize);
+ 
++    for (int32_t x = 0; x < aWidth; x++) {
++        int32_t tmp = x - aLeftLobe;
++        aLasts[x] = max(tmp, 0);
++        aNexts[x] = min(tmp + boxSize, aWidth - 1);
++    }
++
+     for (int32_t y = 0; y < aRows; y++) {
+         // Check whether the skip rect intersects this row. If the skip
+         // rect covers the whole surface in this row, we can avoid
+         // this row entirely (and any others along the skip rect).
+         bool inSkipRectY = y >= aSkipRect.y &&
+                            y < aSkipRect.YMost();
+         if (inSkipRectY && skipRectCoversWholeRow) {
+             y = aSkipRect.YMost() - 1;
+@@ -96,47 +104,55 @@ BoxBlurHorizontal(unsigned char* aInput,
+                 }
+             }
+             int32_t tmp = x - aLeftLobe;
+             int32_t last = max(tmp, 0);
+             int32_t next = min(tmp + boxSize, aWidth - 1);
+ 
+             aOutput[aWidth * y + x] = (uint64_t(alphaSum) * reciprocal) >> 32;
+ 
+-            alphaSum += aInput[aWidth * y + next] -
+-                        aInput[aWidth * y + last];
++            alphaSum += aInput[aWidth * y + aNexts[x]] -
++                        aInput[aWidth * y + aLasts[x]];
+         }
+     }
+ }
+ 
+ /**
+  * Identical to BoxBlurHorizontal, except it blurs top and bottom instead of
+  * left and right.
+  * XXX shouldn't we pass stride in separately here?
+  */
+ static void
+-BoxBlurVertical(unsigned char* aInput,
+-                unsigned char* aOutput,
++BoxBlurVertical(unsigned char* TT_RESTRICTED_PTR aInput,
++                unsigned char* TT_RESTRICTED_PTR aOutput,
+                 int32_t aTopLobe,
+                 int32_t aBottomLobe,
+                 int32_t aWidth,
+                 int32_t aRows,
+-                const IntRect& aSkipRect)
++                const IntRect& aSkipRect,
++                int32_t* TT_RESTRICTED_PTR aLasts,
++                int32_t* TT_RESTRICTED_PTR aNexts)
+ {
+     MOZ_ASSERT(aRows > 0);
+ 
+     int32_t boxSize = aTopLobe + aBottomLobe + 1;
+     bool skipRectCoversWholeColumn = 0 >= aSkipRect.y &&
+                                      aRows <= aSkipRect.YMost();
+     if (boxSize == 1) {
+         memcpy(aOutput, aInput, aWidth*aRows);
+         return;
+     }
+     uint32_t reciprocal = uint32_t((uint64_t(1) << 32) / boxSize);
+ 
++    for (int32_t y = 0; y < aRows; y++) {
++        int32_t tmp = y - aTopLobe;
++        aLasts[y] = max(tmp, 0);
++        aNexts[y] = min(tmp + boxSize, aRows - 1);
++    }
++
+     for (int32_t x = 0; x < aWidth; x++) {
+         bool inSkipRectX = x >= aSkipRect.x &&
+                            x < aSkipRect.XMost();
+         if (inSkipRectX && skipRectCoversWholeColumn) {
+             x = aSkipRect.XMost() - 1;
+             continue;
+         }
+ 
+@@ -161,24 +177,18 @@ BoxBlurVertical(unsigned char* aInput,
+                     int32_t pos = y + i - aTopLobe;
+                     // See assertion above; if aRows is zero, then we would have no
+                     // valid position to clamp to.
+                     pos = max(pos, 0);
+                     pos = min(pos, aRows - 1);
+                     alphaSum += aInput[aWidth * pos + x];
+                 }
+             }
+-            int32_t tmp = y - aTopLobe;
+-            int32_t last = max(tmp, 0);
+-            int32_t next = min(tmp + boxSize, aRows - 1);
+-
+-            aOutput[aWidth * y + x] = (uint64_t(alphaSum) * reciprocal) >> 32;
+-
+-            alphaSum += aInput[aWidth * next + x] -
+-                        aInput[aWidth * last + x];
++            alphaSum += aInput[aWidth * aNexts[y] + x] -
++                        aInput[aWidth * aLasts[y] + x];
+         }
+     }
+ }
+ 
+ static void ComputeLobes(int32_t aRadius, int32_t aLobes[3][2])
+ {
+     int32_t major, minor, final;
+ 
+@@ -495,31 +505,41 @@ AlphaBoxBlur::Blur(uint8_t* aData)
+       // Fallback to old blurring code when the surface is so large it may
+       // overflow our integral image!
+ 
+       // No need to use CheckedInt here - we have validated it in the constructor.
+       size_t szB = stride * size.height;
+       uint8_t* tmpData = new uint8_t[szB];
+       memset(tmpData, 0, szB);
+ 
++      size_t szLastsNexts = 0;
++      if (mBlurRadius.width > 0) {
++        szLastsNexts = stride;
++      }
++      if (mBlurRadius.height > 0) {
++        szLastsNexts = max<size_t>(szLastsNexts, GetSize().height);
++      }
++      nsAutoArrayPtr<int32_t> tmpLasts(new int32_t[szLastsNexts]);
++      nsAutoArrayPtr<int32_t> tmpNexts(new int32_t[szLastsNexts]);
++
+       uint8_t* a = aData;
+       uint8_t* b = tmpData;
+       if (mBlurRadius.width > 0) {
+-        BoxBlurHorizontal(a, b, horizontalLobes[0][0], horizontalLobes[0][1], stride, GetSize().height, mSkipRect);
+-        BoxBlurHorizontal(b, a, horizontalLobes[1][0], horizontalLobes[1][1], stride, GetSize().height, mSkipRect);
+-        BoxBlurHorizontal(a, b, horizontalLobes[2][0], horizontalLobes[2][1], stride, GetSize().height, mSkipRect);
++        BoxBlurHorizontal(a, b, horizontalLobes[0][0], horizontalLobes[0][1], stride, GetSize().height, mSkipRect, tmpLasts, tmpNexts);
++        BoxBlurHorizontal(b, a, horizontalLobes[1][0], horizontalLobes[1][1], stride, GetSize().height, mSkipRect, tmpLasts, tmpNexts);
++        BoxBlurHorizontal(a, b, horizontalLobes[2][0], horizontalLobes[2][1], stride, GetSize().height, mSkipRect, tmpLasts, tmpNexts);
+       } else {
+         a = tmpData;
+         b = aData;
+       }
+       // The result is in 'b' here.
+       if (mBlurRadius.height > 0) {
+-        BoxBlurVertical(b, a, verticalLobes[0][0], verticalLobes[0][1], stride, GetSize().height, mSkipRect);
+-        BoxBlurVertical(a, b, verticalLobes[1][0], verticalLobes[1][1], stride, GetSize().height, mSkipRect);
+-        BoxBlurVertical(b, a, verticalLobes[2][0], verticalLobes[2][1], stride, GetSize().height, mSkipRect);
++        BoxBlurVertical(b, a, verticalLobes[0][0], verticalLobes[0][1], stride, GetSize().height, mSkipRect, tmpLasts, tmpNexts);
++        BoxBlurVertical(a, b, verticalLobes[1][0], verticalLobes[1][1], stride, GetSize().height, mSkipRect, tmpLasts, tmpNexts);
++        BoxBlurVertical(b, a, verticalLobes[2][0], verticalLobes[2][1], stride, GetSize().height, mSkipRect, tmpLasts, tmpNexts);
+       } else {
+         a = b;
+       }
+       // The result is in 'a' here.
+       if (a == tmpData) {
+         memcpy(aData, tmpData, szB);
+       }
+       delete [] tmpData;
+diff --git a/gfx/2d/DrawTargetD2D.cpp b/gfx/2d/DrawTargetD2D.cpp
+--- a/gfx/2d/DrawTargetD2D.cpp
++++ b/gfx/2d/DrawTargetD2D.cpp
+@@ -13,16 +13,25 @@
+ #include "ImageScaling.h"
+ #include "Logging.h"
+ #include "Tools.h"
+ #include <algorithm>
+ #include "mozilla/Constants.h"
+ 
+ #include <dwrite.h>
+ 
++#if _MSC_VER == 1400
++#include <emmintrin.h>
++extern "C" {
++  extern __m128i _mm_shuffle_epi8(__m128i a, __m128i b);
++}
++#else
++#include <tmmintrin.h>
++#endif
++
+ typedef HRESULT (WINAPI*D2D1CreateFactoryFunc)(
+     D2D1_FACTORY_TYPE factoryType,
+     REFIID iid,
+     CONST D2D1_FACTORY_OPTIONS *pFactoryOptions,
+     void **factory
+ );
+ 
+ typedef HRESULT (WINAPI*D3D10CreateEffectFromMemoryFunc)(
+@@ -2342,29 +2351,93 @@ DrawTargetD2D::CreateStrokeStyleForOptio
+ 
+   if (FAILED(hr)) {
+     gfxWarning() << "Failed to create Direct2D stroke style.";
+   }
+ 
+   return style;
+ }
+ 
++static const float f_zero = 0;
++static const float f_one = 1.0f;
++static const __m128 xm_4095_rcp_mul = _mm_set_ss(1.0f / 4095);
++static const __m128 xm_255x4 = _mm_set1_ps(255.0f);
++static const __m128i sfl_pack4 = _mm_set_epi8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 12, 0, 4, 8);
++
+ TemporaryRef<ID3D10Texture2D>
+ DrawTargetD2D::CreateGradientTexture(const GradientStopsD2D *aStops)
+ {
+   CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, 4096, 1, 1, 1);
+ 
+   std::vector<D2D1_GRADIENT_STOP> rawStops;
+   rawStops.resize(aStops->mStopCollection->GetGradientStopCount());
+   aStops->mStopCollection->GetGradientStops(&rawStops.front(), rawStops.size());
+ 
+-  std::vector<unsigned char> textureData;
+-  textureData.resize(4096 * 4);
+-  unsigned char *texData = &textureData.front();
+-
++  unsigned char *textureData = new unsigned char [4096 * 4];
++  unsigned char *texData = textureData;
++
++#if (_MSC_VER != 1400) || !defined(_M_AMD64)
++if (Factory::HasSSE2()) {
++  bool has_ssse3 = Factory::HasSSSE3();
++  __m128 prevColorPos = _mm_load_ss(&f_zero);
++  __m128 nextColorPos = _mm_load_ss(&f_one);
++  __m128 prevColor = _mm_loadu_ps((float*)&rawStops[0].color);
++  __m128 nextColor = prevColor;
++
++  if (rawStops.size() >= 2) {
++    nextColor = _mm_loadu_ps((float*)&rawStops[1].color);
++    nextColorPos = _mm_load_ss(&rawStops[1].position);
++  }
++
++  uint32_t stopPosition = 2;
++  __m128 interp_rcp_mul = _mm_div_ss(_mm_load_ss(&f_one), _mm_sub_ss(nextColorPos, prevColorPos));
++
++  // Not the most optimized way but this will do for now.
++  for (int i = 0; i < 4096; i++) {
++    // The 4095 seems a little counter intuitive, but we want the gradient
++    // color at offset 0 at the first pixel, and at offset 1.0f at the last
++    // pixel.
++    __m128 pos;
++    pos = _mm_cvtsi32_ss(pos, i);
++    pos = _mm_mul_ss(pos, xm_4095_rcp_mul);
++
++    if (_mm_comigt_ss(pos, nextColorPos)) {
++      prevColor = nextColor;
++      prevColorPos = nextColorPos;
++      if (rawStops.size() > stopPosition) {
++        nextColor = _mm_loadu_ps((float*)&rawStops[stopPosition].color);
++        nextColorPos = _mm_load_ss(&rawStops[stopPosition++].position);
++      } else {
++        nextColorPos = _mm_load_ss(&f_one);
++      }
++      interp_rcp_mul = _mm_div_ss(_mm_load_ss(&f_one), _mm_sub_ss(nextColorPos, prevColorPos));
++    }
++
++    __m128 interp = _mm_mul_ss(_mm_sub_ss(pos, prevColorPos), interp_rcp_mul);
++    interp = _mm_shuffle_ps(interp, interp, _MM_SHUFFLE(0, 0, 0, 0));
++
++    __m128 newColor = _mm_add_ps(_mm_mul_ps(_mm_sub_ps(nextColor, prevColor), interp), prevColor);
++    newColor = _mm_mul_ps(newColor, xm_255x4);
++
++    if (has_ssse3) {
++      __m128i xmResult = _mm_cvttps_epi32(newColor);
++      xmResult = _mm_shuffle_epi8(xmResult, sfl_pack4);
++      *((uint32_t*)&texData[i * 4]) = _mm_cvtsi128_si32(xmResult);
++    } else
++    {
++      newColor = _mm_shuffle_ps(newColor, newColor, _MM_SHUFFLE(3, 0, 1, 2));
++      __m128i xmResult = _mm_cvttps_epi32(newColor);
++      xmResult = _mm_packs_epi32(xmResult, _mm_setzero_si128());
++      xmResult = _mm_packus_epi16(xmResult, _mm_setzero_si128());
++      *((uint32_t*)&texData[i * 4]) = _mm_cvtsi128_si32(xmResult);
++    }
++  }
++} else
++#endif  // (_MSC_VER != 1400) || !defined(_M_AMD64)
++{
+   float prevColorPos = 0;
+   float nextColorPos = 1.0f;
+   D2D1_COLOR_F prevColor = rawStops[0].color;
+   D2D1_COLOR_F nextColor = prevColor;
+ 
+   if (rawStops.size() >= 2) {
+     nextColor = rawStops[1].color;
+     nextColorPos = rawStops[1].position;
+@@ -2403,24 +2476,25 @@ DrawTargetD2D::CreateGradientTexture(con
+                     prevColor.b + (nextColor.b - prevColor.b) * interp,
+                     prevColor.a + (nextColor.a - prevColor.a) * interp);
+ 
+     texData[i * 4] = (char)(255.0f * newColor.b);
+     texData[i * 4 + 1] = (char)(255.0f * newColor.g);
+     texData[i * 4 + 2] = (char)(255.0f * newColor.r);
+     texData[i * 4 + 3] = (char)(255.0f * newColor.a);
+   }
+-
++}
+   D3D10_SUBRESOURCE_DATA data;
+-  data.pSysMem = &textureData.front();
++  data.pSysMem = textureData;
+   data.SysMemPitch = 4096 * 4;
+ 
+   RefPtr<ID3D10Texture2D> tex;
+   mDevice->CreateTexture2D(&desc, &data, byRef(tex));
+ 
++  delete [] textureData;
+   return tex;
+ }
+ 
+ TemporaryRef<ID3D10Texture2D>
+ DrawTargetD2D::CreateTextureForAnalysis(IDWriteGlyphRunAnalysis *aAnalysis, const IntRect &aBounds)
+ {
+   HRESULT hr;
+ 
+diff --git a/gfx/2d/Factory.cpp b/gfx/2d/Factory.cpp
+--- a/gfx/2d/Factory.cpp
++++ b/gfx/2d/Factory.cpp
+@@ -164,16 +164,29 @@ Factory::HasSSE2()
+   return true;
+ #elif defined(HAVE_CPU_DETECTION)
+   return HasCPUIDBit(1u, edx, (1u<<26));
+ #else
+   return false;
+ #endif
+ }
+ 
++bool
++Factory::HasSSSE3()
++{
++#if defined(__SSSE3__)
++  // gcc with -mssse3
++  return true;
++#elif defined(HAVE_CPU_DETECTION)
++  return HasCPUIDBit(1u, ecx, (1u<<9));
++#else
++  return false;
++#endif
++}
++
+ TemporaryRef<DrawTarget>
+ Factory::CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFormat aFormat)
+ {
+   RefPtr<DrawTarget> retVal;
+   switch (aBackend) {
+ #ifdef WIN32
+   case BACKEND_DIRECT2D:
+     {
+diff --git a/gfx/cairo/libpixman/src/Makefile.in b/gfx/cairo/libpixman/src/Makefile.in
+--- a/gfx/cairo/libpixman/src/Makefile.in
++++ b/gfx/cairo/libpixman/src/Makefile.in
+@@ -20,17 +20,17 @@ DEFINES += -DPIXMAN_NO_TLS
+ 
+ # Build MMX code either with VC or with gcc-on-x86
+ ifdef _MSC_VER
+ ifeq (86,$(findstring 86,$(OS_TEST)))
+ ifneq (64,$(findstring 64,$(OS_TEST)))
+ USE_MMX=1
+ endif
+ USE_SSE2=1
+-MMX_CFLAGS=
++MMX_CFLAGS=-GL-
+ ifneq (,$(filter 1400 1500, $(_MSC_VER)))
+ # MSVC 2005 and 2008 generate code that breaks alignment
+ # restrictions in debug mode so always optimize.
+ # See bug 640250 for more info.
+ SSE2_CFLAGS=-O2
+ else
+ SSE2_CFLAGS=
+ endif
+@@ -151,20 +151,33 @@ include $(topsrcdir)/config/rules.mk
+ 
+ CFLAGS += -DPACKAGE="mozpixman" -D_USE_MATH_DEFINES
+ 
+ # Disable spammy "missing initializer" GCC warning
+ ifdef GNU_CC
+ CFLAGS += -Wno-missing-field-initializers
+ endif # GNU_CC
+ 
++ifdef _MSC_VER
++ifneq (,$(filter -DTT_MEMUTIL,$(MOZ_OPTIMIZE_FLAGS)))
++OPENMP_FLAGS_TT = -GL- -openmp
++else
++OPENMP_FLAGS_TT =
++endif
++pixman-implementation.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(OPENMP_FLAGS_TT)
++
++pixman-general.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(OPENMP_FLAGS_TT)
++
++pixman-trap.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(OPENMP_FLAGS_TT)
++endif
++
+ # special rule for pixman-mmx to get the right cflags
+ pixman-mmx.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(MMX_CFLAGS)
+ 
+-pixman-sse2.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(SSE2_CFLAGS)
++pixman-sse2.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(SSE2_CFLAGS) $(OPENMP_FLAGS_TT)
+ 
+ pixman-arm-neon.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(ARM_NEON_CFLAGS)
+ 
+ pixman-vmx.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(VMX_CFLAGS)
+ 
+ # The ARM asm functions here don't appreciate being called by functions
+ # compiled with -mapcs-frame.  See bug 832752.
+ CXXFLAGS := $(filter-out -mapcs-frame,$(CXXFLAGS))
+diff --git a/gfx/cairo/libpixman/src/pixman-implementation.c b/gfx/cairo/libpixman/src/pixman-implementation.c
+--- a/gfx/cairo/libpixman/src/pixman-implementation.c
++++ b/gfx/cairo/libpixman/src/pixman-implementation.c
+@@ -22,16 +22,24 @@
+  */
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+ #include <stdlib.h>
+ #include "pixman-private.h"
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
++#ifdef _MSC_VER
++#include <windows.h>
++#endif
++
+ pixman_implementation_t *
+ _pixman_implementation_create (pixman_implementation_t *fallback,
+ 			       const pixman_fast_path_t *fast_paths)
+ {
+     pixman_implementation_t *imp;
+ 
+     assert (fast_paths);
+ 
+@@ -371,21 +379,194 @@ pixman_bool_t
+ 	    env += len;
+ 	}
+ 	while (*env++);
+     }
+ 
+     return FALSE;
+ }
+ 
++#ifdef _MSC_VER
++
++#ifdef TT_MEMUTIL
++uint32_t dwNonTemporalDataSizeMin = NON_TEMPORAL_STORES_NOT_SUPPORTED;
++uint32_t dwNonTemporalMemcpySizeMin = NON_TEMPORAL_STORES_NOT_SUPPORTED;
++#endif
++typedef BOOL (WINAPI *LPFN_GLPI)(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, PDWORD);
++
++int Initialize_TT()
++{
++#ifdef TT_MEMUTIL
++    int omp_thread_counts = 0;
++    DWORD pam, sam;
++
++    long env_omp_num_threads = 0;
++    wchar_t *lpwz_env = _wgetenv(L"OMP_NUM_THREADS");
++    if (lpwz_env)
++    {
++      env_omp_num_threads = _wtol(lpwz_env);
++    }
++
++    omp_set_dynamic(0);
++    omp_set_num_threads(1);
++
++    if (GetProcessAffinityMask(GetCurrentProcess(), &pam, &sam))
++    {
++        LPFN_GLPI glpi =
++            (LPFN_GLPI)GetProcAddress(GetModuleHandle("kernel32.dll"),
++            "GetLogicalProcessorInformation");
++        DWORD returnLength = 0;
++        int *pThreadBindIndex = NULL;
++
++        if (NULL != glpi &&
++            !glpi(NULL, &returnLength) &&
++            GetLastError() == ERROR_INSUFFICIENT_BUFFER)
++        {
++            PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer =
++                (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)malloc(returnLength);
++
++            if (glpi(buffer, &returnLength))
++            {
++                DWORD byteOffset;
++                PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr;
++                int i;
++                size_t threadBindIndexSize;
++
++                byteOffset = 0;
++                ptr = buffer;
++                while (byteOffset < returnLength)
++                {
++                    if (RelationProcessorCore == ptr->Relationship)
++                    {
++                        omp_thread_counts++;
++                    }
++                    byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
++                    ptr++;
++                }
++
++                threadBindIndexSize = sizeof(int) * omp_thread_counts;
++                pThreadBindIndex = (int *)malloc(threadBindIndexSize);
++                memset(pThreadBindIndex, 0xFF, threadBindIndexSize);
++
++                i = 0;
++                byteOffset = 0;
++                ptr = buffer;
++                while (byteOffset < returnLength)
++                {
++                    if (RelationProcessorCore == ptr->Relationship)
++                    {
++                        if (i < omp_thread_counts)
++                        {
++                            int b;
++
++                            for (b = 0; b <= 31; b++)
++                            {
++                                if ((pam & ptr->ProcessorMask) & (1 << b))
++                                {
++                                    pThreadBindIndex[i++] = b;
++                                    break;
++                                }
++                            }
++                        }
++                        else
++                        {
++                            break;
++                        }
++                    }
++                    byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
++                    ptr++;
++                }
++            }
++            free(buffer);
++        }
++
++        if (NULL == pThreadBindIndex)
++        {
++            int b;
++            int i;
++            size_t threadBindIndexSize;
++
++            for (b = 0; b <= 31; b++)
++            {
++                if (pam & (1 << b)) omp_thread_counts++;
++            }
++
++            threadBindIndexSize = sizeof(int) * omp_thread_counts;
++            pThreadBindIndex = (int *)malloc(threadBindIndexSize);
++            memset(pThreadBindIndex, 0xFF, threadBindIndexSize);
++
++            for (i = 0; i < omp_thread_counts; i++)
++            {
++                pThreadBindIndex[i] = i;
++            }
++        }
++
++        if (NULL != pThreadBindIndex)
++        {
++            if (omp_thread_counts >= 1)
++            {
++                OSVERSIONINFO osvi = { sizeof(OSVERSIONINFO) };
++                BOOL bIsWindows7orLater = FALSE;
++
++                omp_set_dynamic(0);
++                if (0 != env_omp_num_threads)
++                {
++                    omp_thread_counts = env_omp_num_threads;
++                }
++                omp_set_num_threads(omp_thread_counts);
++                omp_thread_counts = omp_get_max_threads();
++
++                GetVersionEx(&osvi);
++                bIsWindows7orLater =
++                    (VER_PLATFORM_WIN32_NT == osvi.dwPlatformId) &&
++                    ((6 == osvi.dwMajorVersion && osvi.dwMinorVersion >= 1) || (osvi.dwMajorVersion >= 7));
++                if (!bIsWindows7orLater)
++                {
++#pragma omp parallel
++                    {
++                        SetThreadIdealProcessor(GetCurrentThread(),
++                            pThreadBindIndex[omp_get_thread_num()]);
++                    }
++                }
++            }
++            free(pThreadBindIndex);
++        }
++    }
++#endif /* TT_MEMUTIL */
++
++#ifdef TT_MEMUTIL
++    dwNonTemporalMemcpySizeMin = dwNonTemporalDataSizeMin = GetNonTemporalDataSizeMin_tt();
++    if (dwNonTemporalMemcpySizeMin != NON_TEMPORAL_STORES_NOT_SUPPORTED)
++    {
++        dwNonTemporalMemcpySizeMin = dwNonTemporalDataSizeMin / 2;
++    }
++#endif
++
++    return 0;
++}
++
++#endif /* _MSC_VER */
++
+ pixman_implementation_t *
+ _pixman_choose_implementation (void)
+ {
+     pixman_implementation_t *imp;
+ 
++#ifdef _MSC_VER
++    {
++        static pixman_bool_t initialized = FALSE;
++
++        if (!initialized)
++        {
++            Initialize_TT();
++            initialized = TRUE;
++        }
++    }
++#endif
++
+     imp = _pixman_implementation_create_general();
+ 
+     if (!_pixman_disabled ("fast"))
+ 	imp = _pixman_implementation_create_fast_path (imp);
+ 
+     imp = _pixman_x86_get_implementations (imp);
+     imp = _pixman_arm_get_implementations (imp);
+     imp = _pixman_ppc_get_implementations (imp);
+diff --git a/gfx/cairo/libpixman/src/pixman-trap.c b/gfx/cairo/libpixman/src/pixman-trap.c
+--- a/gfx/cairo/libpixman/src/pixman-trap.c
++++ b/gfx/cairo/libpixman/src/pixman-trap.c
+@@ -20,75 +20,122 @@
+  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+  * PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++#include <limits.h>
++
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include "pixman-private.h"
+ 
+ /*
+  * Compute the smallest value greater than or equal to y which is on a
+  * grid row.
+  */
+ 
+ PIXMAN_EXPORT pixman_fixed_t
+ pixman_sample_ceil_y (pixman_fixed_t y, int n)
+ {
+     pixman_fixed_t f = pixman_fixed_frac (y);
+     pixman_fixed_t i = pixman_fixed_floor (y);
+ 
++if (8 == n)
++{
++    f = DIV (f - Y_FRAC_FIRST (8) + (STEP_Y_SMALL (8) - pixman_fixed_e), STEP_Y_SMALL (8)) * STEP_Y_SMALL (8) +
++	Y_FRAC_FIRST (8);
++    
++    if (f > Y_FRAC_LAST (8))
++    {
++	if (pixman_fixed_to_int (i) == 0x7fff)
++	{
++	    f = 0xffff; /* saturate */
++	}
++	else
++	{
++	    f = Y_FRAC_FIRST (8);
++	    i += pixman_fixed_1;
++	}
++    }
++}
++else
++{
+     f = DIV (f - Y_FRAC_FIRST (n) + (STEP_Y_SMALL (n) - pixman_fixed_e), STEP_Y_SMALL (n)) * STEP_Y_SMALL (n) +
+ 	Y_FRAC_FIRST (n);
+     
+     if (f > Y_FRAC_LAST (n))
+     {
+ 	if (pixman_fixed_to_int (i) == 0x7fff)
+ 	{
+ 	    f = 0xffff; /* saturate */
+ 	}
+ 	else
+ 	{
+ 	    f = Y_FRAC_FIRST (n);
+ 	    i += pixman_fixed_1;
+ 	}
+     }
++}
+     return (i | f);
+ }
+ 
+ /*
+  * Compute the largest value strictly less than y which is on a
+  * grid row.
+  */
+ PIXMAN_EXPORT pixman_fixed_t
+ pixman_sample_floor_y (pixman_fixed_t y,
+                        int            n)
+ {
+     pixman_fixed_t f = pixman_fixed_frac (y);
+     pixman_fixed_t i = pixman_fixed_floor (y);
+ 
++if (8 == n)
++{
++    f = DIV (f - pixman_fixed_e - Y_FRAC_FIRST (8), STEP_Y_SMALL (8)) * STEP_Y_SMALL (8) +
++	Y_FRAC_FIRST (8);
++
++    if (f < Y_FRAC_FIRST (8))
++    {
++	if (pixman_fixed_to_int (i) == 0x8000)
++	{
++	    f = 0; /* saturate */
++	}
++	else
++	{
++	    f = Y_FRAC_LAST (8);
++	    i -= pixman_fixed_1;
++	}
++    }
++}
++else
++{
+     f = DIV (f - pixman_fixed_e - Y_FRAC_FIRST (n), STEP_Y_SMALL (n)) * STEP_Y_SMALL (n) +
+ 	Y_FRAC_FIRST (n);
+ 
+     if (f < Y_FRAC_FIRST (n))
+     {
+ 	if (pixman_fixed_to_int (i) == 0x8000)
+ 	{
+ 	    f = 0; /* saturate */
+ 	}
+ 	else
+ 	{
+ 	    f = Y_FRAC_LAST (n);
+ 	    i -= pixman_fixed_1;
+ 	}
+     }
++}
+     return (i | f);
+ }
+ 
+ /*
+  * Step an edge by any amount (including negative values)
+  */
+ PIXMAN_EXPORT void
+ pixman_edge_step (pixman_edge_t *e,
+@@ -180,22 +227,32 @@ pixman_edge_init (pixman_edge_t *e,
+ 	}
+ 	else
+ 	{
+ 	    e->signdx = -1;
+ 	    e->stepx = -(-dx / dy);
+ 	    e->dx = -dx % dy;
+ 	    e->e = 0;
+ 	}
++if (8 == n)
++{
++	_pixman_edge_multi_init (e, STEP_Y_SMALL (8),
++				 &e->stepx_small, &e->dx_small);
+ 
++	_pixman_edge_multi_init (e, STEP_Y_BIG (8),
++				 &e->stepx_big, &e->dx_big);
++}
++else
++{
+ 	_pixman_edge_multi_init (e, STEP_Y_SMALL (n),
+ 				 &e->stepx_small, &e->dx_small);
+ 
+ 	_pixman_edge_multi_init (e, STEP_Y_BIG (n),
+ 				 &e->stepx_big, &e->dx_big);
++}
+     }
+     pixman_edge_step (e, y_start - y_top);
+ }
+ 
+ /*
+  * Initialize one edge structure given a line, starting y value
+  * and a pixel offset for the line
+  */
+@@ -322,25 +379,47 @@ pixman_add_trapezoids (pixman_image_t * 
+                        const pixman_trapezoid_t *traps)
+ {
+     int i;
+ 
+ #if 0
+     dump_image (image, "before");
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++int omp_thread_counts = omp_get_max_threads();
++if (omp_thread_counts >= 2 &&
++    ntraps >= omp_thread_counts &&
++    ntraps >= 160)
++{
++#pragma omp parallel for schedule(guided) default(none) \
++shared(ntraps, traps, image, x_off, y_off)
++    for (i = 0; i < ntraps; ++i)
++    {
++	const pixman_trapezoid_t *trap = &(traps[i]);
++
++	if (pixman_trapezoid_valid (trap))
++	{
++		pixman_rasterize_trapezoid (image, trap, x_off, y_off);
++	}
++    }
++}
++else
++#endif
++{
+     for (i = 0; i < ntraps; ++i)
+     {
+ 	const pixman_trapezoid_t *trap = &(traps[i]);
+ 
+ 	if (!pixman_trapezoid_valid (trap))
+ 	    continue;
+ 
+ 	pixman_rasterize_trapezoid (image, trap, x_off, y_off);
+     }
++}
+ 
+ #if 0
+     dump_image (image, "after");
+ #endif
+ }
+ 
+ PIXMAN_EXPORT void
+ pixman_rasterize_trapezoid (pixman_image_t *          image,
+diff --git a/gfx/src/nsRect.h b/gfx/src/nsRect.h
+--- a/gfx/src/nsRect.h
++++ b/gfx/src/nsRect.h
+@@ -13,16 +13,71 @@
+ #include "nsSize.h"
+ #include "nsMargin.h"
+ #include "gfxCore.h"
+ #include "nsTraceRefcnt.h"
+ #include "mozilla/gfx/BaseRect.h"
+ #include "mozilla/Likely.h"
+ #include <climits>
+ #include <algorithm>
++#include "mozilla/Util.h"
++#include "mozilla/SSE.h"
++
++#if _MSC_VER == 1400
++#include <emmintrin.h>
++#else
++#include <smmintrin.h>
++#endif
++
++#if (_MSC_VER == 1400) && !defined(_M_AMD64)
++__declspec(naked) __declspec(noinline)
++static __m128d mm_floor_pd_BaseRect(__m128d a)
++{
++  __asm {
++    // roundpd  xmm0, xmm0, 1
++    __asm _emit 0x66
++    __asm _emit 0x0F
++    __asm _emit 0x3A
++    __asm _emit 0x09
++    __asm _emit 0xC0
++    __asm _emit 0x01
++    ret
++  }
++}
++#define _mm_floor_pd(a) mm_floor_pd_BaseRect(a)
++
++__declspec(naked) __declspec(noinline)
++static __m128d mm_ceil_pd_BaseRect(__m128d a)
++{
++  __asm {
++    // roundpd  xmm0, xmm0, 2
++    __asm _emit 0x66
++    __asm _emit 0x0F
++    __asm _emit 0x3A
++    __asm _emit 0x09
++    __asm _emit 0xC0
++    __asm _emit 0x02
++    ret
++  }
++}
++#define _mm_ceil_pd(a) mm_ceil_pd_BaseRect(a)
++
++/* VC8 doesn't support some SSE2 built-in functions, so we define them here. */
++static __forceinline __m128
++_mm_castsi128_ps(__m128i a)
++{
++    return *(__m128 *)&a;
++}
++
++static __forceinline __m128i
++_mm_castps_si128(__m128 a)
++{
++    return *(__m128i *)&a;
++}
++#endif
+ 
+ struct nsIntRect;
+ 
+ struct NS_GFX nsRect :
+   public mozilla::gfx::BaseRect<nscoord, nsRect, nsPoint, nsSize, nsMargin> {
+   typedef mozilla::gfx::BaseRect<nscoord, nsRect, nsPoint, nsSize, nsMargin> Super;
+ 
+   static void VERIFY_COORD(nscoord aValue) { ::VERIFY_COORD(aValue); }
+@@ -40,17 +95,20 @@ struct NS_GFX nsRect :
+   {
+     MOZ_COUNT_CTOR(nsRect);
+   }
+   nsRect(nscoord aX, nscoord aY, nscoord aWidth, nscoord aHeight) :
+       Super(aX, aY, aWidth, aHeight)
+   {
+     MOZ_COUNT_CTOR(nsRect);
+   }
+-
++  nsRect(const __m128i& a128i) : Super(a128i)
++  {
++    MOZ_COUNT_CTOR(nsRect);
++  }
+ #ifdef NS_BUILD_REFCNT_LOGGING
+   ~nsRect() {
+     MOZ_COUNT_DTOR(nsRect);
+   }
+ #endif
+ 
+   // A version of Inflate that caps the values to the nscoord range.
+   // x & y is capped at the minimum value nscoord_MIN and
+@@ -223,17 +281,19 @@ struct NS_GFX nsIntRect :
+   }
+   nsIntRect(const nsIntPoint& aOrigin, const nsIntSize &aSize) : Super(aOrigin, aSize)
+   {
+   }
+   nsIntRect(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight) :
+       Super(aX, aY, aWidth, aHeight)
+   {
+   }
+-
++  nsIntRect(const __m128i& a128i) : Super(a128i)
++  {
++  }
+   inline nsRect ToAppUnits(nscoord aAppUnitsPerPixel) const;
+ 
+   // Returns a special nsIntRect that's used in some places to signify
+   // "all available space".
+   static const nsIntRect& GetMaxSizedIntRect() {
+     static const nsIntRect r(0, 0, INT_MAX, INT_MAX);
+     return r;
+   }
+@@ -280,76 +340,173 @@ nsRect::ConvertAppUnitsRoundIn(int32_t a
+   rect.x = NSToCoordCeil(NSCoordScale(x, aFromAPP, aToAPP));
+   rect.y = NSToCoordCeil(NSCoordScale(y, aFromAPP, aToAPP));
+   rect.width = (right - rect.x);
+   rect.height = (bottom - rect.y);
+ 
+   return rect;
+ }
+ 
++static const MOZ_ALIGNED_DECL(double d_half[2], 16) = { 0.5, 0.5 };
++
+ // scale the rect but round to preserve centers
+ inline nsIntRect
+ nsRect::ScaleToNearestPixels(float aXScale, float aYScale,
+                              nscoord aAppUnitsPerPixel) const
+ {
++#if !defined(NS_COORD_IS_FLOAT) && ((_MSC_VER != 1400) || !defined(_M_AMD64))
++  if (IsInt32x4() && mozilla::supports_sse4_1()) {
++    __m128d appUnitsPerPixel_x2 = _mm_cvtepi32_pd(_mm_set1_epi32(aAppUnitsPerPixel));
++    __m128i src_x4 = _mm_loadu_si128((__m128i *)&x);
++    __m128d xy = _mm_cvtepi32_pd(src_x4);
++    __m128d xyMost = _mm_cvtepi32_pd(_mm_add_epi32(src_x4, _mm_srli_si128(src_x4, 8)));
++    __m128d xyScale = _mm_cvtps_pd(_mm_unpacklo_ps(_mm_load_ss(&aXScale), _mm_load_ss(&aYScale)));
++
++    __m128i rectXY = _mm_cvttpd_epi32(_mm_floor_pd(_mm_add_pd(_mm_mul_pd(_mm_div_pd(xy, appUnitsPerPixel_x2), xyScale), *(__m128d *)&d_half)));
++    __m128i rectWH = _mm_sub_epi32(_mm_cvttpd_epi32(_mm_floor_pd(_mm_add_pd(_mm_mul_pd(_mm_div_pd(xyMost, appUnitsPerPixel_x2), xyScale), *(__m128d *)&d_half))), rectXY);
++    __m128i rect = _mm_unpacklo_epi64(rectXY, rectWH);
++
++    return nsIntRect(rect);
++  }
++#endif
++
+   nsIntRect rect;
+   rect.x = NSToIntRoundUp(NSAppUnitsToDoublePixels(x, aAppUnitsPerPixel) * aXScale);
+   rect.y = NSToIntRoundUp(NSAppUnitsToDoublePixels(y, aAppUnitsPerPixel) * aYScale);
+   rect.width  = NSToIntRoundUp(NSAppUnitsToDoublePixels(XMost(),
+                                aAppUnitsPerPixel) * aXScale) - rect.x;
+   rect.height = NSToIntRoundUp(NSAppUnitsToDoublePixels(YMost(),
+                                aAppUnitsPerPixel) * aYScale) - rect.y;
+   return rect;
+ }
+ 
+ // scale the rect but round to smallest containing rect
+ inline nsIntRect
+ nsRect::ScaleToOutsidePixels(float aXScale, float aYScale,
+                              nscoord aAppUnitsPerPixel) const
+ {
++#if !defined(NS_COORD_IS_FLOAT) && ((_MSC_VER != 1400) || !defined(_M_AMD64))
++  if (IsInt32x4() && mozilla::supports_sse4_1()) {
++    __m128 appUnitsPerPixel_x4 = _mm_cvtepi32_ps(_mm_set1_epi32(aAppUnitsPerPixel));
++    __m128i src_x4 = _mm_loadu_si128((__m128i *)&x);
++    __m128 xy_xyMost = _mm_cvtepi32_ps(_mm_add_epi32(src_x4, _mm_slli_si128(src_x4, 8)));
++    __m128 xyScale_x2 = _mm_unpacklo_ps(_mm_load_ss(&aXScale), _mm_load_ss(&aYScale));
++    xyScale_x2 = _mm_movelh_ps(xyScale_x2, xyScale_x2);
++
++    __m128 a = _mm_mul_ps(_mm_div_ps(xy_xyMost, appUnitsPerPixel_x4), xyScale_x2);
++    __m128i rectXY = _mm_cvttpd_epi32(_mm_floor_pd(_mm_cvtps_pd(a)));
++    __m128i rectWH = _mm_sub_epi32(_mm_cvttpd_epi32(_mm_ceil_pd(_mm_cvtps_pd(_mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(a), 8))))), rectXY);
++    __m128i rect = _mm_unpacklo_epi64(rectXY, rectWH);
++
++    return nsIntRect(rect);
++  }
++#endif
++
+   nsIntRect rect;
+   rect.x = NSToIntFloor(NSAppUnitsToFloatPixels(x, float(aAppUnitsPerPixel)) * aXScale);
+   rect.y = NSToIntFloor(NSAppUnitsToFloatPixels(y, float(aAppUnitsPerPixel)) * aYScale);
+   rect.width  = NSToIntCeil(NSAppUnitsToFloatPixels(XMost(),
+                             float(aAppUnitsPerPixel)) * aXScale) - rect.x;
+   rect.height = NSToIntCeil(NSAppUnitsToFloatPixels(YMost(),
+                             float(aAppUnitsPerPixel)) * aYScale) - rect.y;
+   return rect;
+ }
+ 
+ // scale the rect but round to largest contained rect
+ inline nsIntRect
+ nsRect::ScaleToInsidePixels(float aXScale, float aYScale,
+                             nscoord aAppUnitsPerPixel) const
+ {
++#if !defined(NS_COORD_IS_FLOAT) && ((_MSC_VER != 1400) || !defined(_M_AMD64))
++  if (IsInt32x4() && mozilla::supports_sse4_1()) {
++    __m128 appUnitsPerPixel_x4 = _mm_cvtepi32_ps(_mm_set1_epi32(aAppUnitsPerPixel));
++    __m128i src_x4 = _mm_loadu_si128((__m128i *)&x);
++    __m128 xy_xyMost = _mm_cvtepi32_ps(_mm_add_epi32(src_x4, _mm_slli_si128(src_x4, 8)));
++    __m128 xyScale_x2 = _mm_unpacklo_ps(_mm_load_ss(&aXScale), _mm_load_ss(&aYScale));
++    xyScale_x2 = _mm_movelh_ps(xyScale_x2, xyScale_x2);
++
++    __m128 a = _mm_mul_ps(_mm_div_ps(xy_xyMost, appUnitsPerPixel_x4), xyScale_x2);
++    __m128i rectXY = _mm_cvttpd_epi32(_mm_ceil_pd(_mm_cvtps_pd(a)));
++    __m128i rectWH = _mm_sub_epi32(_mm_cvttpd_epi32(_mm_floor_pd(_mm_cvtps_pd(_mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(a), 8))))), rectXY);
++    __m128i rect = _mm_unpacklo_epi64(rectXY, rectWH);
++
++    return nsIntRect(rect);
++  }
++#endif
++
+   nsIntRect rect;
+   rect.x = NSToIntCeil(NSAppUnitsToFloatPixels(x, float(aAppUnitsPerPixel)) * aXScale);
+   rect.y = NSToIntCeil(NSAppUnitsToFloatPixels(y, float(aAppUnitsPerPixel)) * aYScale);
+   rect.width  = NSToIntFloor(NSAppUnitsToFloatPixels(XMost(),
+                              float(aAppUnitsPerPixel)) * aXScale) - rect.x;
+   rect.height = NSToIntFloor(NSAppUnitsToFloatPixels(YMost(),
+                              float(aAppUnitsPerPixel)) * aYScale) - rect.y;
+   return rect;
+ }
+ 
+ inline nsIntRect
+ nsRect::ToNearestPixels(nscoord aAppUnitsPerPixel) const
+ {
++#if !defined(NS_COORD_IS_FLOAT) && ((_MSC_VER != 1400) || !defined(_M_AMD64))
++  if (IsInt32x4() && mozilla::supports_sse4_1()) {
++    __m128d appUnitsPerPixel_x2 = _mm_cvtepi32_pd(_mm_set1_epi32(aAppUnitsPerPixel));
++    __m128i src_x4 = _mm_loadu_si128((__m128i *)&x);
++    __m128d xy = _mm_cvtepi32_pd(src_x4);
++    __m128d xyMost = _mm_cvtepi32_pd(_mm_add_epi32(src_x4, _mm_srli_si128(src_x4, 8)));
++
++    __m128i rectXY = _mm_cvttpd_epi32(_mm_floor_pd(_mm_add_pd(_mm_div_pd(xy, appUnitsPerPixel_x2), *(__m128d *)&d_half)));
++    __m128i rectWH = _mm_sub_epi32(_mm_cvttpd_epi32(_mm_floor_pd(_mm_add_pd(_mm_div_pd(xyMost, appUnitsPerPixel_x2), *(__m128d *)&d_half))), rectXY);
++    __m128i rect = _mm_unpacklo_epi64(rectXY, rectWH);
++
++    return nsIntRect(rect);
++  }
++#endif
++
+   return ScaleToNearestPixels(1.0f, 1.0f, aAppUnitsPerPixel);
+ }
+ 
+ inline nsIntRect
+ nsRect::ToOutsidePixels(nscoord aAppUnitsPerPixel) const
+ {
++#if !defined(NS_COORD_IS_FLOAT) && ((_MSC_VER != 1400) || !defined(_M_AMD64))
++  if (IsInt32x4() && mozilla::supports_sse4_1()) {
++    __m128 appUnitsPerPixel_x4 = _mm_cvtepi32_ps(_mm_set1_epi32(aAppUnitsPerPixel));
++    __m128i src_x4 = _mm_loadu_si128((__m128i *)&x);
++    __m128 xy_xyMost = _mm_cvtepi32_ps(_mm_add_epi32(src_x4, _mm_slli_si128(src_x4, 8)));
++
++    __m128 a = _mm_div_ps(xy_xyMost, appUnitsPerPixel_x4);
++    __m128i rectXY = _mm_cvttpd_epi32(_mm_floor_pd(_mm_cvtps_pd(a)));
++    __m128i rectWH = _mm_sub_epi32(_mm_cvttpd_epi32(_mm_ceil_pd(_mm_cvtps_pd(_mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(a), 8))))), rectXY);
++    __m128i rect = _mm_unpacklo_epi64(rectXY, rectWH);
++
++    return nsIntRect(rect);
++  }
++#endif
++
+   return ScaleToOutsidePixels(1.0f, 1.0f, aAppUnitsPerPixel);
+ }
+ 
+ inline nsIntRect
+ nsRect::ToInsidePixels(nscoord aAppUnitsPerPixel) const
+ {
++#if !defined(NS_COORD_IS_FLOAT) && ((_MSC_VER != 1400) || !defined(_M_AMD64))
++  if (IsInt32x4() && mozilla::supports_sse4_1()) {
++    __m128 appUnitsPerPixel_x4 = _mm_cvtepi32_ps(_mm_set1_epi32(aAppUnitsPerPixel));
++    __m128i src_x4 = _mm_loadu_si128((__m128i *)&x);
++    __m128 xy_xyMost = _mm_cvtepi32_ps(_mm_add_epi32(src_x4, _mm_slli_si128(src_x4, 8)));
++
++    __m128 a = _mm_div_ps(xy_xyMost, appUnitsPerPixel_x4);
++    __m128i rectXY = _mm_cvttpd_epi32(_mm_ceil_pd(_mm_cvtps_pd(a)));
++    __m128i rectWH = _mm_sub_epi32(_mm_cvttpd_epi32(_mm_floor_pd(_mm_cvtps_pd(_mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(a), 8))))), rectXY);
++    __m128i rect = _mm_unpacklo_epi64(rectXY, rectWH);
++
++    return nsIntRect(rect);
++  }
++#endif
++
+   return ScaleToInsidePixels(1.0f, 1.0f, aAppUnitsPerPixel);
+ }
+ 
+ // app units are integer multiples of pixels, so no rounding needed
+ inline nsRect
+ nsIntRect::ToAppUnits(nscoord aAppUnitsPerPixel) const
+ {
+   return nsRect(NSIntPixelsToAppUnits(x, aAppUnitsPerPixel),
+diff --git a/js/src/Makefile.in b/js/src/Makefile.in
+--- a/js/src/Makefile.in
++++ b/js/src/Makefile.in
+@@ -1026,8 +1026,33 @@ endif
+ 
+ TestMain$(HOST_BIN_SUFFIX): $(TESTMAIN_OBJS)
+ 	$(CXX) -o TestMain$(HOST_BIN_SUFFIX) $(TESTMAIN_OBJS)
+ endif
+ 
+ #
+ # END kludges for the Nitro assembler
+ ###############################################
++ifdef _MSC_VER
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# Optimizer bug with MSVC PGO (Bug 595653)
++YarrPattern.$(OBJ_SUFFIX): COMPILE_CXXFLAGS := $(COMPILE_CXXFLAGS:arch:SSE2=arch:SSE)
++
++# -LTCG:PGINSTRUMENT bug of MSVC PGO
++PolyIC.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++# -LTCG:PGINSTRUMENT bug of MSVC PGO
++MonoIC.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++# Optimizer bug with MSVC PGO
++FrameState.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++FastOps.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++
++ifneq (x86_64, $(TARGET_CPU))
++ifdef ENABLE_ION
++# Optimizer bug with MSVC PGO
++Trampoline-x86.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL-
++endif
++endif
++
++endif
++endif # _MSC_VER
+diff --git a/js/src/jsmath.cpp b/js/src/jsmath.cpp
+--- a/js/src/jsmath.cpp
++++ b/js/src/jsmath.cpp
+@@ -20,16 +20,29 @@
+ #include "jsapi.h"
+ #include "jsatom.h"
+ #include "jscntxt.h"
+ #include "jsversion.h"
+ #include "jslibmath.h"
+ #include "jscompartment.h"
+ 
+ #include "jsobjinlines.h"
++#if defined JS_CPU_X86 || defined JS_CPU_X64
++#if _MSC_VER == 1400
++#include <emmintrin.h>
++#else  /* _MSC_VER == 1400 */
++#include <smmintrin.h>
++#endif /* _MSC_VER == 1400 */
++#endif /* defined JS_CPU_X86 || defined JS_CPU_X64 */
++
++#include "assembler/assembler/MacroAssembler.h"
++
++#if (_M_IX86_FP >= 2)
++#pragma function(floor)
++#endif
+ 
+ using namespace js;
+ 
+ using mozilla::Abs;
+ using mozilla::DoubleIsInt32;
+ using mozilla::ExponentComponent;
+ using mozilla::IsFinite;
+ using mozilla::IsInfinite;
+@@ -241,23 +254,52 @@ js::math_atan2(JSContext *cx, unsigned a
+     }
+     if (!ToNumber(cx, vp[2], &x) || !ToNumber(cx, vp[3], &y))
+         return JS_FALSE;
+     z = ecmaAtan2(x, y);
+     vp->setDouble(z);
+     return JS_TRUE;
+ }
+ 
+-double
++JS_ALWAYS_INLINE double
+ js_math_ceil_impl(double x)
+ {
+ #ifdef __APPLE__
+     if (x < 0 && x > -1.0)
+         return js_copysign(0, -1);
+ #endif
++
++#if defined JS_CPU_X86 || defined JS_CPU_X64
++    if (JSC::MacroAssemblerX86Common::getSSEState() >=
++        JSC::MacroAssemblerX86Common::HasSSE4_1) {
++#if _MSC_VER != 1400
++        __m128d xd = _mm_load_sd(&x);
++        double d;
++
++        xd = _mm_ceil_sd(xd, xd);
++        _mm_store_sd(&d, xd);
++        return d;
++#elif defined JS_CPU_X86
++        double d;
++
++        __asm {
++            movsd       xmm0, x
++            /* roundsd  xmm0, xmm0, 2 */
++            __asm _emit 0x66
++            __asm _emit 0x0F
++            __asm _emit 0x3A
++            __asm _emit 0x0B
++            __asm _emit 0xC0
++            __asm _emit 0x02
++            movsd       d, xmm0
++        }
++        return d;
++#endif
++    }
++#endif /* defined JS_CPU_X86 || defined JS_CPU_X64 */
+     return ceil(x);
+ }
+ 
+ JSBool
+ js_math_ceil(JSContext *cx, unsigned argc, Value *vp)
+ {
+     double x, z;
+ 
+@@ -325,19 +367,47 @@ js::math_exp(JSContext *cx, unsigned arg
+     MathCache *mathCache = cx->runtime->getMathCache(cx);
+     if (!mathCache)
+         return JS_FALSE;
+     z = math_exp_impl(mathCache, x);
+     vp->setNumber(z);
+     return JS_TRUE;
+ }
+ 
+-double
++JS_ALWAYS_INLINE double
+ js_math_floor_impl(double x)
+ {
++#if defined JS_CPU_X86 || defined JS_CPU_X64
++    if (JSC::MacroAssemblerX86Common::getSSEState() >=
++        JSC::MacroAssemblerX86Common::HasSSE4_1) {
++#if _MSC_VER != 1400
++        __m128d xd = _mm_load_sd(&x);
++        double d;
++
++        xd = _mm_floor_sd(xd, xd);
++        _mm_store_sd(&d, xd);
++        return d;
++#elif defined JS_CPU_X86
++        double d;
++
++        __asm {
++            movsd       xmm0, x
++            /* roundsd  xmm0, xmm0, 1 */
++            __asm _emit 0x66
++            __asm _emit 0x0F
++            __asm _emit 0x3A
++            __asm _emit 0x0B
++            __asm _emit 0xC0
++            __asm _emit 0x01
++            movsd       d, xmm0
++        }
++        return d;
++#endif
++    }
++#endif /* defined JS_CPU_X86 || defined JS_CPU_X64 */
+     return floor(x);
+ }
+ 
+ JSBool
+ js_math_floor(JSContext *cx, unsigned argc, Value *vp)
+ {
+     double x, z;
+ 
+@@ -597,16 +667,71 @@ math_random_no_outparam(JSContext *cx)
+ JSBool
+ js_math_random(JSContext *cx, unsigned argc, Value *vp)
+ {
+     double z = random_nextDouble(cx);
+     vp->setDouble(z);
+     return JS_TRUE;
+ }
+ 
++#if defined JS_CPU_X86 && _MSC_VER || defined JS_CPU_X64
++static const double  dbhalf =  0.5;
++__declspec(align(16)) static const __int64 mask_sign[2] = { 0x8000000000000000 };
++#endif
++
++JS_ALWAYS_INLINE double
++js_math_round_impl(double x)
++{
++#if defined JS_CPU_X86 || defined JS_CPU_X64
++    if (JSC::MacroAssemblerX86Common::getSSEState() >=
++        JSC::MacroAssemblerX86Common::HasSSE4_1) {
++#if _MSC_VER != 1400
++        __m128d xmm1d = _mm_load_sd(&x);
++        __m128d xmm0d = xmm1d;
++        double d;
++
++        xmm0d = _mm_add_sd(xmm0d, *(__m128d *)&dbhalf);
++        xmm0d = _mm_floor_sd(xmm0d, xmm0d);
++
++        __m128i xmm2i = _mm_load_si128((__m128i *)mask_sign);
++        __m128i xmm1i = _mm_castpd_si128(xmm1d);
++
++        xmm1i = _mm_and_si128(xmm1i, xmm2i);
++        xmm2i = _mm_andnot_si128(xmm2i, _mm_castpd_si128(xmm0d));
++        xmm1i = _mm_or_si128(xmm1i, xmm2i);
++
++        _mm_store_sd(&d, _mm_castsi128_pd(xmm1i));
++        return d;
++#elif defined JS_CPU_X86
++        double d;
++
++        __asm {
++            movsd       xmm1, x
++            movdqa      xmm2, mask_sign
++            movaps      xmm0, xmm1
++            addsd       xmm0, dbhalf
++            pand        xmm1, xmm2
++            /* roundsd  xmm0, xmm0, 1 */
++            __asm _emit 0x66
++            __asm _emit 0x0F
++            __asm _emit 0x3A
++            __asm _emit 0x0B
++            __asm _emit 0xC0
++            __asm _emit 0x01
++            pandn       xmm2, xmm0
++            por         xmm1, xmm2
++            movsd       d, xmm1
++        }
++        return d;
++#endif
++    }
++#endif /* defined JS_CPU_X86 || defined JS_CPU_X64 */
++    return js_copysign(js_math_floor_impl(x + 0.5), x);
++}
++
+ JSBool /* ES5 15.8.2.15. */
+ js_math_round(JSContext *cx, unsigned argc, Value *vp)
+ {
+     CallArgs args = CallArgsFromVp(argc, vp);
+ 
+     if (args.length() == 0) {
+         args.rval().setDouble(js_NaN);
+         return true;
+@@ -623,17 +748,17 @@ js_math_round(JSContext *cx, unsigned ar
+     }
+ 
+     /* Some numbers are so big that adding 0.5 would give the wrong number. */
+     if (ExponentComponent(x) >= 52) {
+         args.rval().setNumber(x);
+         return true;
+     }
+ 
+-    args.rval().setNumber(js_copysign(floor(x + 0.5), x));
++    args.rval().setNumber(js_math_round_impl(x));
+     return true;
+ }
+ 
+ double
+ js::math_sin_impl(MathCache *cache, double x)
+ {
+     return cache->lookup(sin, x);
+ }
+diff --git a/js/src/jsobjinlines.h b/js/src/jsobjinlines.h
+--- a/js/src/jsobjinlines.h
++++ b/js/src/jsobjinlines.h
+@@ -2,16 +2,20 @@
+  * vim: set ts=8 sts=4 et sw=4 tw=99:
+  * This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #ifndef jsobjinlines_h___
+ #define jsobjinlines_h___
+ 
++#if (_M_IX86_FP >= 2) || defined(__SSE2__) || defined(_M_AMD64) || defined(__amd64__)
++#include <emmintrin.h>
++#endif
++
+ #include "jsapi.h"
+ #include "jsarray.h"
+ #include "jsbool.h"
+ #include "jscntxt.h"
+ #include "jsfun.h"
+ #include "jsiter.h"
+ #include "jslock.h"
+ #include "jsnum.h"
+@@ -1727,17 +1731,17 @@ DefineConstructorAndPrototype(JSContext 
+     JS_ASSERT(!global->nativeLookup(cx, id));
+ 
+     /* Set these first in case AddTypePropertyId looks for this class. */
+     global->setSlot(key, ObjectValue(*ctor));
+     global->setSlot(key + JSProto_LIMIT, ObjectValue(*proto));
+     global->setSlot(key + JSProto_LIMIT * 2, ObjectValue(*ctor));
+ 
+     types::AddTypePropertyId(cx, global, id, ObjectValue(*ctor));
+-    if (!global->addDataProperty(cx, id, key + JSProto_LIMIT * 2, 0)) {
++    if (!global->addDataProperty(cx, (jsid)id, key + JSProto_LIMIT * 2, 0)) {
+         global->setSlot(key, UndefinedValue());
+         global->setSlot(key + JSProto_LIMIT, UndefinedValue());
+         global->setSlot(key + JSProto_LIMIT * 2, UndefinedValue());
+         return false;
+     }
+ 
+     return true;
+ }
+diff --git a/js/src/yarr/YarrInterpreter.cpp b/js/src/yarr/YarrInterpreter.cpp
+--- a/js/src/yarr/YarrInterpreter.cpp
++++ b/js/src/yarr/YarrInterpreter.cpp
+@@ -1939,17 +1939,23 @@ public:
+     }
+ 
+ private:
+     YarrPattern& m_pattern;
+     OwnPtr<ByteDisjunction> m_bodyDisjunction;
+     unsigned m_currentAlternativeIndex;
+     Vector<ParenthesesStackEntry> m_parenthesesStack;
+     Vector<ByteDisjunction*> m_allParenthesesInfo;
++#ifdef _MSC_VER
++#pragma optimize("g", off)
++#endif
+ };
++#ifdef _MSC_VER
++#pragma optimize("g", on)
++#endif
+ 
+ PassOwnPtr<BytecodePattern> byteCompile(YarrPattern& pattern, BumpPointerAllocator* allocator)
+ {
+     return ByteCompiler(pattern).compile(allocator);
+ }
+ 
+ unsigned interpret(JSContext *cx, BytecodePattern* bytecode, const String& input, unsigned start, unsigned* output)
+ {
+diff --git a/layout/base/nsDisplayList.cpp b/layout/base/nsDisplayList.cpp
+--- a/layout/base/nsDisplayList.cpp
++++ b/layout/base/nsDisplayList.cpp
+@@ -5,16 +5,21 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  */
+ 
+ /*
+  * structures that represent things to be painted (ordered in z-order),
+  * used during painting and hit testing
+  */
+ 
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++#include <mmintrin.h>
++#include <emmintrin.h>
++#endif
++
+ // include PBrowserChild explicitly because TabChild won't include it
+ // because we're in layout :(
+ #include "mozilla/dom/PBrowserChild.h"
+ #include "mozilla/dom/TabChild.h"
+ 
+ #include "mozilla/layers/PLayerTransaction.h"
+ 
+ #include "nsDisplayList.h"
+@@ -726,23 +731,39 @@ nsDisplayListBuilder::GetBackgroundPaint
+   if (mIsPaintingToWindow) {
+     flags |= nsCSSRendering::PAINTBG_TO_WINDOW;
+   }
+   return flags;
+ }
+ 
+ static uint64_t RegionArea(const nsRegion& aRegion)
+ {
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++  __m64 area = _mm_setzero_si64();
++#else
+   uint64_t area = 0;
++#endif
+   nsRegionRectIterator iter(aRegion);
+   const nsRect* r;
+   while ((r = iter.Next()) != nullptr) {
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++    __m64 mw = *(__m64 *)&r->width;
++    __m64 mh = _mm_srli_si64(mw, 32);
++    area = _mm_add_si64(area, _mm_mul_su32(mw, mh));
++#else
+     area += uint64_t(r->width)*r->height;
++#endif
+   }
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++  uint64_t tmp;
++  *(__m64 *)&tmp = area;
++  return tmp;
++#else
+   return area;
++#endif
+ }
+ 
+ void
+ nsDisplayListBuilder::SubtractFromVisibleRegion(nsRegion* aVisibleRegion,
+                                                 const nsRegion& aRegion)
+ {
+   if (aRegion.IsEmpty())
+     return;
+@@ -752,16 +773,19 @@ nsDisplayListBuilder::SubtractFromVisibl
+   // Don't let *aVisibleRegion get too complex, but don't let it fluff out
+   // to its bounds either, which can be very bad (see bug 516740).
+   // Do let aVisibleRegion get more complex if by doing so we reduce its
+   // area by at least half.
+   if (GetAccurateVisibleRegions() || tmp.GetNumRects() <= 15 ||
+       RegionArea(tmp) <= RegionArea(*aVisibleRegion)/2) {
+     *aVisibleRegion = tmp;
+   }
++#if !defined(NS_COORD_IS_FLOAT) && defined(_M_IX86_FP) && _M_IX86_FP >= 2
++  _m_empty();
++#endif
+ }
+ 
+ nsCaret *
+ nsDisplayListBuilder::GetCaret() {
+   nsRefPtr<nsCaret> caret = CurrentPresShellState()->mPresShell->GetCaret();
+   return caret;
+ }
+ 
+diff --git a/media/webrtc/trunk/tools/gyp/pylib/gyp/generator/mozmake.py b/media/webrtc/trunk/tools/gyp/pylib/gyp/generator/mozmake.py
+--- a/media/webrtc/trunk/tools/gyp/pylib/gyp/generator/mozmake.py
++++ b/media/webrtc/trunk/tools/gyp/pylib/gyp/generator/mozmake.py
+@@ -39,16 +39,22 @@ EXTERNALLY_MANAGED_MAKE_FILE := 1
+ COMMON_FOOTER = """
+ # Skip rules that deal with regenerating Makefiles from Makefile.in files.
+ NO_MAKEFILE_RULE = 1
+ NO_SUBMAKEFILES_RULE = 1
+ 
+ include $(topsrcdir)/config/rules.mk
+ include $(topsrcdir)/ipc/chromium/chromium-config.mk
+ include %(common_mk_path)s
++
++ifeq (WINNT_1,$(OS_ARCH)_$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
++# avoid the fatal error of compiler when applying PGO
++COMPILE_CXXFLAGS += -GL-
++COMPILE_CFLAGS += -GL-
++endif
+ """
+ 
+ COMMON_MK = """# This file was generated by mozmake.py. Do not edit it directly.
+ ifndef COMMON_MK_INCLUDED
+ COMMON_MK_INCLUDED := 1
+ 
+ ifdef MOZ_DEBUG
+ CFLAGS += $(CPPFLAGS_Debug) $(CFLAGS_Debug)
+@@ -369,18 +375,18 @@ class MakefileGenerator(object):
+       data['LIBRARY_NAME'] = striplib(spec['target_name'])
+       data['FORCE_STATIC_LIB'] = 1
+     elif spec['type'] in ('loadable_module', 'shared_library'):
+       data['LIBRARY_NAME'] = striplib(spec['target_name'])
+       data['FORCE_SHARED_LIB'] = 1
+     else:
+       # Maybe nothing?
+       return False
+-    if self.flavor == 'win':
+-      top = self.relative_topsrcdir
++    if self.flavor == 'win' and os.environ.get('.PYMAKE', os.environ.get('_PYMAKE')) != '1':
++      top = '/' + self.topsrcdir[0:1] + self.topsrcdir[2:]
+     else:
+       top = self.topsrcdir
+     WriteMakefile(output_file, data, build_file, depth, top,
+                   # we set srcdir up one directory, since the subdir
+                   # doesn't actually exist in the source directory
+                   swapslashes(os.path.normpath(os.path.join(top, self.relative_srcdir, os.path.split(rel_path)[0]))),
+                   self.relative_srcdir,
+                   self.common_mk_path)
+@@ -432,19 +438,19 @@ def GenerateOutput(target_list, target_d
+ 
+   generator = MakefileGenerator(target_dicts, data, options, depth, topsrcdir, relative_topsrcdir, relative_srcdir, output_dir, flavor, common_mk_path)
+   generator.ProcessTargets(needed_targets)
+ 
+   # Write the top-level makefile, which simply calls the other makefiles
+   topdata = {'DIRS': generator.dirs}
+   if generator.parallel_dirs:
+     topdata['PARALLEL_DIRS'] = generator.parallel_dirs
+-  if flavor == 'win':
+-    top = relative_topsrcdir
+-    src = srcdir
++  if flavor == 'win' and os.environ.get('.PYMAKE', os.environ.get('_PYMAKE')) != '1':
++    top = '/' +  topsrcdir[0:1] +  topsrcdir[2:]
++    src = '/' + abs_srcdir[0:1] + abs_srcdir[2:]
+   else:
+     top = topsrcdir
+     src = abs_srcdir
+   WriteMakefile(makefile_path, topdata, params['build_files'][0],
+                 depth,
+                 swapslashes(top),
+                 swapslashes(src),
+                 swapslashes(relative_srcdir),
+diff --git a/memory/mozjemalloc/jemalloc.c b/memory/mozjemalloc/jemalloc.c
+--- a/memory/mozjemalloc/jemalloc.c
++++ b/memory/mozjemalloc/jemalloc.c
+@@ -243,31 +243,50 @@
+ #ifdef MOZ_MEMORY_WINDOWS
+ 
+ /* Some defines from the CRT internal headers that we need here. */
+ #define _CRT_SPINCOUNT 5000
+ #define __crtInitCritSecAndSpinCount InitializeCriticalSectionAndSpinCount
+ #include <io.h>
+ #include <windows.h>
+ 
++#include <intrin.h>
++#if defined _M_IX86 || defined _M_AMD64
++#if _MSC_VER == 1400
++#include <emmintrin.h>
++#else  /* _MSC_VER == 1400 */
++#include <smmintrin.h>
++#endif /* _MSC_VER == 1400 */
++#endif /* defined _M_IX86 || defined _M_AMD64 */
++
+ #pragma warning( disable: 4267 4996 4146 )
+ 
+ #define	bool BOOL
+ #define	false FALSE
+ #define	true TRUE
+ #define	inline __inline
+ #define	SIZE_T_MAX SIZE_MAX
+ #define	STDERR_FILENO 2
+ #define	PATH_MAX MAX_PATH
+ #define	vsnprintf _vsnprintf
+ 
+ #ifndef NO_TLS
+ static unsigned long tlsIndex = 0xffffffff;
+ #endif 
+ 
++BOOL ReplaceAPICode(FARPROC lpProcAddr, LPBYTE lpCodeData, int nCodeDataSize);
++static BOOL sse4_1_supported = FALSE;
++typedef struct
++{
++  int EAX;
++  int EBX;
++  int ECX;
++  int EDX;
++} CPU_INFO;
++
+ #define	__thread
+ #define	_pthread_self() __threadid()
+ #define	issetugid() 0
+ 
+ /* use MSVC intrinsics */
+ #pragma intrinsic(_BitScanForward)
+ static __forceinline int
+ ffs(int x)
+@@ -5677,16 +5696,30 @@ malloc_init_hard(void)
+ 		malloc_mutex_unlock(&init_lock);
+ #endif
+ 		return (false);
+ 	}
+ 
+ #ifdef MOZ_MEMORY_WINDOWS
+ 	/* get a thread local storage index */
+ 	tlsIndex = TlsAlloc();
++
++	{
++		CPU_INFO CPUInfo;
++
++		__cpuid((int*)&CPUInfo, 0);
++		if (CPUInfo.EAX >= 1)
++		{
++			__cpuid((int*)&CPUInfo, 1);
++			if (CPUInfo.ECX & (1 << 19))
++			{
++				sse4_1_supported = TRUE;
++			}
++		}
++	}
+ #endif
+ 
+ 	/* Get page size and number of CPUs */
+ #ifdef MOZ_MEMORY_WINDOWS
+ 	{
+ 		SYSTEM_INFO info;
+ 
+ 		GetSystemInfo(&info);
+@@ -7240,8 +7273,81 @@ BOOL APIENTRY DllMain(HINSTANCE hModule,
+     case DLL_PROCESS_DETACH:
+       break;
+ 
+   }
+ 
+   return TRUE;
+ }
+ #endif
++
++#ifdef MOZ_MEMORY_WINDOWS
++#include <math.h>
++
++double __cdecl floor_tt(double x)
++{
++#if defined _M_IX86 || defined _M_AMD64
++  if (sse4_1_supported)
++  {
++#if _MSC_VER != 1400
++    __m128d xd = _mm_load_sd(&x);
++    double d;
++
++    xd = _mm_floor_sd(xd, xd);
++    _mm_store_sd(&d, xd);
++    return d;
++#elif defined _M_IX86
++    double d;
++
++    __asm
++    {
++      movsd       xmm0, x
++      /* roundsd  xmm0, xmm0, 1 */
++      __asm _emit 0x66
++      __asm _emit 0x0F
++      __asm _emit 0x3A
++      __asm _emit 0x0B
++      __asm _emit 0xC0
++      __asm _emit 0x01
++      movsd       d, xmm0
++    }
++    return d;
++#endif
++  }
++#endif /* defined _M_IX86 || defined _M_AMD64 */
++  return floor(x);
++}
++
++double __cdecl ceil_tt(double x)
++{
++#if defined _M_IX86 || defined _M_AMD64
++  if (sse4_1_supported)
++  {
++#if _MSC_VER != 1400
++    __m128d xd = _mm_load_sd(&x);
++    double d;
++
++    xd = _mm_ceil_sd(xd, xd);
++    _mm_store_sd(&d, xd);
++    return d;
++#elif defined _M_IX86
++    double d;
++
++    __asm
++    {
++      movsd       xmm0, x
++      /* roundsd  xmm0, xmm0, 2 */
++      __asm _emit 0x66
++      __asm _emit 0x0F
++      __asm _emit 0x3A
++      __asm _emit 0x0B
++      __asm _emit 0xC0
++      __asm _emit 0x02
++      movsd       d, xmm0
++    }
++    return d;
++#endif
++  }
++#endif /* defined _M_IX86 || defined _M_AMD64 */
++  return ceil(x);
++}
++
++#endif
+diff --git a/mozglue/build/mozglue.def.in b/mozglue/build/mozglue.def.in
+--- a/mozglue/build/mozglue.def.in
++++ b/mozglue/build/mozglue.def.in
+@@ -28,9 +28,11 @@ EXPORTS
+   strdup=wrap_strdup
+   _strdup=wrap_strdup
+   wcsdup=wrap_wcsdup
+   _wcsdup=wrap_wcsdup
+   jemalloc_stats
+   jemalloc_free_dirty_pages
+   ; A hack to work around the CRT (see giant comment in Makefile.in)
+   frex=dumb_free_thunk
++  floor=floor_tt
++  ceil=ceil_tt
+ #endif
+diff --git a/security/nss/lib/freebl/Makefile b/security/nss/lib/freebl/Makefile
+--- a/security/nss/lib/freebl/Makefile
++++ b/security/nss/lib/freebl/Makefile
+@@ -128,29 +128,29 @@ ifdef NS_USE_GCC
+     ASFILES  =
+     DEFINES += -DMP_NO_MP_WORD -DMP_USE_UINT_DIGIT
+ else
+ # MSVC
+     MPI_SRCS += mpi_x86_asm.c
+     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE 
+     DEFINES += -DMP_ASSEMBLY_DIV_2DX1D -DMP_USE_UINT_DIGIT -DMP_NO_MP_WORD
+     ifdef BUILD_OPT
+-	OPTIMIZER += -Ox  # maximum optimization for freebl
++	OPTIMIZER += -O2  # maximum optimization for freebl
+     endif
+ endif
+ else
+     # -DMP_NO_MP_WORD
+     DEFINES += -DMP_CHAR_STORE_SLOW -DMP_IS_LITTLE_ENDIAN
+ ifdef NS_USE_GCC
+ # Ideally, we should use amd64 assembly code, but it's not yet mingw-w64
+ # compatible.
+ else
+ # MSVC
+     ifdef BUILD_OPT
+-	OPTIMIZER += -Ox  # maximum optimization for freebl
++	OPTIMIZER += -O2  # maximum optimization for freebl
+     endif
+     ASFILES  = arcfour-amd64-masm.asm mpi_amd64_masm.asm mp_comba_amd64_masm.asm
+     DEFINES += -DNSS_BEVAND_ARCFOUR -DMPI_AMD64 -DMP_ASSEMBLY_MULTIPLY
+     DEFINES += -DNSS_USE_COMBA
+     MPI_SRCS += mpi_amd64.c
+ endif
+ endif
+ endif
+diff --git a/mfbt/Attributes.h b/mfbt/Attributes.h
+--- a/mfbt/Attributes.h
++++ b/mfbt/Attributes.h
+@@ -5,16 +5,22 @@
+ 
+ /* Implementations of various class and method modifier attributes. */
+ 
+ #ifndef mozilla_Attributes_h_
+ #define mozilla_Attributes_h_
+ 
+ #include "mozilla/Compiler.h"
+ 
++#if defined(WIN32) || defined(__SYMBIAN32__)
++#  define TT_RESTRICTED_PTR     __restrict
++#else
++#  define TT_RESTRICTED_PTR     __restrict__
++#endif
++
+ /*
+  * MOZ_INLINE is a macro which expands to tell the compiler that the method
+  * decorated with it should be inlined.  This macro is usable from C and C++
+  * code, even though C89 does not support the |inline| keyword.  The compiler
+  * may ignore this directive if it chooses.
+  */
+ #if defined(__cplusplus)
+ #  define MOZ_INLINE            inline
+diff --git a/toolkit/xre/nsWindowsWMain.cpp b/toolkit/xre/nsWindowsWMain.cpp
+--- a/toolkit/xre/nsWindowsWMain.cpp
++++ b/toolkit/xre/nsWindowsWMain.cpp
+@@ -5,16 +5,20 @@
+ // This file is a .cpp file meant to be included in nsBrowserApp.cpp and other
+ // similar bootstrap code. It converts wide-character windows wmain into UTF-8
+ // narrow-character strings.
+ 
+ #ifndef XP_WIN
+ #error This file only makes sense on Windows.
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
+ #include "nsUTF8Utils.h"
+ 
+ #ifndef XRE_DONT_PROTECT_DLL_LOAD
+ #include "nsSetDllDirectory.h"
+ #endif
+ 
+ #ifdef __MINGW32__
+ 

@@ -8,12 +8,13 @@ System requirements
 	
      mingw64, msys
 
-     MinGW-builds on:
-     http://sourceforge.net/projects/mingwbuilds/
+     MinGW project on:
+     http://sourceforge.net/projects/mingw-w64/
 
      msys project on
      https://sourceforge.net/projects/mingw/files/MSYS/
 
+     Microsoft Visual Studio 2010.
 
  Build!
 ------------------
