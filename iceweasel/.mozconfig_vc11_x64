@@ -1,0 +1,75 @@
+# This file specifies the build flags for Firefox.  You can use it by adding:
+# to the top of your mozconfig file.
+. $topsrcdir/browser/config/mozconfig
+ac_add_options --with-app-name=Iceweasel
+
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/../obju-vc64
+mk_add_options MOZ_MAKE_FLAGS=-j4
+
+# for 64-bit build
+ac_add_options --target=x86_64-pc-mingw32
+ac_add_options --host=x86_64-pc-mingw32
+
+export MOZ_OPTIMIZE_LDFLAGS="-MACHINE:X64 -OPT:REF,ICF F:/works/libportable/vc11/x64/portable64.lib"
+mk_add_options MOZ_OPTIMIZE_LDFLAGS="-MACHINE:X64 -OPT:REF,ICF F:/works/libportable/vc11/x64/portable64.lib"
+ac_add_options --disable-auto-deps
+ac_add_options --disable-tests
+ac_add_options --disable-ipdl-tests
+ac_add_options --disable-installer
+ac_add_options --disable-gamepad
+ac_add_options --enable-official-branding
+ac_add_options --enable-extensions=default
+ac_add_options --enable-strip
+
+# for X86
+ac_add_options --enable-optimize="-Zi -O2 -Ot -Qpar -GL -favor:blend -D_CRT_SECURE_NO_WARNINGS=1 -DUSE_CXX11=1 -DTT_MEMUTIL -FI F:/works/libportable/portable.h"
+
+# diasble updater
+ac_add_options --disable-updater
+ac_add_options --disable-update-channel
+ac_add_options --disable-update-packaging
+
+# diasble crashreporter
+ac_add_options --disable-crashreporter
+ac_add_options --disable-services-healthreport
+ac_add_options --disable-telemetry-reporting
+ac_add_options --disable-safe-browsing
+
+# for debug
+ac_add_options --disable-debug
+ac_add_options --enable-debug-symbols=no
+
+# for auto pgo build
+#mk_add_options PROFILE_GEN_SCRIPT='$(PYTHON) $(MOZ_OBJDIR)/_profile/pgo/profileserver.py'
+
+# for manual pgo build
+ac_add_options --disable-activex
+ac_add_options --disable-activex-scripting
+ac_add_options --disable-parental-controls
+ac_add_options --disable-maintenance-service
+ac_add_options --disable-windows-mobile-components
+ac_add_options --disable-logging
+ac_add_options --disable-necko-wifi
+ac_add_options --disable-pdfjs
+ac_add_options --disable-accessibility
+ac_add_options --disable-jsd
+
+# Enable jemalloc
+ac_add_options --enable-crypto
+ac_add_options --enable-jemalloc
+ac_add_options --enable-signmar
+ac_add_options --enable-profiling
+
+# enable shared js
+ac_add_options --enable-shared-js
+ac_add_options --enable-js-diagnostics
+
+# enable img
+ac_add_options --enable-image-decoders=all
+
+
+# windows version
+#ac_add_options --with-windows-version=601
+
+# crt dir
+WIN32_REDIST_DIR=$VCINSTALLDIR/redist/x64/Microsoft.VC110.CRT

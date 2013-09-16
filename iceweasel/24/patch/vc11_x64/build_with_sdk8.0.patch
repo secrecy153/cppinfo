@@ -1,0 +1,314 @@
+# HG changeset patch
+# Parent 7e2ba2f93f2d9164d87a00ca3db6e80b780ae34e
+# User hua.andy <hua.andy@gmail.com>
+"build with sdk8.0"
+
+
+diff --git a/configure.in b/configure.in
+--- a/configure.in
++++ b/configure.in
+@@ -5886,16 +5886,17 @@ fi
+ dnl ========================================================
+ dnl = ANGLE OpenGL->D3D translator for WebGL
+ dnl = * only applies to win32
+ dnl = * enabled by default (shipping build); requires explicit --disable to disable
+ dnl ========================================================
+ MOZ_ANGLE_RENDERER=
+ MOZ_DIRECTX_SDK_PATH=
+ MOZ_DIRECTX_SDK_CPU_SUFFIX=
++MOZ_WINDOWSKIT_SDK_PATH=
+ MOZ_D3DCOMPILER_CAB=
+ MOZ_D3DCOMPILER_DLL=
+ case "$target_os" in
+ *mingw*)
+     MOZ_ANGLE_RENDERER=1
+     ;;
+ esac
+ 
+@@ -5917,53 +5918,61 @@ MOZ_ARG_DISABLE_BOOL(webgl,
+ if test -n "$MOZ_WEBGL_DISABLED"; then
+   MOZ_WEBGL=
+   MOZ_ANGLE_RENDERER=
+ fi
+ 
+ # Locate a DirectX SDK here so we can use it for both ANGLE and
+ # Joystick support.
+ if test "$OS_TARGET" = "WINNT" -a -z "$CROSS_COMPILE"; then
+-  # Get the SDK path from the registry.
+-  # First try to get the June 2010 SDK
+-  MOZ_DIRECTX_SDK_REG_KEY=`reg query 'HKLM\Software\Microsoft\DirectX' //s | grep 'Microsoft DirectX SDK (June 2010)' | head -n 1`
+-  if test -z "$MOZ_DIRECTX_SDK_REG_KEY" ; then
+-    # Otherwise just take whatever comes first
+-    MOZ_DIRECTX_SDK_REG_KEY=`reg query 'HKLM\Software\Microsoft\DirectX' //s | grep 'Microsoft DirectX SDK' | head -n 1`
++  MOZ_WINDOWSKIT_SDK_PATH=`reg query "HKLM\SOFTWARE\Microsoft\Windows Kits\Installed Roots" //v KitsRoot| grep REG_SZ | sed 's/.*\([[a-zA-Z]]\)\\:\\\\/\\1\\:\\\\/' | sed 's,\\\\,/,g'`
++  if test -z "$MOZ_WINDOWSKIT_SDK_PATH" ; then
++    # Get the SDK path from the registry.
++    # First try to get the June 2010 SDK
++    MOZ_DIRECTX_SDK_REG_KEY=`reg query 'HKLM\Software\Microsoft\DirectX' //s | grep 'Microsoft DirectX SDK (June 2010)' | head -n 1`
++    if test -z "$MOZ_DIRECTX_SDK_REG_KEY" ; then
++      # Otherwise just take whatever comes first
++      MOZ_DIRECTX_SDK_REG_KEY=`reg query 'HKLM\Software\Microsoft\DirectX' //s | grep 'Microsoft DirectX SDK' | head -n 1`
++    fi
++
++    if test -n "`echo $MOZ_DIRECTX_SDK_REG_KEY | grep 'February 2010'`" ; then
++      AC_MSG_ERROR([Found the February 2010 DirectX SDK. Need the June 2010 DirectX SDK, or newer. Upgrade your SDK or reconfigure with --disable-webgl.])
++    else
++      MOZ_DIRECTX_SDK_PATH=`reg query "$MOZ_DIRECTX_SDK_REG_KEY" //v InstallPath | grep REG_SZ | sed 's/.*\([[a-zA-Z]]\)\\:\\\\/\\1\\:\\\\/' | sed 's,\\\\,/,g'`
++    fi
++
++    if test -n "$MOZ_DIRECTX_SDK_PATH" &&
++      test -f "$MOZ_DIRECTX_SDK_PATH"/include/d3dx9.h &&
++      test -f "$MOZ_DIRECTX_SDK_PATH"/lib/$MOZ_DIRECTX_SDK_CPU_SUFFIX/dxguid.lib ; then
++      AC_MSG_RESULT([Found DirectX SDK via registry, using $MOZ_DIRECTX_SDK_PATH])
++    else
++      AC_MSG_ERROR([Couldn't find the DirectX SDK, needed for WebGL. Either install it (June 2010 version or newer), or reconfigure with --disable-webgl.])
++    fi
++
++    # Get the SDK numeric version (e.g. 43) by looking at the dependencies of d3dx9.lib
++    MOZ_D3DX9_VERSION=`dumpbin //headers "$MOZ_DIRECTX_SDK_PATH"/lib/$MOZ_DIRECTX_SDK_CPU_SUFFIX/d3dx9.lib | egrep d3dx9_[[0-9]][[0-9]]\.dll | head -n1 | sed 's/.*\([[0-9]][[0-9]]\).*/\\1/g'`
++
++    if test -z "$MOZ_D3DX9_VERSION" ; then
++      AC_MSG_ERROR([Couldn't determine the D3DX9 version, needed for WebGL. Either reinstall the DirectX SDK (June 2010 version or newer), or reconfigure with --disable-webgl.])
++    fi
++
++    MOZ_D3DX9_CAB=`find "$MOZ_DIRECTX_SDK_PATH"/Redist -name *d3dx9_${MOZ_D3DX9_VERSION}_${MOZ_DIRECTX_SDK_CPU_SUFFIX}.cab | head -n1`
++    MOZ_D3DCOMPILER_CAB=`find "$MOZ_DIRECTX_SDK_PATH"/Redist -name *D3DCompiler_${MOZ_D3DX9_VERSION}_${MOZ_DIRECTX_SDK_CPU_SUFFIX}.cab | head -n1`
++
++    if test -z "$MOZ_D3DX9_CAB" -o -z "$MOZ_D3DCOMPILER_CAB"; then
++      AC_MSG_ERROR([Couldn't find the DirectX redistributable files. Either reinstall the DirectX SDK (making sure the "DirectX Redistributable Files" option is selected), or reconfigure with --disable-webgl.])
++    fi
++
++    MOZ_D3DX9_DLL=d3dx9_$MOZ_D3DX9_VERSION.dll
++    MOZ_D3DCOMPILER_DLL=D3DCompiler_$MOZ_D3DX9_VERSION.dll
++  else
++    MOZ_D3DX9_VERSION=`dumpbin //headers "$MOZ_WINDOWSKIT_SDK_PATH"/lib/win8/um/$MOZ_DIRECTX_SDK_CPU_SUFFIX/d3dcompiler.lib | egrep D3DCOMPILER_[[0-9]][[0-9]]\.dll | head -n1 | sed 's/.*\([[0-9]][[0-9]]\).*/\\1/g'`
++    MOZ_D3DCOMPILER_CAB=$MOZ_WINDOWSKIT_SDK_PATH/Redist/D3D/$MOZ_DIRECTX_SDK_CPU_SUFFIX/d3dcompiler_$MOZ_D3DX9_VERSION.dll
++    MOZ_D3DCOMPILER_DLL=D3DCompiler_$MOZ_D3DX9_VERSION.dll
+   fi
+-  MOZ_DIRECTX_SDK_PATH=`reg query "$MOZ_DIRECTX_SDK_REG_KEY" //v InstallPath | grep REG_SZ | sed 's/.*\([[a-zA-Z]]\)\\:\\\\/\\1\\:\\\\/' | sed 's,\\\\,/,g'`
+-fi
+-
+-if test -n "$MOZ_ANGLE_RENDERER" -a -z "$CROSS_COMPILE"; then
+-  if test -n "`echo $MOZ_DIRECTX_SDK_REG_KEY | grep 'February 2010'`" ; then
+-    AC_MSG_ERROR([Found the February 2010 DirectX SDK. Need the June 2010 DirectX SDK, or newer.  Upgrade your SDK or reconfigure with --disable-webgl.])
+-  fi
+-
+-  if test -n "$MOZ_DIRECTX_SDK_PATH" &&
+-     test -f "$MOZ_DIRECTX_SDK_PATH"/include/d3dx9.h &&
+-	 test -f "$MOZ_DIRECTX_SDK_PATH"/lib/$MOZ_DIRECTX_SDK_CPU_SUFFIX/dxguid.lib ; then
+-    AC_MSG_RESULT([Found DirectX SDK via registry, using $MOZ_DIRECTX_SDK_PATH])
+-  else
+-    AC_MSG_ERROR([Couldn't find the DirectX SDK, needed for WebGL. Either install it (June 2010 version or newer), or reconfigure with --disable-webgl.])
+-  fi
+-
+-  # Get the SDK numeric version (e.g. 43) by looking at the dependencies of d3dx9.lib
+-  MOZ_D3DX9_VERSION=`dumpbin //headers "$MOZ_DIRECTX_SDK_PATH"/lib/$MOZ_DIRECTX_SDK_CPU_SUFFIX/d3dx9.lib | egrep d3dx9_[[0-9]][[0-9]]\.dll | head -n1 | sed 's/.*\([[0-9]][[0-9]]\).*/\\1/g'`
+-
+-  if test -z "$MOZ_D3DX9_VERSION" ; then
+-  	AC_MSG_ERROR([Couldn't determine the D3DX9 version, needed for WebGL. Either reinstall the DirectX SDK (June 2010 version or newer), or reconfigure with --disable-webgl.])
+-  fi
+-
+-  MOZ_D3DCOMPILER_CAB=`find "$MOZ_DIRECTX_SDK_PATH"/Redist -name *D3DCompiler_${MOZ_D3DX9_VERSION}_${MOZ_DIRECTX_SDK_CPU_SUFFIX}.cab | head -n1`
+-
+-  if test -z "$MOZ_D3DCOMPILER_CAB"; then
+-    AC_MSG_ERROR([Couldn't find the DirectX redistributable files. Either reinstall the DirectX SDK (making sure the "DirectX Redistributable Files" option is selected), or reconfigure with --disable-webgl.])
+-  fi
+-
+-  MOZ_D3DCOMPILER_DLL=D3DCompiler_$MOZ_D3DX9_VERSION.dll
+ fi
+ 
+ dnl ========================================================
+ dnl Gamepad support
+ dnl ========================================================
+ MOZ_GAMEPAD=
+ MOZ_GAMEPAD_BACKEND=stub
+ 
+@@ -5982,22 +5991,24 @@ MOZ_ARG_DISABLE_BOOL(gamepad,
+     MOZ_GAMEPAD=1)
+ 
+ if test "$MOZ_GAMEPAD"; then
+     case "$OS_TARGET" in
+     Darwin)
+         MOZ_GAMEPAD_BACKEND=cocoa
+         ;;
+     WINNT)
+-        if test -n "$MOZ_DIRECTX_SDK_PATH" ; then
+-            if ! test -f "$MOZ_DIRECTX_SDK_PATH"/lib/$MOZ_DIRECTX_SDK_CPU_SUFFIX/dxguid.lib ; then
+-               MOZ_GAMEPAD=
+-            fi
+-        elif test "$GCC" != "yes"; then
+-            MOZ_GAMEPAD=
++        if test -z "$MOZ_WINDOWSKIT_SDK_PATH" ; then
++          if test -n "$MOZ_DIRECTX_SDK_PATH" ; then
++              if ! test -f "$MOZ_DIRECTX_SDK_PATH"/lib/$MOZ_DIRECTX_SDK_CPU_SUFFIX/dxguid.lib ; then
++                 MOZ_GAMEPAD=
++              fi
++          elif test "$GCC" != "yes"; then
++              MOZ_GAMEPAD=
++          fi
+         fi
+         if test -z "$MOZ_GAMEPAD"; then
+            AC_MSG_ERROR([Couldn't find the DirectX SDK, needed for gamepad support. Please install it or, reconfigure with --disable-gamepad to disable gamepad support.])
+         fi
+         MOZ_GAMEPAD_BACKEND=windows
+         ;;
+     Linux)
+         MOZ_CHECK_HEADER([linux/joystick.h])
+@@ -8656,16 +8667,17 @@ AC_SUBST(MOZ_CRASHREPORTER)
+ AC_SUBST(MOZ_CRASHREPORTER_INJECTOR)
+ AC_SUBST(MOZ_CRASHREPORTER_UPLOAD_FULL_SYMBOLS)
+ AC_SUBST(MOZ_MAINTENANCE_SERVICE)
+ AC_SUBST(MOZ_STUB_INSTALLER)
+ AC_SUBST(MOZ_VERIFY_MAR_SIGNATURE)
+ AC_SUBST(MOZ_ENABLE_SIGNMAR)
+ AC_SUBST(MOZ_UPDATER)
+ AC_SUBST(MOZ_ANGLE_RENDERER)
++AC_SUBST(MOZ_WINDOWSKIT_SDK_PATH)
+ AC_SUBST(MOZ_DIRECTX_SDK_PATH)
+ AC_SUBST(MOZ_DIRECTX_SDK_CPU_SUFFIX)
+ AC_SUBST(MOZ_D3DX9_VERSION)
+ AC_SUBST(MOZ_D3DCOMPILER_CAB)
+ AC_SUBST(MOZ_D3DCOMPILER_DLL)
+ AC_SUBST(MOZ_METRO)
+ 
+ AC_SUBST(MOZ_ANDROID_HISTORY)
+diff --git a/gfx/angle/src/libEGL/Makefile.in b/gfx/angle/src/libEGL/Makefile.in
+--- a/gfx/angle/src/libEGL/Makefile.in
++++ b/gfx/angle/src/libEGL/Makefile.in
+@@ -41,18 +41,17 @@ endif
+ 
+ # Below is a transcription of the EGL target from build_angle.gypi.
+ 
+ # Target: 'libEGL'
+ #   Links with: 'libGLESv2'
+ LOCAL_INCLUDES = \
+   -I$(srcdir)/../../include \
+   -I$(srcdir)/../../include/KHR \
+-  -I$(srcdir)/.. \
+-  -I"$(MOZ_DIRECTX_SDK_PATH)/include"
++  -I$(srcdir)/..
+ 
+ VPATH += $(srcdir)/../common
+ # src/common:
+ VPATH += $(srcdir)/../libEGL
+ # src/libEGL:
+ DEFFILE = $(srcdir)/libEGL.def
+ RCFILE  = $(srcdir)/libEGL.rc
+ 
+@@ -62,15 +61,15 @@ OS_LIBS += $(call EXPAND_LIBNAME,dwmapi)
+ 
+ ifdef GNU_CC
+ 
+ OS_CXXFLAGS := $(filter-out -fno-exceptions,$(OS_CXXFLAGS)) -fexceptions
+ OS_LIBS += -ld3d9 -ldxguid -llibGLESv2
+ 
+ else
+ 
+-EXTRA_DSO_LDOPTS = "$(MOZ_DIRECTX_SDK_PATH)/lib/$(MOZ_DIRECTX_SDK_CPU_SUFFIX)/d3d9.lib" \
+-                   "$(MOZ_DIRECTX_SDK_PATH)/lib/$(MOZ_DIRECTX_SDK_CPU_SUFFIX)/dxguid.lib" \
++EXTRA_DSO_LDOPTS = "d3d9.lib" \
++                   "dxguid.lib" \
+ 		   "$(DIST)/lib/libGLESv2.lib" \
+ 		   delayimp.lib \
+ 		   /delayload:dwmapi.dll
+ 
+ endif
+diff --git a/gfx/angle/src/libGLESv2/Makefile.in b/gfx/angle/src/libGLESv2/Makefile.in
+--- a/gfx/angle/src/libGLESv2/Makefile.in
++++ b/gfx/angle/src/libGLESv2/Makefile.in
+@@ -65,17 +65,16 @@ VPATH += $(srcdir)/../third_party/compil
+ 
+ # Below is a transcription of more targets from build_angle.gypi.
+ 
+ # Target: 'translator_hlsl'
+ #   Requires: 'translator_common'
+ 
+ # Target: 'libGLESv2'
+ #   Requires: 'translator_hlsl'
+-LOCAL_INCLUDES += -I"$(MOZ_DIRECTX_SDK_PATH)/include"
+ 
+ VPATH += $(srcdir)/../common
+ # src/common:
+ DEFFILE = $(srcdir)/libGLESv2.def
+ RCFILE  = $(srcdir)/libGLESv2.rc
+ 
+ # End build_angle.gypi transcription.
+ 
+@@ -85,11 +84,11 @@ ifdef GNU_CC
+ 
+ TextureSSE2.$(OBJ_SUFFIX): CXXFLAGS+=-msse2
+ 
+ OS_CXXFLAGS := $(filter-out -fno-exceptions,$(OS_CXXFLAGS)) -fexceptions
+ OS_LIBS += -ld3d9
+ 
+ else
+ 
+-EXTRA_DSO_LDOPTS = "$(MOZ_DIRECTX_SDK_PATH)/lib/$(MOZ_DIRECTX_SDK_CPU_SUFFIX)/d3d9.lib"
++EXTRA_DSO_LDOPTS = "d3d9.lib"
+ 
+ endif
+diff --git a/layout/media/Makefile.in b/layout/media/Makefile.in
+--- a/layout/media/Makefile.in
++++ b/layout/media/Makefile.in
+@@ -126,17 +126,16 @@ endif
+ endif
+ 
+ ifeq (WINNT,$(OS_TARGET))
+ EXTRA_DSO_LDOPTS = $(MOZALLOC_LIB) $(NSPR_LIBS)
+ OS_LIBS += $(call EXPAND_LIBNAME,usp10 ole32)
+ 
+ ifdef MOZ_WEBRTC
+ EXTRA_DSO_LDOPTS += \
+-  -LIBPATH:"$(MOZ_DIRECTX_SDK_PATH)/lib/$(MOZ_DIRECTX_SDK_CPU_SUFFIX)" \
+   $(NULL)
+ OS_LIBS += $(call EXPAND_LIBNAME,secur32 crypt32 iphlpapi strmiids dmoguids wmcodecdspuuid amstrmid msdmo wininet)
+ ifdef _MSC_VER
+ OS_LIBS += $(call EXPAND_LIBNAME,delayimp)
+ EXTRA_DSO_LDOPTS += \
+   -DELAYLOAD:msdmo.dll \
+   $(NULL)
+ endif
+diff --git a/toolkit/library/Makefile.in b/toolkit/library/Makefile.in
+--- a/toolkit/library/Makefile.in
++++ b/toolkit/library/Makefile.in
+@@ -405,17 +405,16 @@ EXTRA_DSO_LDOPTS += \
+   $(DEPTH)/media/webrtc/signaling/signaling_sipcc/$(LIB_PREFIX)sipcc.$(LIB_SUFFIX) \
+   $(NULL)
+ endif
+ ifdef MOZ_WEBRTC_IN_LIBXUL
+ include $(topsrcdir)/media/webrtc/shared_libs.mk
+ EXTRA_DSO_LDOPTS += $(WEBRTC_LIBS)
+ ifeq (WINNT,$(OS_TARGET))
+ EXTRA_DSO_LDOPTS += \
+-  -LIBPATH:"$(MOZ_DIRECTX_SDK_PATH)/lib/$(MOZ_DIRECTX_SDK_CPU_SUFFIX)" \
+   $(NULL)
+ OS_LIBS += $(call EXPAND_LIBNAME,secur32 crypt32 iphlpapi strmiids dmoguids wmcodecdspuuid amstrmid msdmo wininet)
+ endif
+ endif
+ endif
+ 
+ 
+ ifdef MOZ_CUBEB
+@@ -603,20 +602,19 @@ ifdef ACCESSIBILITY
+ EXTRA_DSO_LDOPTS += -DELAYLOAD:oleacc.dll
+ endif
+ ifdef MOZ_WEBRTC_IN_LIBXUL
+ EXTRA_DSO_LDOPTS += -DELAYLOAD:msdmo.dll
+ endif
+ endif
+ ifdef MOZ_GAMEPAD
+ ifndef GNU_CC
+-DXSDK := $(subst \,/,$(MOZ_DIRECTX_SDK_PATH))/Lib/$(MOZ_DIRECTX_SDK_CPU_SUFFIX)
+ OS_LIBS += \
+-  "$(DXSDK)/dxguid.lib" \
+-  "$(DXSDK)/dinput8.lib" \
++  "dxguid.lib" \
++  "dinput8.lib" \
+   $(NULL)
+ else
+ OS_LIBS += $(call EXPAND_LIBNAME,dxguid dinput8)
+ endif
+ endif
+ endif # WINNT
+ 
+ ifdef MOZ_JPROF
