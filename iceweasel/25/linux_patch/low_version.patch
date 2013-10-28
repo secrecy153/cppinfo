@@ -1,0 +1,20 @@
+--- a/configure.in	2013-10-26 10:57:31.000000000 +0800
++++ b/configure.in	2013-10-26 17:31:33.169849873 +0800
+@@ -71,7 +71,7 @@
+ GIO_VERSION=2.20
+ STARTUP_NOTIFICATION_VERSION=0.8
+ DBUS_VERSION=0.60
+-SQLITE_VERSION=3.7.17
++SQLITE_VERSION=3.7.0
+ 
+ MSMANIFEST_TOOL=
+ 
+@@ -5746,7 +5746,7 @@
+     # API version, eg 0.10, 1.0 etc
+     GST_API_VERSION=0.10
+     # core/base release number
+-    GST_VERSION=0.10.25
++    GST_VERSION=0.10.0
+     PKG_CHECK_MODULES(GSTREAMER,
+                       gstreamer-$GST_API_VERSION >= $GST_VERSION
+                       gstreamer-app-$GST_API_VERSION

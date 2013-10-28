@@ -1,0 +1,23 @@
+# HG changeset patch
+# Parent 393b68b42edcf8b7e4df5b8781cff92c29fe8171
+# User hua.andy <hua.andy@gmail.com>
+"x86 pgo  crash fixed"
+
+
+diff --git a/dom/bindings/Makefile.in b/dom/bindings/Makefile.in
+--- a/dom/bindings/Makefile.in
++++ b/dom/bindings/Makefile.in
+@@ -256,8 +256,13 @@ distclean::
+         ParserResults.pkl \
+         $(NULL)
+ 
+ # This is only needed to support |make| from this leaf directory/Makefile.
+ NONRECURSIVE_TARGETS := export
+ NONRECURSIVE_TARGETS_export := webidl
+ NONRECURSIVE_TARGETS_export_webidl_DIRECTORY := .
+ NONRECURSIVE_TARGETS_export_webidl_TARGETS := webidl
++
++ifdef _MSC_VER
++# avoid the fatal error C1001 of compiler when applying PGO to Thunderbird
++COMPILE_CXXFLAGS += -GL-
++endif

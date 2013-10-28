@@ -3,7 +3,7 @@
 . $topsrcdir/browser/config/mozconfig
 ac_add_options --with-app-name=Iceweasel
 
-mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/../obju-vc64
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/../obju64-release
 mk_add_options MOZ_MAKE_FLAGS=-j4
 
 # for 64-bit build
@@ -67,6 +67,10 @@ ac_add_options --enable-js-diagnostics
 # enable img
 ac_add_options --enable-image-decoders=all
 
+# chinese language package
+export L10NBASEDIR=f:/works/i10n/lang
+mk_add_options L10NBASEDIR=f:/works/i10n/lang
+ac_add_options --enable-ui-locale=zh-CN
 
 # windows version
 #ac_add_options --with-windows-version=601

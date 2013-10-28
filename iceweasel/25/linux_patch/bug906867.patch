@@ -1,0 +1,109 @@
+--- a/content/media/moz.build	
++++ b/content/media/moz.build	
+@@ -38,18 +38,17 @@ if CONFIG['MOZ_WMF']:
+     PARALLEL_DIRS += ['wmf']
+ 
+ PARALLEL_DIRS += ['webrtc']
+ 
+ if CONFIG['MOZ_OMX_DECODER']:
+     PARALLEL_DIRS += ['omx']
+     PARALLEL_DIRS += ['omx/mediaresourcemanager']
+ 
+-if CONFIG['MOZ_WEBSPEECH']:
+-    PARALLEL_DIRS += ['webspeech']
++PARALLEL_DIRS += ['webspeech']
+ 
+ TEST_DIRS += ['test']
+ 
+ MODULE = 'content'
+ 
+ EXPORTS += [
+     'AbstractMediaDecoder.h',
+     'AudioAvailableEventManager.h',
+--- a/content/media/webspeech/moz.build	
++++ a/content/media/webspeech/moz.build	
+@@ -1,6 +1,9 @@ 
+ # vim: set filetype=python:
+ # This Source Code Form is subject to the terms of the Mozilla Public
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+-PARALLEL_DIRS = ['recognition', 'synth']
++PARALLEL_DIRS = ['synth']
++
++if CONFIG['MOZ_WEBSPEECH']:
++    PARALLEL_DIRS += ['recognition']
+--- a/content/media/webspeech/synth/moz.build	
++++ a/content/media/webspeech/synth/moz.build	
+@@ -1,43 +1,44 @@ 
+ # vim: set filetype=python:
+ # This Source Code Form is subject to the terms of the Mozilla Public
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+-MODULE = 'content'
++if CONFIG['MOZ_WEBSPEECH']:
++    MODULE = 'content'
+ 
+-TEST_DIRS += ['test', 'ipc/test']
++    TEST_DIRS += ['test', 'ipc/test']
+ 
+-XPIDL_MODULE = 'dom_webspeechsynth'
++    XPIDL_MODULE = 'dom_webspeechsynth'
+ 
+-XPIDL_SOURCES += [
+-    'nsIDOMSpeechSynthesisEvent.idl',
+-    'nsISpeechService.idl',
+-    'nsISynthVoiceRegistry.idl'
++    XPIDL_SOURCES += [
++        'nsIDOMSpeechSynthesisEvent.idl',
++        'nsISpeechService.idl',
++        'nsISynthVoiceRegistry.idl'
+     ]
+ 
+-EXPORTS.mozilla.dom += [
+-    'EnableSpeechSynthesisCheck.h',
+-    'SpeechSynthesis.h',
+-    'SpeechSynthesisUtterance.h',
+-    'SpeechSynthesisVoice.h',
+-    'ipc/SpeechSynthesisChild.h',
+-    'ipc/SpeechSynthesisParent.h',
+-    'nsSpeechTask.h',
+-    'nsSynthVoiceRegistry.h',
+-]
++    EXPORTS.mozilla.dom += [
++        'EnableSpeechSynthesisCheck.h',
++        'SpeechSynthesis.h',
++        'SpeechSynthesisUtterance.h',
++        'SpeechSynthesisVoice.h',
++        'ipc/SpeechSynthesisChild.h',
++        'ipc/SpeechSynthesisParent.h',
++        'nsSpeechTask.h',
++        'nsSynthVoiceRegistry.h',
++    ]
+ 
+-CPP_SOURCES += [
+-    'EnableSpeechSynthesisCheck.cpp',
+-    'SpeechSynthesis.cpp',
+-    'SpeechSynthesisChild.cpp',
+-    'SpeechSynthesisParent.cpp',
+-    'SpeechSynthesisUtterance.cpp',
+-    'SpeechSynthesisVoice.cpp',
+-    'nsSpeechTask.cpp',
+-    'nsSynthVoiceRegistry.cpp',
+-]
++    CPP_SOURCES += [
++        'EnableSpeechSynthesisCheck.cpp',
++        'SpeechSynthesis.cpp',
++        'SpeechSynthesisChild.cpp',
++        'SpeechSynthesisParent.cpp',
++        'SpeechSynthesisUtterance.cpp',
++        'SpeechSynthesisVoice.cpp',
++        'nsSpeechTask.cpp',
++        'nsSynthVoiceRegistry.cpp',
++    ]
+ 
+ IPDL_SOURCES += [
+     'ipc/PSpeechSynthesis.ipdl',
+     'ipc/PSpeechSynthesisRequest.ipdl',
+ ]

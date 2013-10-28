@@ -1,0 +1,69 @@
+# HG changeset patch
+# Parent 56740b35b86d7f2e7dc68951e7b3b90605d6ab87
+# User hua.andy <hua.andy@gmail.com>
+"pgo build"
+
+
+diff --git a/image/build/Makefile.in b/image/build/Makefile.in
+--- a/image/build/Makefile.in
++++ b/image/build/Makefile.in
+@@ -5,16 +5,17 @@
+ 
+ DEPTH		= @DEPTH@
+ topsrcdir	= @top_srcdir@
+ srcdir		= @srcdir@
+ VPATH		= @srcdir@
+ 
+ include $(DEPTH)/config/autoconf.mk
+ 
++MSVC_ENABLE_PGO := 1
+ EXPORT_LIBRARY = 1
+ IS_COMPONENT	= 1
+ MODULE_NAME	= nsImageLib2Module
+ LIBXUL_LIBRARY = 1
+ FAIL_ON_WARNINGS = 1
+ 
+ LOCAL_INCLUDES	= \
+ 		-I. \
+diff --git a/parser/htmlparser/src/Makefile.in b/parser/htmlparser/src/Makefile.in
+--- a/parser/htmlparser/src/Makefile.in
++++ b/parser/htmlparser/src/Makefile.in
+@@ -4,16 +4,17 @@
+ 
+ DEPTH     = @DEPTH@
+ topsrcdir = @top_srcdir@
+ srcdir    = @srcdir@
+ VPATH     = @srcdir@
+ 
+ include $(DEPTH)/config/autoconf.mk
+ 
++MSVC_ENABLE_PGO := 1
+ EXPORT_LIBRARY = 1
+ IS_COMPONENT   = 1
+ MODULE_NAME	   = nsParserModule
+ LIBXUL_LIBRARY = 1
+ 
+ 
+ SHARED_LIBRARY_LIBS = \
+ 		$(DEPTH)/parser/xml/src/$(LIB_PREFIX)saxp.$(LIB_SUFFIX) \
+diff --git a/storage/build/Makefile.in b/storage/build/Makefile.in
+--- a/storage/build/Makefile.in
++++ b/storage/build/Makefile.in
+@@ -5,16 +5,17 @@
+ 
+ DEPTH=@DEPTH@
+ topsrcdir=@top_srcdir@
+ srcdir=@srcdir@
+ VPATH=@srcdir@
+ 
+ include $(DEPTH)/config/autoconf.mk
+ 
++MSVC_ENABLE_PGO := 1
+ EXPORT_LIBRARY = 1
+ IS_COMPONENT = 1
+ MODULE_NAME = mozStorageModule
+ LIBXUL_LIBRARY = 1
+ 
+ 
+ LOCAL_INCLUDES = \
+ 	$(SQLITE_CFLAGS) \

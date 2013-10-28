@@ -1,0 +1,945 @@
+# HG changeset patch
+# Parent 1a4bc0ff2151d00223a4db2a746fa4544e8f5ec7
+# User hua.andy <hua.andy@gmail.com>
+"enable openmp thread"
+
+
+diff --git a/content/canvas/src/CanvasRenderingContext2D.cpp b/content/canvas/src/CanvasRenderingContext2D.cpp
+--- a/content/canvas/src/CanvasRenderingContext2D.cpp
++++ b/content/canvas/src/CanvasRenderingContext2D.cpp
+@@ -3492,39 +3492,17 @@ CanvasRenderingContext2D::GetImageDataAr
+   }
+ 
+   // NOTE! dst is the same as src, and this relies on reading
+   // from src and advancing that ptr before writing to dst.
+   // NOTE! I'm not sure that it is, I think this comment might have been
+   // inherited from Thebes canvas and is no longer true
+   uint8_t* dst = data + dstWriteRect.y * (aWidth * 4) + dstWriteRect.x * 4;
+ 
+-  for (int32_t j = 0; j < dstWriteRect.height; ++j) {
+-    for (int32_t i = 0; i < dstWriteRect.width; ++i) {
+-      // XXX Is there some useful swizzle MMX we can use here?
+-#ifdef IS_LITTLE_ENDIAN
+-      uint8_t b = *src++;
+-      uint8_t g = *src++;
+-      uint8_t r = *src++;
+-      uint8_t a = *src++;
+-#else
+-      uint8_t a = *src++;
+-      uint8_t r = *src++;
+-      uint8_t g = *src++;
+-      uint8_t b = *src++;
+-#endif
+-      // Convert to non-premultiplied color
+-      *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + r];
+-      *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + g];
+-      *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + b];
+-      *dst++ = a;
+-    }
+-    src += srcStride - (dstWriteRect.width * 4);
+-    dst += (aWidth * 4) - (dstWriteRect.width * 4);
+-  }
++  GetImageData_component(src, dst, dstWriteRect.width, dstWriteRect.height, srcStride, aWidth * 4);
+ 
+   *aRetval = darray;
+   return NS_OK;
+ }
+ 
+ void
+ CanvasRenderingContext2D::EnsureErrorTarget()
+ {
+@@ -3645,37 +3623,17 @@ CanvasRenderingContext2D::PutImageData_e
+                                                           false);
+   if (!imgsurf || imgsurf->CairoStatus()) {
+     return NS_ERROR_FAILURE;
+   }
+ 
+   uint8_t *src = aData;
+   uint8_t *dst = imgsurf->Data();
+ 
+-  for (uint32_t j = 0; j < h; j++) {
+-    for (uint32_t i = 0; i < w; i++) {
+-      uint8_t r = *src++;
+-      uint8_t g = *src++;
+-      uint8_t b = *src++;
+-      uint8_t a = *src++;
+-
+-      // Convert to premultiplied color (losslessly if the input came from getImageData)
+-#ifdef IS_LITTLE_ENDIAN
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
+-      *dst++ = a;
+-#else
+-      *dst++ = a;
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
+-      *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
+-#endif
+-    }
+-  }
++  PutImageData_component(src, dst, w, h, w * 4, w * 4);
+ 
+   EnsureTarget();
+   if (!IsTargetValid()) {
+     return NS_ERROR_FAILURE;
+   }
+ 
+   RefPtr<SourceSurface> sourceSurface =
+     mTarget->CreateSourceSurfaceFromData(imgsurf->Data(), IntSize(w, h), imgsurf->Stride(), FORMAT_B8G8R8A8);
+diff --git a/content/canvas/src/CanvasUtils.cpp b/content/canvas/src/CanvasUtils.cpp
+--- a/content/canvas/src/CanvasUtils.cpp
++++ b/content/canvas/src/CanvasUtils.cpp
+@@ -1,13 +1,29 @@
+ /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
++#if _MSC_VER == 1400
++#include <emmintrin.h>
++extern "C" {
++  extern __m128i _mm_shuffle_epi8(__m128i a, __m128i b);
++  extern __m128i _mm_alignr_epi8(__m128i a, __m128i b, const int ralign);
++}
++#else
++#include <tmmintrin.h>
++#endif
++#include "mozilla/SSE.h"
++#include "gfxUtils.h"
++
+ #include <stdlib.h>
+ #include <stdarg.h>
+ 
+ #include "prprf.h"
+ 
+ #include "nsIServiceManager.h"
+ 
+ #include "nsIConsoleService.h"
+@@ -80,10 +96,263 @@ CoerceDouble(JS::Value v, double* d)
+     } else if (JSVAL_IS_VOID(v)) {
+         *d = 0.0;
+     } else {
+         return false;
+     }
+     return true;
+ }
+ 
++void
++GetImageData_component(uint8_t* _src, uint8_t* _dst,
++                       int32_t width, int32_t height,
++                       uint32_t srcStride, uint32_t dstStride)
++{
++    uint8_t *srcFirst = _src;
++    uint8_t *dstFirst = _dst;
++
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++    int omp_thread_counts = omp_get_max_threads();
++
++#pragma omp parallel for schedule(guided) default(none) \
++shared(srcFirst, dstFirst, width, height, srcStride, dstStride, gfxUtils::sUnpremultiplyTable) \
++if (omp_thread_counts >= 2 && \
++    height >= (int32_t)omp_thread_counts && \
++    width * height >= 4096)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
++    for (int32_t j = 0; j < height; ++j) {
++        uint8_t *src = srcFirst + (srcStride * j);
++        uint8_t *dst = dstFirst + (dstStride * j);
++
++        for (int32_t i = 0; i < width; ++i) {
++            // XXX Is there some useful swizzle MMX we can use here?
++#ifdef IS_LITTLE_ENDIAN
++            uint8_t b = *src++;
++            uint8_t g = *src++;
++            uint8_t r = *src++;
++            uint8_t a = *src++;
++#else
++            uint8_t a = *src++;
++            uint8_t r = *src++;
++            uint8_t g = *src++;
++            uint8_t b = *src++;
++#endif
++            // Convert to non-premultiplied color
++            *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + r];
++            *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + g];
++            *dst++ = gfxUtils::sUnpremultiplyTable[a * 256 + b];
++            *dst++ = a;
++        }
++    }
++}
++
++void
++PutImageData_component(uint8_t* _src, uint8_t* _dst,
++                       int32_t width, int32_t height,
++                       uint32_t srcStride, uint32_t dstStride)
++{
++    uint8_t *srcFirst = _src;
++    uint8_t *dstFirst = _dst;
++
++#if (_MSC_VER != 1400) || !defined(_M_X64)
++    if (mozilla::supports_ssse3()) {
++        static const __m128i msk_alpha = _mm_set1_epi32(0xFF000000);
++        static const __m128i sfl_alphaLo = _mm_set_epi8(0x80, 7, 0x80, 7, 0x80, 7, 0x80, 7, 0x80, 3, 0x80, 3, 0x80, 3, 0x80, 3);
++        static const __m128i sfl_alphaHi = _mm_set_epi8(0x80, 15, 0x80, 15, 0x80, 15, 0x80, 15, 0x80, 11, 0x80, 11, 0x80, 11, 0x80, 11);
++        static const __m128i word_add = _mm_set1_epi16(0x00FF);
++        static const __m128i word_mul = _mm_set_epi16(0, 257, 257, 257, 0, 257, 257, 257);
++        static const __m128i sfl_bgra = _mm_set_epi8(15, 12, 13, 14, 11, 8, 9, 10, 7, 4, 5, 6, 3, 0, 1, 2);
++
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++        int omp_thread_counts = omp_get_max_threads();
++
++#pragma omp parallel for schedule(guided) default(none) \
++shared(srcFirst, dstFirst, width, height, srcStride, dstStride, gfxUtils::sPremultiplyTable) \
++if (omp_thread_counts >= 2 && \
++    height >= (int32_t)omp_thread_counts && \
++    width * height >= 12000)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
++        for (int j = 0; j < height; j++) {
++            uint8_t *src = srcFirst + (srcStride * j);
++            uint8_t *dst = dstFirst + (dstStride * j);
++            int32_t i = width;
++
++            while (i >= 1 && ((unsigned)dst & 15)) {
++                uint8_t r = *src++;
++                uint8_t g = *src++;
++                uint8_t b = *src++;
++                uint8_t a = *src++;
++
++                // Convert to premultiplied color (losslessly if the input came from getImageData)
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = a;
++                i -= 1;
++            }
++
++            const int srcMissalignedBytes = ((unsigned)src & 15);
++
++            if (srcMissalignedBytes == 0) {
++                while (i >= 4) {
++                    __m128i xmb = _mm_load_si128((__m128i*)src);
++                    __m128i xmwLo = _mm_unpacklo_epi8(xmb, _mm_setzero_si128());
++                    __m128i xmwHi = _mm_unpackhi_epi8(xmb, _mm_setzero_si128());
++
++                    __m128i xmwAlpha = _mm_and_si128(xmb, msk_alpha);
++                    __m128i xmwAlphaLo = _mm_shuffle_epi8(xmb, sfl_alphaLo);
++                    __m128i xmwAlphaHi = _mm_shuffle_epi8(xmb, sfl_alphaHi);
++
++                    xmwLo = _mm_mullo_epi16(xmwLo, xmwAlphaLo);
++                    xmwLo = _mm_adds_epu16(xmwLo, word_add);
++                    xmwLo = _mm_mulhi_epu16(xmwLo, word_mul);
++
++                    xmwHi = _mm_mullo_epi16(xmwHi, xmwAlphaHi);
++                    xmwHi = _mm_adds_epu16(xmwHi, word_add);
++                    xmwHi = _mm_mulhi_epu16(xmwHi, word_mul);
++
++                    __m128i xmRes = _mm_packus_epi16(xmwLo, xmwHi);
++                    xmRes = _mm_or_si128(xmRes, xmwAlpha);
++                    xmRes = _mm_shuffle_epi8(xmRes, sfl_bgra);
++                    _mm_store_si128((__m128i*)dst, xmRes);
++
++                    src += 16;
++                    dst += 16;
++                    i -= 4;
++                }
++            } else {
++                __m128i xmLoadPre = _mm_load_si128((__m128i*)(src - srcMissalignedBytes));
++
++                while (i >= 4) {
++                    __m128i xmLoadNext = _mm_load_si128((__m128i*)(src - srcMissalignedBytes + 16));
++                    __m128i xmb;
++
++                    switch (srcMissalignedBytes) {
++                    case 1:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 1);
++                        break;
++                    case 2:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 2);
++                        break;
++                    case 3:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 3);
++                        break;
++                    case 4:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 4);
++                        break;
++                    case 5:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 5);
++                        break;
++                    case 6:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 6);
++                        break;
++                    case 7:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 7);
++                        break;
++                    case 8:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 8);
++                        break;
++                    case 9:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 9);
++                        break;
++                    case 10:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 10);
++                        break;
++                    case 11:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 11);
++                        break;
++                    case 12:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 12);
++                        break;
++                    case 13:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 13);
++                        break;
++                    case 14:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 14);
++                        break;
++                    case 15:
++                        xmb = _mm_alignr_epi8(xmLoadNext, xmLoadPre, 15);
++                        break;
++                    }
++                    xmLoadPre = xmLoadNext;
++
++                    __m128i xmwLo = _mm_unpacklo_epi8(xmb, _mm_setzero_si128());
++                    __m128i xmwHi = _mm_unpackhi_epi8(xmb, _mm_setzero_si128());
++
++                    __m128i xmwAlpha = _mm_and_si128(xmb, msk_alpha);
++                    __m128i xmwAlphaLo = _mm_shuffle_epi8(xmb, sfl_alphaLo);
++                    __m128i xmwAlphaHi = _mm_shuffle_epi8(xmb, sfl_alphaHi);
++
++                    xmwLo = _mm_mullo_epi16(xmwLo, xmwAlphaLo);
++                    xmwLo = _mm_adds_epu16(xmwLo, word_add);
++                    xmwLo = _mm_mulhi_epu16(xmwLo, word_mul);
++
++                    xmwHi = _mm_mullo_epi16(xmwHi, xmwAlphaHi);
++                    xmwHi = _mm_adds_epu16(xmwHi, word_add);
++                    xmwHi = _mm_mulhi_epu16(xmwHi, word_mul);
++
++                    __m128i xmRes = _mm_packus_epi16(xmwLo, xmwHi);
++                    xmRes = _mm_or_si128(xmRes, xmwAlpha);
++                    xmRes = _mm_shuffle_epi8(xmRes, sfl_bgra);
++                    _mm_store_si128((__m128i*)dst, xmRes);
++
++                    src += 16;
++                    dst += 16;
++                    i -= 4;
++                }
++            }
++
++            while (i >= 1) {
++                uint8_t r = *src++;
++                uint8_t g = *src++;
++                uint8_t b = *src++;
++                uint8_t a = *src++;
++
++                // Convert to premultiplied color (losslessly if the input came from getImageData)
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = a;
++                i -= 1;
++            }
++        }
++    } else
++#endif // (_MSC_VER != 1400) || !defined(_M_X64)
++    {
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++        int omp_thread_counts = omp_get_max_threads();
++
++#pragma omp parallel for schedule(guided) default(none) \
++shared(srcFirst, dstFirst, width, height, srcStride, dstStride, gfxUtils::sPremultiplyTable) \
++if (omp_thread_counts >= 2 && \
++    height >= (int32_t)omp_thread_counts && \
++    width * height >= 4096)
++#endif // defined(TT_MEMUTIL) && defined(_MSC_VER)
++        for (int64_t j = 0; j < height; j++) {
++            uint8_t *src = srcFirst + (srcStride * j);
++            uint8_t *dst = dstFirst + (dstStride * j);
++
++            for (int32_t i = 0; i < width; i++) {
++                // XXX Is there some useful swizzle MMX we can use here?
++                uint8_t r = *src++;
++                uint8_t g = *src++;
++                uint8_t b = *src++;
++                uint8_t a = *src++;
++
++                // Convert to premultiplied color (losslessly if the input came from getImageData)
++#ifdef IS_LITTLE_ENDIAN
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = a;
++#else
++                *dst++ = a;
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + r];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + g];
++                *dst++ = gfxUtils::sPremultiplyTable[a * 256 + b];
++#endif
++            }
++        }
++    }
++}
++
+ } // namespace CanvasUtils
+ } // namespace mozilla
+diff --git a/content/canvas/src/CanvasUtils.h b/content/canvas/src/CanvasUtils.h
+--- a/content/canvas/src/CanvasUtils.h
++++ b/content/canvas/src/CanvasUtils.h
+@@ -18,16 +18,24 @@ class Matrix;
+ 
+ namespace dom {
+ class HTMLCanvasElement;
+ }
+ 
+ namespace CanvasUtils {
+ 
+ 
++void GetImageData_component(uint8_t* _src, uint8_t* _dst,
++                            int32_t width, int32_t height,
++                            uint32_t srcStride, uint32_t dstStride);
++
++void PutImageData_component(uint8_t* _src, uint8_t* _dst,
++                            int32_t width, int32_t height,
++                            uint32_t srcStride, uint32_t dstStride);
++
+ // Check that the rectangle [x,y,w,h] is a subrectangle of [0,0,realWidth,realHeight]
+ 
+ inline bool CheckSaneSubrectSize(int32_t x, int32_t y, int32_t w, int32_t h,
+                             int32_t realWidth, int32_t realHeight) {
+     CheckedInt32 checked_xmost  = CheckedInt32(x) + w;
+     CheckedInt32 checked_ymost  = CheckedInt32(y) + h;
+ 
+     return w >= 0 && h >= 0 && x >= 0 && y >= 0 &&
+diff --git a/content/canvas/src/Makefile.in b/content/canvas/src/Makefile.in
+--- a/content/canvas/src/Makefile.in
++++ b/content/canvas/src/Makefile.in
+@@ -33,8 +33,14 @@ INCLUDES	+= \
+ 		-I$(srcdir)/../../base/src \
+ 		-I$(srcdir)/../../html/content/src \
+ 		-I$(srcdir)/../../../js/xpconnect/src \
+ 		-I$(srcdir)/../../../dom/base \
+ 		-I$(topsrcdir)/content/xul/content/src \
+ 		$(NULL)
+ 
+ DEFINES += -D_IMPL_NS_LAYOUT
++
++ifdef _MSC_VER
++ifneq (,$(filter -DTT_MEMUTIL,$(MOZ_OPTIMIZE_FLAGS)))
++CanvasUtils.$(OBJ_SUFFIX): COMPILE_CXXFLAGS += -GL- -openmp
++endif
++endif
+diff --git a/gfx/cairo/libpixman/src/Makefile.in b/gfx/cairo/libpixman/src/Makefile.in
+--- a/gfx/cairo/libpixman/src/Makefile.in
++++ b/gfx/cairo/libpixman/src/Makefile.in
+@@ -27,17 +27,18 @@ endif
+ 
+ # Build MMX code either with VC or with gcc-on-x86
+ ifdef _MSC_VER
+ ifeq (86,$(findstring 86,$(OS_TEST)))
+ ifneq (64,$(findstring 64,$(OS_TEST)))
+ USE_MMX=1
+ endif
+ USE_SSE2=1
+-MMX_CFLAGS=
++# avoid the bug of PGO
++MMX_CFLAGS=-GL-
+ ifneq (,$(filter 1400 1500, $(_MSC_VER)))
+ # MSVC 2005 and 2008 generate code that breaks alignment
+ # restrictions in debug mode so always optimize.
+ # See bug 640250 for more info.
+ SSE2_CFLAGS=-O2
+ else
+ SSE2_CFLAGS=
+ endif
+@@ -151,20 +152,33 @@ include $(topsrcdir)/config/rules.mk
+ 
+ CFLAGS += -DPACKAGE="mozpixman" -D_USE_MATH_DEFINES
+ 
+ # Disable spammy "missing initializer" GCC warning
+ ifdef GNU_CC
+ CFLAGS += -Wno-missing-field-initializers
+ endif # GNU_CC
+ 
++ifdef _MSC_VER
++ifneq (,$(filter -DTT_MEMUTIL,$(MOZ_OPTIMIZE_FLAGS)))
++OPENMP_FLAGS_TT = -GL- -openmp
++else
++OPENMP_FLAGS_TT =
++endif
++pixman-implementation.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(OPENMP_FLAGS_TT)
++
++pixman-general.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(OPENMP_FLAGS_TT)
++
++pixman-trap.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(OPENMP_FLAGS_TT)
++endif
++
+ # special rule for pixman-mmx to get the right cflags
+ pixman-mmx.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(MMX_CFLAGS)
+ 
+-pixman-sse2.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(SSE2_CFLAGS)
++pixman-sse2.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(SSE2_CFLAGS) $(OPENMP_FLAGS_TT)
+ 
+ pixman-arm-neon.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(ARM_NEON_CFLAGS)
+ 
+ pixman-vmx.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(VMX_CFLAGS)
+ 
+ # The ARM asm functions here don't appreciate being called by functions
+ # compiled with -mapcs-frame.  See bug 832752.
+ CXXFLAGS := $(filter-out -mapcs-frame,$(CXXFLAGS))
+diff --git a/gfx/cairo/libpixman/src/pixman-implementation.c b/gfx/cairo/libpixman/src/pixman-implementation.c
+--- a/gfx/cairo/libpixman/src/pixman-implementation.c
++++ b/gfx/cairo/libpixman/src/pixman-implementation.c
+@@ -22,16 +22,24 @@
+  */
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+ #include <stdlib.h>
+ #include "pixman-private.h"
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
++#ifdef _MSC_VER
++#include <windows.h>
++#endif
++
+ pixman_implementation_t *
+ _pixman_implementation_create (pixman_implementation_t *fallback,
+ 			       const pixman_fast_path_t *fast_paths)
+ {
+     pixman_implementation_t *imp;
+ 
+     assert (fast_paths);
+ 
+@@ -371,21 +379,194 @@ pixman_bool_t
+ 	    env += len;
+ 	}
+ 	while (*env++);
+     }
+ 
+     return FALSE;
+ }
+ 
++#ifdef _MSC_VER
++
++#ifdef TT_MEMUTIL
++uint32_t dwNonTemporalDataSizeMin = NON_TEMPORAL_STORES_NOT_SUPPORTED;
++uint32_t dwNonTemporalMemcpySizeMin = NON_TEMPORAL_STORES_NOT_SUPPORTED;
++#endif
++typedef BOOL (WINAPI *LPFN_GLPI)(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, PDWORD);
++
++int Initialize_TT()
++{
++#ifdef TT_MEMUTIL
++    int omp_thread_counts = 0;
++    DWORD pam, sam;
++
++    long env_omp_num_threads = 0;
++    wchar_t *lpwz_env = _wgetenv(L"OMP_NUM_THREADS");
++    if (lpwz_env)
++    {
++      env_omp_num_threads = _wtol(lpwz_env);
++    }
++
++    omp_set_dynamic(0);
++    omp_set_num_threads(1);
++
++    if (GetProcessAffinityMask(GetCurrentProcess(), &pam, &sam))
++    {
++        LPFN_GLPI glpi =
++            (LPFN_GLPI)GetProcAddress(GetModuleHandle("kernel32.dll"),
++            "GetLogicalProcessorInformation");
++        DWORD returnLength = 0;
++        int *pThreadBindIndex = NULL;
++
++        if (NULL != glpi &&
++            !glpi(NULL, &returnLength) &&
++            GetLastError() == ERROR_INSUFFICIENT_BUFFER)
++        {
++            PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer =
++                (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)malloc(returnLength);
++
++            if (glpi(buffer, &returnLength))
++            {
++                DWORD byteOffset;
++                PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr;
++                int i;
++                size_t threadBindIndexSize;
++
++                byteOffset = 0;
++                ptr = buffer;
++                while (byteOffset < returnLength)
++                {
++                    if (RelationProcessorCore == ptr->Relationship)
++                    {
++                        omp_thread_counts++;
++                    }
++                    byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
++                    ptr++;
++                }
++
++                threadBindIndexSize = sizeof(int) * omp_thread_counts;
++                pThreadBindIndex = (int *)malloc(threadBindIndexSize);
++                memset(pThreadBindIndex, 0xFF, threadBindIndexSize);
++
++                i = 0;
++                byteOffset = 0;
++                ptr = buffer;
++                while (byteOffset < returnLength)
++                {
++                    if (RelationProcessorCore == ptr->Relationship)
++                    {
++                        if (i < omp_thread_counts)
++                        {
++                            int b;
++
++                            for (b = 0; b <= 31; b++)
++                            {
++                                if ((pam & ptr->ProcessorMask) & (1 << b))
++                                {
++                                    pThreadBindIndex[i++] = b;
++                                    break;
++                                }
++                            }
++                        }
++                        else
++                        {
++                            break;
++                        }
++                    }
++                    byteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
++                    ptr++;
++                }
++            }
++            free(buffer);
++        }
++
++        if (NULL == pThreadBindIndex)
++        {
++            int b;
++            int i;
++            size_t threadBindIndexSize;
++
++            for (b = 0; b <= 31; b++)
++            {
++                if (pam & (1 << b)) omp_thread_counts++;
++            }
++
++            threadBindIndexSize = sizeof(int) * omp_thread_counts;
++            pThreadBindIndex = (int *)malloc(threadBindIndexSize);
++            memset(pThreadBindIndex, 0xFF, threadBindIndexSize);
++
++            for (i = 0; i < omp_thread_counts; i++)
++            {
++                pThreadBindIndex[i] = i;
++            }
++        }
++
++        if (NULL != pThreadBindIndex)
++        {
++            if (omp_thread_counts >= 1)
++            {
++                OSVERSIONINFO osvi = { sizeof(OSVERSIONINFO) };
++                BOOL bIsWindows7orLater = FALSE;
++
++                omp_set_dynamic(0);
++                if (0 != env_omp_num_threads)
++                {
++                    omp_thread_counts = env_omp_num_threads;
++                }
++                omp_set_num_threads(omp_thread_counts);
++                omp_thread_counts = omp_get_max_threads();
++
++                GetVersionEx(&osvi);
++                bIsWindows7orLater =
++                    (VER_PLATFORM_WIN32_NT == osvi.dwPlatformId) &&
++                    ((6 == osvi.dwMajorVersion && osvi.dwMinorVersion >= 1) || (osvi.dwMajorVersion >= 7));
++                if (!bIsWindows7orLater)
++                {
++#pragma omp parallel
++                    {
++                        SetThreadIdealProcessor(GetCurrentThread(),
++                            pThreadBindIndex[omp_get_thread_num()]);
++                    }
++                }
++            }
++            free(pThreadBindIndex);
++        }
++    }
++#endif /* TT_MEMUTIL */
++
++#ifdef TT_MEMUTIL
++    dwNonTemporalMemcpySizeMin = dwNonTemporalDataSizeMin = GetNonTemporalDataSizeMin_tt();
++    if (dwNonTemporalMemcpySizeMin != NON_TEMPORAL_STORES_NOT_SUPPORTED)
++    {
++        dwNonTemporalMemcpySizeMin = dwNonTemporalDataSizeMin / 2;
++    }
++#endif
++
++    return 0;
++}
++
++#endif /* _MSC_VER */
++
+ pixman_implementation_t *
+ _pixman_choose_implementation (void)
+ {
+     pixman_implementation_t *imp;
+ 
++#ifdef _MSC_VER
++    {
++        static pixman_bool_t initialized = FALSE;
++
++        if (!initialized)
++        {
++            Initialize_TT();
++            initialized = TRUE;
++        }
++    }
++#endif
++
+     imp = _pixman_implementation_create_general();
+ 
+     if (!_pixman_disabled ("fast"))
+ 	imp = _pixman_implementation_create_fast_path (imp);
+ 
+     imp = _pixman_x86_get_implementations (imp);
+     imp = _pixman_arm_get_implementations (imp);
+     imp = _pixman_ppc_get_implementations (imp);
+diff --git a/gfx/cairo/libpixman/src/pixman-trap.c b/gfx/cairo/libpixman/src/pixman-trap.c
+--- a/gfx/cairo/libpixman/src/pixman-trap.c
++++ b/gfx/cairo/libpixman/src/pixman-trap.c
+@@ -20,75 +20,123 @@
+  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+  * PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++#include <limits.h>
++
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include "pixman-private.h"
+ 
+ /*
+  * Compute the smallest value greater than or equal to y which is on a
+  * grid row.
+  */
+ 
+ PIXMAN_EXPORT pixman_fixed_t
+ pixman_sample_ceil_y (pixman_fixed_t y, int n)
+ {
+     pixman_fixed_t f = pixman_fixed_frac (y);
+     pixman_fixed_t i = pixman_fixed_floor (y);
+ 
++if (8 == n)
++{
++    f = DIV (f - Y_FRAC_FIRST (8) + (STEP_Y_SMALL (8) - pixman_fixed_e), STEP_Y_SMALL (8)) * STEP_Y_SMALL (8) +
++	Y_FRAC_FIRST (8);
++    
++    if (f > Y_FRAC_LAST (8))
++    {
++	if (pixman_fixed_to_int (i) == 0x7fff)
++	{
++	    f = 0xffff; /* saturate */
++	}
++	else
++	{
++	    f = Y_FRAC_FIRST (8);
++	    i += pixman_fixed_1;
++	}
++    }
++}
++else
++{
+     f = DIV (f - Y_FRAC_FIRST (n) + (STEP_Y_SMALL (n) - pixman_fixed_e), STEP_Y_SMALL (n)) * STEP_Y_SMALL (n) +
+ 	Y_FRAC_FIRST (n);
+     
+     if (f > Y_FRAC_LAST (n))
+     {
+ 	if (pixman_fixed_to_int (i) == 0x7fff)
+ 	{
+ 	    f = 0xffff; /* saturate */
+ 	}
+ 	else
+ 	{
+ 	    f = Y_FRAC_FIRST (n);
+ 	    i += pixman_fixed_1;
+ 	}
+     }
++}
+     return (i | f);
+ }
+ 
+ /*
+  * Compute the largest value strictly less than y which is on a
+  * grid row.
+  */
+ PIXMAN_EXPORT pixman_fixed_t
+ pixman_sample_floor_y (pixman_fixed_t y,
+                        int            n)
+ {
+     pixman_fixed_t f = pixman_fixed_frac (y);
+     pixman_fixed_t i = pixman_fixed_floor (y);
+ 
++if (8 == n)
++{
++    f = DIV (f - pixman_fixed_e - Y_FRAC_FIRST (8), STEP_Y_SMALL (8)) * STEP_Y_SMALL (8) +
++	Y_FRAC_FIRST (8);
++
++    if (f < Y_FRAC_FIRST (8))
++    {
++	if (pixman_fixed_to_int (i) == 0x8000)
++	{
++	    f = 0; /* saturate */
++	}
++	else
++	{
++	    f = Y_FRAC_LAST (8);
++	    i -= pixman_fixed_1;
++	}
++    }
++}
++else
++{
+     f = DIV (f - pixman_fixed_e - Y_FRAC_FIRST (n), STEP_Y_SMALL (n)) * STEP_Y_SMALL (n) +
+ 	Y_FRAC_FIRST (n);
+ 
+     if (f < Y_FRAC_FIRST (n))
+     {
+ 	if (pixman_fixed_to_int (i) == 0x8000)
+ 	{
+ 	    f = 0; /* saturate */
+ 	}
+ 	else
+ 	{
+ 	    f = Y_FRAC_LAST (n);
+ 	    i -= pixman_fixed_1;
+ 	}
+     }
++}
++
+     return (i | f);
+ }
+ 
+ /*
+  * Step an edge by any amount (including negative values)
+  */
+ PIXMAN_EXPORT void
+ pixman_edge_step (pixman_edge_t *e,
+@@ -181,21 +229,32 @@ pixman_edge_init (pixman_edge_t *e,
+ 	else
+ 	{
+ 	    e->signdx = -1;
+ 	    e->stepx = -(-dx / dy);
+ 	    e->dx = -dx % dy;
+ 	    e->e = 0;
+ 	}
+ 
++if (8 == n)
++{
++	_pixman_edge_multi_init (e, STEP_Y_SMALL (8),
++				 &e->stepx_small, &e->dx_small);
++
++	_pixman_edge_multi_init (e, STEP_Y_BIG (8),
++				 &e->stepx_big, &e->dx_big);
++}
++else
++{
+ 	_pixman_edge_multi_init (e, STEP_Y_SMALL (n),
+ 				 &e->stepx_small, &e->dx_small);
+ 
+ 	_pixman_edge_multi_init (e, STEP_Y_BIG (n),
+ 				 &e->stepx_big, &e->dx_big);
++}
+     }
+     pixman_edge_step (e, y_start - y_top);
+ }
+ 
+ /*
+  * Initialize one edge structure given a line, starting y value
+  * and a pixel offset for the line
+  */
+@@ -322,25 +381,47 @@ pixman_add_trapezoids (pixman_image_t * 
+                        const pixman_trapezoid_t *traps)
+ {
+     int i;
+ 
+ #if 0
+     dump_image (image, "before");
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++int omp_thread_counts = omp_get_max_threads();
++if (omp_thread_counts >= 2 &&
++    ntraps >= omp_thread_counts &&
++    ntraps >= 160)
++{
++#pragma omp parallel for schedule(guided) default(none) \
++shared(ntraps, traps, image, x_off, y_off)
++    for (i = 0; i < ntraps; ++i)
++    {
++	const pixman_trapezoid_t *trap = &(traps[i]);
++
++	if (pixman_trapezoid_valid (trap))
++	{
++		pixman_rasterize_trapezoid (image, trap, x_off, y_off);
++	}
++    }
++}
++else
++#endif
++{
+     for (i = 0; i < ntraps; ++i)
+     {
+ 	const pixman_trapezoid_t *trap = &(traps[i]);
+ 
+ 	if (!pixman_trapezoid_valid (trap))
+ 	    continue;
+ 
+ 	pixman_rasterize_trapezoid (image, trap, x_off, y_off);
+     }
++}
+ 
+ #if 0
+     dump_image (image, "after");
+ #endif
+ }
+ 
+ PIXMAN_EXPORT void
+ pixman_rasterize_trapezoid (pixman_image_t *          image,
+diff --git a/toolkit/xre/nsWindowsWMain.cpp b/toolkit/xre/nsWindowsWMain.cpp
+--- a/toolkit/xre/nsWindowsWMain.cpp
++++ b/toolkit/xre/nsWindowsWMain.cpp
+@@ -5,16 +5,20 @@
+ // This file is a .cpp file meant to be included in nsBrowserApp.cpp and other
+ // similar bootstrap code. It converts wide-character windows wmain into UTF-8
+ // narrow-character strings.
+ 
+ #ifndef XP_WIN
+ #error This file only makes sense on Windows.
+ #endif
+ 
++#if defined(TT_MEMUTIL) && defined(_MSC_VER)
++#include <omp.h>
++#endif
++
+ #include "nsUTF8Utils.h"
+ 
+ #ifndef XRE_DONT_PROTECT_DLL_LOAD
+ #include "nsSetDllDirectory.h"
+ #endif
+ 
+ #ifdef __MINGW32__
+ 

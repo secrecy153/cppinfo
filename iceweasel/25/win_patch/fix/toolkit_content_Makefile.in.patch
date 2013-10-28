@@ -1,0 +1,23 @@
+# HG changeset patch
+# Parent 80623f72d01548671f50dcd03c3855429c025ce6
+# User hua.andy <hua.andy@gmail.com>
+"fix hostname.exe run error."
+
+
+diff --git a/toolkit/content/Makefile.in b/toolkit/content/Makefile.in
+--- a/toolkit/content/Makefile.in
++++ b/toolkit/content/Makefile.in
+@@ -36,12 +36,12 @@ ifeq (Android,$(OS_TARGET))
+ DEFINES += -DANDROID_PACKAGE_NAME=$(ANDROID_PACKAGE_NAME)
+ endif
+ 
+ source_repo ?= $(call getSourceRepo)
+ ifneq (,$(filter http%,$(source_repo)))
+   DEFINES += -DSOURCE_REPO="$(source_repo)"
+ endif
+ 
+-BUILD_HOSTNAME = $(shell hostname -s || hostname)
++BUILD_HOSTNAME = $(shell hostname || hostname -s)
+ DEFINES += -DBUILD_HOSTNAME="$(BUILD_HOSTNAME)"
+ 
+ include $(topsrcdir)/config/rules.mk
