@@ -1,0 +1,2703 @@
+diff --git a/browser/app/Makefile.in b/browser/app/Makefile.in
+--- a/browser/app/Makefile.in
++++ b/browser/app/Makefile.in
+@@ -189,3 +189,13 @@
+ endif #} cocoa
+ endif #} SKIP_COPY_XULRUNNER
+ endif #} LIBXUL_SDK
++
++ifeq ($(OS_ARCH), WINNT)
++ifdef GNU_CC
++CXXFLAGS += -DUNICODE -D_UNICODE
++LDFLAGS += -Wl,-u__imp__memset_nontemporal_tt -lportable32 -municode
++else
++LDFLAGS += /INCLUDE:"__imp__memset_nontemporal_tt" portable32.lib
++endif
++endif
++diff --git a/browser/app/nsBrowserApp.cpp b/browser/app/nsBrowserApp.cpp
+--- a/browser/app/nsBrowserApp.cpp
++++ b/browser/app/nsBrowserApp.cpp
+@@ -67,8 +67,11 @@
+   vfprintf(stderr, fmt, ap);
+ #else
+   char msg[2048];
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++  _vsnprintf(msg, _countof(msg)-1, fmt, ap);
++#else
+   vsnprintf_s(msg, _countof(msg), _TRUNCATE, fmt, ap);
+-
++#endif
+   wchar_t wide_msg[2048];
+   MultiByteToWideChar(CP_UTF8,
+                       0,
+@@ -77,7 +80,11 @@
+                       wide_msg,
+                       _countof(wide_msg));
+ #if MOZ_WINCONSOLE
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++  fwprintf(stderr, wide_msg);
++#else
+   fwprintf_s(stderr, wide_msg);
++#endif
+ #else
+   // Linking user32 at load-time interferes with the DLL blocklist (bug 932100).
+   // This is a rare codepath, so we can load user32 at run-time instead.
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -1337,3 +1337,7 @@
+ 
+ // The URL of the Firefox Accounts auth server backend
+ pref("identity.fxaccounts.auth.uri", "https://api-accounts.dev.lcip.org/v1");
++
++// Nvida cards also experience crashes without the second pref set to disabled
++pref("gfx.direct2d.disabled", true);
++pref("layers.acceleration.disabled", true);
+\ No newline at end of file
+diff --git a/browser/confvars.sh b/browser/confvars.sh
+--- a/browser/confvars.sh
++++ b/browser/confvars.sh
+@@ -28,7 +28,7 @@
+ MOZ_SAFE_BROWSING=1
+ MOZ_SERVICES_COMMON=1
+ MOZ_SERVICES_CRYPTO=1
+-MOZ_SERVICES_HEALTHREPORT=1
++MOZ_SERVICES_HEALTHREPORT=
+ MOZ_SERVICES_METRICS=1
+ MOZ_SERVICES_SYNC=1
+ MOZ_APP_VERSION=$FIREFOX_VERSION
+diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
+--- a/browser/installer/package-manifest.in
++++ b/browser/installer/package-manifest.in
+@@ -42,9 +42,9 @@
+ @BINPATH@/hyphenation/*
+ @BINPATH@/browser/@PREF_DIR@/firefox-l10n.js
+ @BINPATH@/browser/searchplugins/*
+-#ifdef XP_WIN32
+-@BINPATH@/uninstall/helper.exe
+-#endif
++;#ifdef XP_WIN32
++;@BINPATH@/uninstall/helper.exe
++;#endif
+ #ifdef MOZ_UPDATER
+ @BINPATH@/update.locale
+ @BINPATH@/updater.ini
+diff --git a/configure.in b/configure.in
+--- a/configure.in
++++ b/configure.in
+@@ -2042,8 +2042,8 @@
+         MKCSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
+         RC='$(WINDRES)'
+         # Use static libgcc and libstdc++
+-        LDFLAGS="$LDFLAGS -static-libgcc -static-libstdc++"
+-        NSPR_LDFLAGS="$NSPR_LDFLAGS -static-libgcc"
++        LDFLAGS="$LDFLAGS"
++        NSPR_LDFLAGS="$NSPR_LDFLAGS"
+         # Use temp file for windres (bug 213281)
+         RCFLAGS='-O coff --use-temp-file'
+         # mingw doesn't require kernel32, user32, and advapi32 explicitly
+diff --git a/content/media/directshow/Makefile.in b/content/media/directshow/Makefile.in
+--- a/content/media/directshow/Makefile.in
++++ b/content/media/directshow/Makefile.in
+@@ -3,5 +3,5 @@
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ ifeq ($(OS_ARCH),WINNT)
+-OS_CXXFLAGS += -DNOMINMAX
++OS_CXXFLAGS += -DNOMINMAX -DSTRSAFE_NO_DEPRECATE
+ endif
+diff --git a/dom/plugins/base/nsPluginHost.cpp b/dom/plugins/base/nsPluginHost.cpp
+--- a/dom/plugins/base/nsPluginHost.cpp
++++ b/dom/plugins/base/nsPluginHost.cpp
+@@ -243,6 +243,10 @@
+   Preferences::AddStrongObserver(this, "plugin.disable");
+   Preferences::AddStrongObserver(this, "plugins.click_to_play");
+ 
++  const char *env = PR_GetEnv("MOZILLA_DISABLE_PLUGINS");
++  if (env && env[0])
++    mPluginsDisabled = PR_TRUE;
++
+   nsCOMPtr<nsIObserverService> obsService =
+     mozilla::services::GetObserverService();
+   if (obsService) {
+diff --git a/dom/plugins/base/nsPluginsDirWin.cpp b/dom/plugins/base/nsPluginsDirWin.cpp
+--- a/dom/plugins/base/nsPluginsDirWin.cpp
++++ b/dom/plugins/base/nsPluginsDirWin.cpp
+@@ -75,8 +75,12 @@
+   WCHAR *buf = nullptr;
+   UINT blen;
+ 
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++  if (_snwprintf(keybuf, ArrayLength(keybuf)-1, keyFormat, language, codepage, key) < 0)
++#else
+   if (_snwprintf_s(keybuf, ArrayLength(keybuf), _TRUNCATE,
+                    keyFormat, language, codepage, key) < 0)
++#endif
+   {
+     NS_NOTREACHED("plugin info key too long for buffer!");
+     return nullptr;
+diff --git a/gfx/cairo/cairo/src/cairo-dwrite-font.cpp b/gfx/cairo/cairo/src/cairo-dwrite-font.cpp
+--- a/gfx/cairo/cairo/src/cairo-dwrite-font.cpp
++++ b/gfx/cairo/cairo/src/cairo-dwrite-font.cpp
+@@ -1,7 +1,7 @@
+ /* -*- Mode: c; tab-width: 8; c-basic-offset: 4; indent-tabs-mode: t; -*- */
+ /* Cairo - a vector graphics library with display and print output
+  *
+- * Copyright  2010 Mozilla Foundation
++ * Copyright ?2010 Mozilla Foundation
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it either under the terms of the GNU Lesser General Public
+@@ -52,6 +52,18 @@
+     void **factory
+ );
+ 
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++int __cdecl _controlfp_s(unsigned int *cur, unsigned int newval, unsigned int mask)
++{
++#ifdef _X86_
++	unsigned int flags;
++	flags = _control87( newval, mask & ~_EM_DENORMAL );
++	if(cur) *cur = flags;
++#endif
++	return 0;
++}
++#endif
++
+ #define CAIRO_INT_STATUS_SUCCESS (cairo_int_status_t)CAIRO_STATUS_SUCCESS
+ 
+ // Forward declarations
+diff --git a/gfx/skia/src/core/SkString.cpp b/gfx/skia/src/core/SkString.cpp
+--- a/gfx/skia/src/core/SkString.cpp
++++ b/gfx/skia/src/core/SkString.cpp
+@@ -18,8 +18,12 @@
+ static const size_t kBufferSize = 512;
+ 
+ #ifdef SK_BUILD_FOR_WIN
++#if defined(_MSC_VER) || defined(MINGW_HAS_SECURE_API)
+     #define VSNPRINTF(buffer, size, format, args) \
+         _vsnprintf_s(buffer, size, _TRUNCATE, format, args)
++#else
++    #define VSNPRINTF(buffer, size, format, args)  _vsnprintf(buffer, size, format, args)
++#endif
+     #define SNPRINTF    _snprintf
+ #else
+     #define VSNPRINTF   vsnprintf
+diff --git a/gfx/skia/src/device/xps/SkXPSDevice.cpp b/gfx/skia/src/device/xps/SkXPSDevice.cpp
+--- a/gfx/skia/src/device/xps/SkXPSDevice.cpp
++++ b/gfx/skia/src/device/xps/SkXPSDevice.cpp
+@@ -41,6 +41,9 @@
+ #include "SkUtils.h"
+ #include "SkXPSDevice.h"
+ 
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++#define swprintf_s _snwprintf
++#endif
+ //Windows defines a FLOAT type,
+ //make it clear when converting a scalar that this is what is wanted.
+ #define SkScalarToFLOAT(n) SkScalarToFloat(n)
+diff --git a/gfx/thebes/gfxWindowsPlatform.cpp b/gfx/thebes/gfxWindowsPlatform.cpp
+--- a/gfx/thebes/gfxWindowsPlatform.cpp
++++ b/gfx/thebes/gfxWindowsPlatform.cpp
+@@ -1194,10 +1194,13 @@
+ 
+         DWORD subrv, value;
+         bool foundData = false;
+-
++	#if (_MSC_VER>=1300) || defined(MINGW_HAS_SECURE_API)
+         swprintf_s(subkeyName, ArrayLength(subkeyName),
+                    L"Software\\Microsoft\\Avalon.Graphics\\%s", displayName);
+-
++	#else
++        _snwprintf(subkeyName, ArrayLength(subkeyName),
++                   L"Software\\Microsoft\\Avalon.Graphics\\%s", displayName);
++	#endif
+         // subkey for gamma, pixel structure
+         subrv = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                               subkeyName, 0, KEY_QUERY_VALUE, &subKey);
+diff --git a/ipc/app/Makefile.in b/ipc/app/Makefile.in
+--- a/ipc/app/Makefile.in
++++ b/ipc/app/Makefile.in
+@@ -90,3 +90,5 @@
+ 	$(NSINSTALL) $(PROGRAM) $(DIST)/bin/$(PROGRAM).app/Contents/MacOS
+ 	$(RM) $(DIST)/bin/$(PROGRAM)
+ endif #}
++
++CXXFLAGS := $(filter-out -O2,$(CXXFLAGS)) -O0
+diff --git a/ipc/chromium/src/base/file_util_win.cc b/ipc/chromium/src/base/file_util_win.cc
+--- a/ipc/chromium/src/base/file_util_win.cc
++++ b/ipc/chromium/src/base/file_util_win.cc
+@@ -265,6 +265,32 @@
+   return true;
+ }
+ 
++#if (defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)) || (defined(_MSC_VER) &&_MSC_VER < 1300)
++int fopen_s(FILE **pFile, const char *filename, const char *mode)
++{
++    int ret = 22;
++    if (pFile == NULL || filename == NULL || mode == NULL)
++        return ret;
++    *pFile = fopen(filename, mode);
++    if (*pFile != NULL)
++        return 0;
++    else
++        return ret;
++}
++
++int _wfopen_s(FILE **pFile, const wchar_t *filename, const wchar_t *mode)
++{
++    int ret = 22;
++    if (pFile == NULL || filename == NULL || mode == NULL)
++        return ret;
++    *pFile = _wfopen(filename, mode);
++    if (*pFile != NULL)
++        return 0;
++    else
++        return ret;
++}
++#endif
++
+ FILE* OpenFile(const FilePath& filename, const char* mode) {
+   std::wstring w_mode = ASCIIToWide(std::string(mode));
+   FILE* file;
+diff --git a/ipc/chromium/src/base/file_version_info.cc b/ipc/chromium/src/base/file_version_info.cc
+--- a/ipc/chromium/src/base/file_version_info.cc
++++ b/ipc/chromium/src/base/file_version_info.cc
+@@ -10,7 +10,11 @@
+ #include "base/path_service.h"
+ 
+ // This has to be last.
++#if _MSC_VER >= 1300
+ #include <strsafe.h>
++#else
++#include <tchar.h>
++#endif
+ 
+ FileVersionInfo::FileVersionInfo(void* data, int language, int code_page)
+     : language_(language), code_page_(code_page) {
+@@ -163,8 +167,13 @@
+     wchar_t sub_block[MAX_PATH];
+     WORD language = lang_codepage[i++];
+     WORD code_page = lang_codepage[i++];
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++    _snwprintf(sub_block,  MAX_PATH,
++                 L"\\StringFileInfo\\%04x%04x\\%ls", language, code_page, name);
++#else
+     _snwprintf_s(sub_block, MAX_PATH, MAX_PATH,
+                  L"\\StringFileInfo\\%04x%04x\\%ls", language, code_page, name);
++#endif
+     LPVOID value = NULL;
+     uint32_t size;
+     BOOL r = ::VerQueryValue(data_.get(), sub_block, &value, &size);
+diff --git a/ipc/chromium/src/base/registry.cc b/ipc/chromium/src/base/registry.cc
+--- a/ipc/chromium/src/base/registry.cc
++++ b/ipc/chromium/src/base/registry.cc
+@@ -404,9 +404,13 @@
+ }
+ 
+ bool RegisterCOMServer(const tchar* guid, const tchar* name, HINSTANCE module) {
+-  tchar module_path[MAX_PATH];
++  tchar module_path[MAX_PATH+1];
+   ::GetModuleFileName(module, module_path, MAX_PATH);
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++  _tcslwr(module_path);
++#else
+   _tcslwr_s(module_path, MAX_PATH);
++#endif
+   return RegisterCOMServer(guid, name, module_path);
+ }
+ 
+diff --git a/ipc/chromium/src/base/string_util_win.h b/ipc/chromium/src/base/string_util_win.h
+--- a/ipc/chromium/src/base/string_util_win.h
++++ b/ipc/chromium/src/base/string_util_win.h
+@@ -30,7 +30,7 @@
+ 
+ inline int vsnprintf(char* buffer, size_t size,
+                      const char* format, va_list arguments) {
+-  int length = vsnprintf_s(buffer, size, size - 1, format, arguments);
++  int length = _vsnprintf(buffer, size - 1, format, arguments);
+   if (length < 0)
+     return _vscprintf(format, arguments);
+   return length;
+@@ -40,7 +40,7 @@
+                      const wchar_t* format, va_list arguments) {
+   DCHECK(IsWprintfFormatPortable(format));
+ 
+-  int length = _vsnwprintf_s(buffer, size, size - 1, format, arguments);
++  int length = _vsnwprintf(buffer, size - 1, format, arguments);
+   if (length < 0)
+     return _vscwprintf(format, arguments);
+   return length;
+diff --git a/js/src/configure.in b/js/src/configure.in
+--- a/js/src/configure.in
++++ b/js/src/configure.in
+@@ -1600,7 +1600,7 @@
+         MKCSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
+         RC='$(WINDRES)'
+         # Use static libgcc and libstdc++
+-        LDFLAGS="$LDFLAGS -static-libgcc -static-libstdc++"
++        LDFLAGS="$LDFLAGS"
+         # Use temp file for windres (bug 213281)
+         RCFLAGS='-O coff --use-temp-file'
+         # mingw doesn't require kernel32, user32, and advapi32 explicitly
+diff --git a/js/src/ctypes/Library.cpp b/js/src/ctypes/Library.cpp
+--- a/js/src/ctypes/Library.cpp
++++ b/js/src/ctypes/Library.cpp
+@@ -111,7 +111,7 @@
+   if (!pathChars)
+     return nullptr;
+ 
+-  libSpec.value.pathname_u = pathChars;
++  libSpec.value.pathname_u = (const PRUnichar*)pathChars;
+   libSpec.type = PR_LibSpec_PathnameU;
+ #else
+   // Convert to platform native charset if the appropriate callback has been
+diff --git a/js/src/jsmath.cpp b/js/src/jsmath.cpp
+--- a/js/src/jsmath.cpp
++++ b/js/src/jsmath.cpp
+@@ -7,6 +7,38 @@
+ /*
+  * JS math package.
+  */
++#if defined(MINGW_HAS_SECURE_API) || _MSC_VER >= 1300
++ /* _CRT_RAND_S must be #defined before #including stdlib.h to get rand_s(). */
++# define _CRT_RAND_S
++#endif
++
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++#include <windows.h>
++#include <stdlib.h>
++#include <errno.h>
++
++#ifndef _ERRCODE_DEFINED
++#define _ERRCODE_DEFINED
++typedef int errno_t;
++#endif
++
++typedef BOOL  (APIENTRY *PGENRANDOM)( PVOID, ULONG );
++
++errno_t __cdecl rand_s( unsigned int *pval )
++{
++	errno_t ret = EBADF;
++	PGENRANDOM pfnRtlGenRandom;
++    HMODULE hAdvApi32 = LoadLibraryW(L"ADVAPI32.DLL");
++     if (hAdvApi32)
++    {
++		pfnRtlGenRandom = ( PGENRANDOM ) GetProcAddress( hAdvApi32, "SystemFunction036" );
++		ret = !pval || !pfnRtlGenRandom || !pfnRtlGenRandom(pval, sizeof(*pval)) ? EINVAL : 0;
++		FreeLibrary( hAdvApi32 );
++	}
++    return ret;
++}
++#endif
++
+ 
+ #include "jsmath.h"
+ 
+diff --git a/js/src/shell/js.cpp b/js/src/shell/js.cpp
+--- a/js/src/shell/js.cpp
++++ b/js/src/shell/js.cpp
+@@ -76,6 +76,7 @@
+ #include "jsobjinlines.h"
+ 
+ #ifdef XP_WIN
++# undef PATH_MAX
+ # define PATH_MAX (MAX_PATH > _MAX_DIR ? MAX_PATH : _MAX_DIR)
+ #else
+ # include <libgen.h>
+diff --git a/layout/media/Makefile.in b/layout/media/Makefile.in
+--- a/layout/media/Makefile.in
++++ b/layout/media/Makefile.in
+@@ -18,4 +18,8 @@
+ 	$(call py_action,preprocessor,$(ACDEFINES) $< -o $@)
+ 
+ OS_LIBS += $(call EXPAND_LIBNAME, msimg32 winmm)
++
++ifdef MOZ_ZLIB_LIBS
++OS_LIBS += -lz
+ endif
++endif
+diff --git a/media/libvpx/vp9/common/vp9_blockd.h b/media/libvpx/vp9/common/vp9_blockd.h
+--- a/media/libvpx/vp9/common/vp9_blockd.h
++++ b/media/libvpx/vp9/common/vp9_blockd.h
+@@ -45,7 +45,7 @@
+ 
+ typedef char PARTITION_CONTEXT;
+ 
+-static INLINE int combine_entropy_contexts(ENTROPY_CONTEXT a,
++static int combine_entropy_contexts(ENTROPY_CONTEXT a,
+                                            ENTROPY_CONTEXT b) {
+   return (a != 0) + (b != 0);
+ }
+@@ -74,7 +74,7 @@
+   MB_MODE_COUNT
+ } MB_PREDICTION_MODE;
+ 
+-static INLINE int is_inter_mode(MB_PREDICTION_MODE mode) {
++static int is_inter_mode(MB_PREDICTION_MODE mode) {
+   return mode >= NEARESTMV && mode <= NEWMV;
+ }
+ 
+@@ -103,18 +103,18 @@
+   MAX_REF_FRAMES = 4
+ } MV_REFERENCE_FRAME;
+ 
+-static INLINE int b_width_log2(BLOCK_SIZE sb_type) {
++static int b_width_log2(BLOCK_SIZE sb_type) {
+   return b_width_log2_lookup[sb_type];
+ }
+-static INLINE int b_height_log2(BLOCK_SIZE sb_type) {
++static int b_height_log2(BLOCK_SIZE sb_type) {
+   return b_height_log2_lookup[sb_type];
+ }
+ 
+-static INLINE int mi_width_log2(BLOCK_SIZE sb_type) {
++static int mi_width_log2(BLOCK_SIZE sb_type) {
+   return mi_width_log2_lookup[sb_type];
+ }
+ 
+-static INLINE int mi_height_log2(BLOCK_SIZE sb_type) {
++static int mi_height_log2(BLOCK_SIZE sb_type) {
+   return mi_height_log2_lookup[sb_type];
+ }
+ 
+@@ -145,11 +145,11 @@
+   b_mode_info bmi[4];
+ } MODE_INFO;
+ 
+-static INLINE int is_inter_block(const MB_MODE_INFO *mbmi) {
++static int is_inter_block(const MB_MODE_INFO *mbmi) {
+   return mbmi->ref_frame[0] > INTRA_FRAME;
+ }
+ 
+-static INLINE int has_second_ref(const MB_MODE_INFO *mbmi) {
++static int has_second_ref(const MB_MODE_INFO *mbmi) {
+   return mbmi->ref_frame[1] > INTRA_FRAME;
+ }
+ 
+@@ -233,7 +233,7 @@
+ 
+ extern const TX_TYPE mode2txfm_map[MB_MODE_COUNT];
+ 
+-static INLINE TX_TYPE get_tx_type_4x4(PLANE_TYPE plane_type,
++static TX_TYPE get_tx_type_4x4(PLANE_TYPE plane_type,
+                                       const MACROBLOCKD *xd, int ib) {
+   const MODE_INFO *const mi = xd->mi_8x8[0];
+   const MB_MODE_INFO *const mbmi = &mi->mbmi;
+@@ -247,13 +247,13 @@
+                        mi->bmi[ib].as_mode : mbmi->mode];
+ }
+ 
+-static INLINE TX_TYPE get_tx_type_8x8(PLANE_TYPE plane_type,
++static TX_TYPE get_tx_type_8x8(PLANE_TYPE plane_type,
+                                       const MACROBLOCKD *xd) {
+   return plane_type == PLANE_TYPE_Y_WITH_DC ?
+              mode2txfm_map[xd->mi_8x8[0]->mbmi.mode] : DCT_DCT;
+ }
+ 
+-static INLINE TX_TYPE get_tx_type_16x16(PLANE_TYPE plane_type,
++static TX_TYPE get_tx_type_16x16(PLANE_TYPE plane_type,
+                                         const MACROBLOCKD *xd) {
+   return plane_type == PLANE_TYPE_Y_WITH_DC ?
+              mode2txfm_map[xd->mi_8x8[0]->mbmi.mode] : DCT_DCT;
+@@ -275,7 +275,7 @@
+ }
+ 
+ 
+-static INLINE TX_SIZE get_uv_tx_size(const MB_MODE_INFO *mbmi) {
++static TX_SIZE get_uv_tx_size(const MB_MODE_INFO *mbmi) {
+   return MIN(mbmi->tx_size, max_uv_txsize_lookup[mbmi->sb_type]);
+ }
+ 
+@@ -286,12 +286,12 @@
+   return bs;
+ }
+ 
+-static INLINE int plane_block_width(BLOCK_SIZE bsize,
++static int plane_block_width(BLOCK_SIZE bsize,
+                                     const struct macroblockd_plane* plane) {
+   return 4 << (b_width_log2(bsize) - plane->subsampling_x);
+ }
+ 
+-static INLINE int plane_block_height(BLOCK_SIZE bsize,
++static int plane_block_height(BLOCK_SIZE bsize,
+                                      const struct macroblockd_plane* plane) {
+   return 4 << (b_height_log2(bsize) - plane->subsampling_y);
+ }
+@@ -301,7 +301,7 @@
+                                                   TX_SIZE tx_size,
+                                                   void *arg);
+ 
+-static INLINE void foreach_transformed_block_in_plane(
++static void foreach_transformed_block_in_plane(
+     const MACROBLOCKD *const xd, BLOCK_SIZE bsize, int plane,
+     foreach_transformed_block_visitor visit, void *arg) {
+   const struct macroblockd_plane *const pd = &xd->plane[plane];
+@@ -351,7 +351,7 @@
+   }
+ }
+ 
+-static INLINE void foreach_transformed_block(
++static void foreach_transformed_block(
+     const MACROBLOCKD* const xd, BLOCK_SIZE bsize,
+     foreach_transformed_block_visitor visit, void *arg) {
+   int plane;
+@@ -360,7 +360,7 @@
+     foreach_transformed_block_in_plane(xd, bsize, plane, visit, arg);
+ }
+ 
+-static INLINE void foreach_transformed_block_uv(
++static void foreach_transformed_block_uv(
+     const MACROBLOCKD* const xd, BLOCK_SIZE bsize,
+     foreach_transformed_block_visitor visit, void *arg) {
+   int plane;
+diff --git a/media/libvpx/vp9/common/vp9_common.h b/media/libvpx/vp9/common/vp9_common.h
+--- a/media/libvpx/vp9/common/vp9_common.h
++++ b/media/libvpx/vp9/common/vp9_common.h
+@@ -43,15 +43,15 @@
+ #define vp9_zero(dest) vpx_memset(&dest, 0, sizeof(dest))
+ #define vp9_zero_array(dest, n) vpx_memset(dest, 0, n * sizeof(*dest))
+ 
+-static INLINE uint8_t clip_pixel(int val) {
++static uint8_t clip_pixel(int val) {
+   return (val > 255) ? 255u : (val < 0) ? 0u : val;
+ }
+ 
+-static INLINE int clamp(int value, int low, int high) {
++static int clamp(int value, int low, int high) {
+   return value < low ? low : (value > high ? high : value);
+ }
+ 
+-static INLINE double fclamp(double value, double low, double high) {
++static double fclamp(double value, double low, double high) {
+   return value < low ? low : (value > high ? high : value);
+ }
+ 
+diff --git a/media/libvpx/vp9/common/vp9_entropy.h b/media/libvpx/vp9/common/vp9_entropy.h
+--- a/media/libvpx/vp9/common/vp9_entropy.h
++++ b/media/libvpx/vp9/common/vp9_entropy.h
+@@ -106,7 +106,7 @@
+ void vp9_coef_tree_initialize();
+ void vp9_adapt_coef_probs(struct VP9Common *cm);
+ 
+-static INLINE void reset_skip_context(MACROBLOCKD *xd, BLOCK_SIZE bsize) {
++static void reset_skip_context(MACROBLOCKD *xd, BLOCK_SIZE bsize) {
+   int i;
+   for (i = 0; i < MAX_MB_PLANE; i++) {
+     struct macroblockd_plane *const pd = &xd->plane[i];
+diff --git a/media/libvpx/vp9/common/vp9_entropymv.h b/media/libvpx/vp9/common/vp9_entropymv.h
+--- a/media/libvpx/vp9/common/vp9_entropymv.h
++++ b/media/libvpx/vp9/common/vp9_entropymv.h
+@@ -35,11 +35,11 @@
+   MV_JOINT_HNZVNZ = 3,           /* Both components nonzero */
+ } MV_JOINT_TYPE;
+ 
+-static INLINE int mv_joint_vertical(MV_JOINT_TYPE type) {
++static int mv_joint_vertical(MV_JOINT_TYPE type) {
+   return type == MV_JOINT_HZVNZ || type == MV_JOINT_HNZVNZ;
+ }
+ 
+-static INLINE int mv_joint_horizontal(MV_JOINT_TYPE type) {
++static int mv_joint_horizontal(MV_JOINT_TYPE type) {
+   return type == MV_JOINT_HNZVZ || type == MV_JOINT_HNZVNZ;
+ }
+ 
+@@ -99,7 +99,7 @@
+   nmv_component comps[2];
+ } nmv_context;
+ 
+-static INLINE MV_JOINT_TYPE vp9_get_mv_joint(const MV *mv) {
++static MV_JOINT_TYPE vp9_get_mv_joint(const MV *mv) {
+   if (mv->row == 0) {
+     return mv->col == 0 ? MV_JOINT_ZERO : MV_JOINT_HNZVZ;
+   } else {
+diff --git a/media/libvpx/vp9/common/vp9_idct.h b/media/libvpx/vp9/common/vp9_idct.h
+--- a/media/libvpx/vp9/common/vp9_idct.h
++++ b/media/libvpx/vp9/common/vp9_idct.h
+@@ -75,7 +75,7 @@
+ static const int sinpi_3_9 = 13377;
+ static const int sinpi_4_9 = 15212;
+ 
+-static INLINE int dct_const_round_shift(int input) {
++static int dct_const_round_shift(int input) {
+   int rv = ROUND_POWER_OF_TWO(input, DCT_CONST_BITS);
+   return (int16_t)rv;
+ }
+diff --git a/media/libvpx/vp9/common/vp9_loopfilter_filters.c b/media/libvpx/vp9/common/vp9_loopfilter_filters.c
+--- a/media/libvpx/vp9/common/vp9_loopfilter_filters.c
++++ b/media/libvpx/vp9/common/vp9_loopfilter_filters.c
+@@ -13,12 +13,12 @@
+ #include "vp9/common/vp9_loopfilter.h"
+ #include "vp9/common/vp9_onyxc_int.h"
+ 
+-static INLINE int8_t signed_char_clamp(int t) {
++static int8_t signed_char_clamp(int t) {
+   return (int8_t)clamp(t, -128, 127);
+ }
+ 
+ // should we apply any filter at all: 11111111 yes, 00000000 no
+-static INLINE int8_t filter_mask(uint8_t limit, uint8_t blimit,
++static int8_t filter_mask(uint8_t limit, uint8_t blimit,
+                                  uint8_t p3, uint8_t p2,
+                                  uint8_t p1, uint8_t p0,
+                                  uint8_t q0, uint8_t q1,
+@@ -34,7 +34,7 @@
+   return ~mask;
+ }
+ 
+-static INLINE int8_t flat_mask4(uint8_t thresh,
++static int8_t flat_mask4(uint8_t thresh,
+                                 uint8_t p3, uint8_t p2,
+                                 uint8_t p1, uint8_t p0,
+                                 uint8_t q0, uint8_t q1,
+@@ -49,7 +49,7 @@
+   return ~mask;
+ }
+ 
+-static INLINE int8_t flat_mask5(uint8_t thresh,
++static int8_t flat_mask5(uint8_t thresh,
+                                 uint8_t p4, uint8_t p3,
+                                 uint8_t p2, uint8_t p1,
+                                 uint8_t p0, uint8_t q0,
+@@ -62,7 +62,7 @@
+ }
+ 
+ // is there high edge variance internal edge: 11111111 yes, 00000000 no
+-static INLINE int8_t hev_mask(uint8_t thresh, uint8_t p1, uint8_t p0,
++static int8_t hev_mask(uint8_t thresh, uint8_t p1, uint8_t p0,
+                               uint8_t q0, uint8_t q1) {
+   int8_t hev = 0;
+   hev  |= (abs(p1 - p0) > thresh) * -1;
+@@ -70,7 +70,7 @@
+   return hev;
+ }
+ 
+-static INLINE void filter4(int8_t mask, uint8_t hev, uint8_t *op1,
++static void filter4(int8_t mask, uint8_t hev, uint8_t *op1,
+                            uint8_t *op0, uint8_t *oq0, uint8_t *oq1) {
+   int8_t filter1, filter2;
+ 
+@@ -141,7 +141,7 @@
+   }
+ }
+ 
+-static INLINE void filter8(int8_t mask, uint8_t hev, uint8_t flat,
++static void filter8(int8_t mask, uint8_t hev, uint8_t flat,
+                            uint8_t *op3, uint8_t *op2,
+                            uint8_t *op1, uint8_t *op0,
+                            uint8_t *oq0, uint8_t *oq1,
+@@ -205,7 +205,7 @@
+   }
+ }
+ 
+-static INLINE void filter16(int8_t mask, uint8_t hev,
++static void filter16(int8_t mask, uint8_t hev,
+                             uint8_t flat, uint8_t flat2,
+                             uint8_t *op7, uint8_t *op6,
+                             uint8_t *op5, uint8_t *op4,
+diff --git a/media/libvpx/vp9/common/vp9_mvref_common.c b/media/libvpx/vp9/common/vp9_mvref_common.c
+--- a/media/libvpx/vp9/common/vp9_mvref_common.c
++++ b/media/libvpx/vp9/common/vp9_mvref_common.c
+@@ -119,7 +119,7 @@
+ 
+ // This function returns either the appropriate sub block or block's mv
+ // on whether the block_size < 8x8 and we have check_sub_blocks set.
+-static INLINE int_mv get_sub_block_mv(const MODE_INFO *candidate, int which_mv,
++static int_mv get_sub_block_mv(const MODE_INFO *candidate, int which_mv,
+                                       int search_col, int block_idx) {
+   return block_idx >= 0 && candidate->mbmi.sb_type < BLOCK_8X8
+           ? candidate->bmi[idx_n_column_to_subblock[block_idx][search_col == 0]]
+@@ -129,7 +129,7 @@
+ 
+ 
+ // Performs mv sign inversion if indicated by the reference frame combination.
+-static INLINE int_mv scale_mv(const MB_MODE_INFO *mbmi, int ref,
++static int_mv scale_mv(const MB_MODE_INFO *mbmi, int ref,
+                               const MV_REFERENCE_FRAME this_ref_frame,
+                               const int *ref_sign_bias) {
+   int_mv mv = mbmi->mv[ref];
+@@ -170,7 +170,7 @@
+ 
+ // Checks that the given mi_row, mi_col and search point
+ // are inside the borders of the tile.
+-static INLINE int is_inside(const TileInfo *const tile,
++static int is_inside(const TileInfo *const tile,
+                             int mi_col, int mi_row, int mi_rows,
+                             const MV *mv) {
+   return !(mi_row + mv->row < 0 ||
+diff --git a/media/libvpx/vp9/common/vp9_mvref_common.h b/media/libvpx/vp9/common/vp9_mvref_common.h
+--- a/media/libvpx/vp9/common/vp9_mvref_common.h
++++ b/media/libvpx/vp9/common/vp9_mvref_common.h
+@@ -22,7 +22,7 @@
+                           int block_idx,
+                           int mi_row, int mi_col);
+ 
+-static INLINE void vp9_find_mv_refs(const VP9_COMMON *cm, const MACROBLOCKD *xd,
++static void vp9_find_mv_refs(const VP9_COMMON *cm, const MACROBLOCKD *xd,
+                                     const TileInfo *const tile,
+                                     MODE_INFO *mi, const MODE_INFO *prev_mi,
+                                     MV_REFERENCE_FRAME ref_frame,
+diff --git a/media/libvpx/vp9/common/vp9_onyxc_int.h b/media/libvpx/vp9/common/vp9_onyxc_int.h
+--- a/media/libvpx/vp9/common/vp9_onyxc_int.h
++++ b/media/libvpx/vp9/common/vp9_onyxc_int.h
+@@ -245,12 +245,12 @@
+   return ALIGN_POWER_OF_TWO(n_mis, MI_BLOCK_SIZE_LOG2);
+ }
+ 
+-static INLINE const vp9_prob* get_partition_probs(VP9_COMMON *cm, int ctx) {
++static  const vp9_prob* get_partition_probs(VP9_COMMON *cm, int ctx) {
+   return cm->frame_type == KEY_FRAME ? vp9_kf_partition_probs[ctx]
+                                      : cm->fc.partition_prob[ctx];
+ }
+ 
+-static INLINE void set_skip_context(
++static  void set_skip_context(
+     MACROBLOCKD *xd,
+     ENTROPY_CONTEXT *above_context[MAX_MB_PLANE],
+     ENTROPY_CONTEXT left_context[MAX_MB_PLANE][16],
+@@ -291,11 +291,11 @@
+                   cm->prev_mip + cm->mode_info_stride + 1 : NULL;
+ }
+ 
+-static INLINE int frame_is_intra_only(const VP9_COMMON *const cm) {
++static  int frame_is_intra_only(const VP9_COMMON *const cm) {
+   return cm->frame_type == KEY_FRAME || cm->intra_only;
+ }
+ 
+-static INLINE void update_partition_context(
++static  void update_partition_context(
+     PARTITION_CONTEXT *above_seg_context,
+     PARTITION_CONTEXT left_seg_context[8],
+     int mi_row, int mi_col,
+@@ -321,7 +321,7 @@
+   vpx_memset(left_ctx, pcvalue[bhl == bsl], bs);
+ }
+ 
+-static INLINE int partition_plane_context(
++static  int partition_plane_context(
+     const PARTITION_CONTEXT *above_seg_context,
+     const PARTITION_CONTEXT left_seg_context[8],
+     int mi_row, int mi_col,
+diff --git a/media/libvpx/vp9/common/vp9_pred_common.c b/media/libvpx/vp9/common/vp9_pred_common.c
+--- a/media/libvpx/vp9/common/vp9_pred_common.c
++++ b/media/libvpx/vp9/common/vp9_pred_common.c
+@@ -16,11 +16,11 @@
+ #include "vp9/common/vp9_seg_common.h"
+ #include "vp9/common/vp9_treecoder.h"
+ 
+-static INLINE const MB_MODE_INFO *get_above_mbmi(const MODE_INFO *const above) {
++static const MB_MODE_INFO *get_above_mbmi(const MODE_INFO *const above) {
+   return (above != NULL) ? &above->mbmi : NULL;
+ }
+ 
+-static INLINE const MB_MODE_INFO *get_left_mbmi(const MODE_INFO *const left) {
++static const MB_MODE_INFO *get_left_mbmi(const MODE_INFO *const left) {
+   return (left != NULL) ? &left->mbmi : NULL;
+ }
+ 
+diff --git a/media/libvpx/vp9/common/vp9_pred_common.h b/media/libvpx/vp9/common/vp9_pred_common.h
+--- a/media/libvpx/vp9/common/vp9_pred_common.h
++++ b/media/libvpx/vp9/common/vp9_pred_common.h
+@@ -14,18 +14,18 @@
+ #include "vp9/common/vp9_blockd.h"
+ #include "vp9/common/vp9_onyxc_int.h"
+ 
+-static INLINE const MODE_INFO *get_above_mi(const MACROBLOCKD *const xd) {
++static const MODE_INFO *get_above_mi(const MACROBLOCKD *const xd) {
+   return xd->up_available ? xd->mi_8x8[-xd->mode_info_stride] : NULL;
+ }
+ 
+-static INLINE const MODE_INFO *get_left_mi(const MACROBLOCKD *const xd) {
++static const MODE_INFO *get_left_mi(const MACROBLOCKD *const xd) {
+   return xd->left_available ? xd->mi_8x8[-1] : NULL;
+ }
+ 
+ int vp9_get_segment_id(VP9_COMMON *cm, const uint8_t *segment_ids,
+                        BLOCK_SIZE bsize, int mi_row, int mi_col);
+ 
+-static INLINE int vp9_get_pred_context_seg_id(const MACROBLOCKD *xd) {
++static int vp9_get_pred_context_seg_id(const MACROBLOCKD *xd) {
+   const MODE_INFO *const above_mi = get_above_mi(xd);
+   const MODE_INFO *const left_mi = get_left_mi(xd);
+   const int above_sip = (above_mi != NULL) ?
+@@ -35,14 +35,14 @@
+   return above_sip + left_sip;
+ }
+ 
+-static INLINE vp9_prob vp9_get_pred_prob_seg_id(struct segmentation *seg,
++static vp9_prob vp9_get_pred_prob_seg_id(struct segmentation *seg,
+                                                 const MACROBLOCKD *xd) {
+   return seg->pred_probs[vp9_get_pred_context_seg_id(xd)];
+ }
+ 
+ void vp9_set_pred_flag_seg_id(MACROBLOCKD *xd, uint8_t pred_flag);
+ 
+-static INLINE int vp9_get_pred_context_mbskip(const MACROBLOCKD *xd) {
++static int vp9_get_pred_context_mbskip(const MACROBLOCKD *xd) {
+   const MODE_INFO *const above_mi = get_above_mi(xd);
+   const MODE_INFO *const left_mi = get_left_mi(xd);
+   const int above_skip_coeff = (above_mi != NULL) ?
+@@ -52,12 +52,12 @@
+   return above_skip_coeff + left_skip_coeff;
+ }
+ 
+-static INLINE vp9_prob vp9_get_pred_prob_mbskip(const VP9_COMMON *cm,
++static vp9_prob vp9_get_pred_prob_mbskip(const VP9_COMMON *cm,
+                                                 const MACROBLOCKD *xd) {
+   return cm->fc.mbskip_probs[vp9_get_pred_context_mbskip(xd)];
+ }
+ 
+-static INLINE unsigned char vp9_get_pred_flag_mbskip(const MACROBLOCKD *xd) {
++static unsigned char vp9_get_pred_flag_mbskip(const MACROBLOCKD *xd) {
+   return xd->mi_8x8[0]->mbmi.skip_coeff;
+ }
+ 
+@@ -65,7 +65,7 @@
+ 
+ unsigned char vp9_get_pred_context_intra_inter(const MACROBLOCKD *xd);
+ 
+-static INLINE vp9_prob vp9_get_pred_prob_intra_inter(const VP9_COMMON *cm,
++static vp9_prob vp9_get_pred_prob_intra_inter(const VP9_COMMON *cm,
+                                                      const MACROBLOCKD *xd) {
+   const int pred_context = vp9_get_pred_context_intra_inter(xd);
+   return cm->fc.intra_inter_prob[pred_context];
+@@ -75,8 +75,7 @@
+                                                     const MACROBLOCKD *xd);
+ 
+ 
+-static INLINE
+-vp9_prob vp9_get_pred_prob_comp_inter_inter(const VP9_COMMON *cm,
++static vp9_prob vp9_get_pred_prob_comp_inter_inter(const VP9_COMMON *cm,
+                                             const MACROBLOCKD *xd) {
+   const int pred_context = vp9_get_pred_context_comp_inter_inter(cm, xd);
+   return cm->fc.comp_inter_prob[pred_context];
+@@ -85,7 +84,7 @@
+ unsigned char vp9_get_pred_context_comp_ref_p(const VP9_COMMON *cm,
+                                               const MACROBLOCKD *xd);
+ 
+-static INLINE vp9_prob vp9_get_pred_prob_comp_ref_p(const VP9_COMMON *cm,
++static vp9_prob vp9_get_pred_prob_comp_ref_p(const VP9_COMMON *cm,
+                                                     const MACROBLOCKD *xd) {
+   const int pred_context = vp9_get_pred_context_comp_ref_p(cm, xd);
+   return cm->fc.comp_ref_prob[pred_context];
+@@ -93,7 +92,7 @@
+ 
+ unsigned char vp9_get_pred_context_single_ref_p1(const MACROBLOCKD *xd);
+ 
+-static INLINE vp9_prob vp9_get_pred_prob_single_ref_p1(const VP9_COMMON *cm,
++static vp9_prob vp9_get_pred_prob_single_ref_p1(const VP9_COMMON *cm,
+                                                        const MACROBLOCKD *xd) {
+   const int pred_context = vp9_get_pred_context_single_ref_p1(xd);
+   return cm->fc.single_ref_prob[pred_context][0];
+@@ -101,7 +100,7 @@
+ 
+ unsigned char vp9_get_pred_context_single_ref_p2(const MACROBLOCKD *xd);
+ 
+-static INLINE vp9_prob vp9_get_pred_prob_single_ref_p2(const VP9_COMMON *cm,
++static vp9_prob vp9_get_pred_prob_single_ref_p2(const VP9_COMMON *cm,
+                                                        const MACROBLOCKD *xd) {
+   const int pred_context = vp9_get_pred_context_single_ref_p2(xd);
+   return cm->fc.single_ref_prob[pred_context][1];
+diff --git a/media/libvpx/vp9/common/vp9_reconinter.c b/media/libvpx/vp9/common/vp9_reconinter.c
+--- a/media/libvpx/vp9/common/vp9_reconinter.c
++++ b/media/libvpx/vp9/common/vp9_reconinter.c
+@@ -75,7 +75,7 @@
+                   w, h, ref, subpix, sfc->x_step_q4, sfc->y_step_q4);
+ }
+ 
+-static INLINE int round_mv_comp_q4(int value) {
++static int round_mv_comp_q4(int value) {
+   return (value < 0 ? value - 2 : value + 2) / 4;
+ }
+ 
+diff --git a/media/libvpx/vp9/common/vp9_reconintra.c b/media/libvpx/vp9/common/vp9_reconintra.c
+--- a/media/libvpx/vp9/common/vp9_reconintra.c
++++ b/media/libvpx/vp9/common/vp9_reconintra.c
+@@ -49,7 +49,7 @@
+   intra_pred_sized(type, 16) \
+   intra_pred_sized(type, 32)
+ 
+-static INLINE void d207_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void d207_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                   const uint8_t *above, const uint8_t *left) {
+   int r, c;
+ 
+@@ -78,7 +78,7 @@
+ }
+ intra_pred_allsizes(d207)
+ 
+-static INLINE void d63_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void d63_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                  const uint8_t *above, const uint8_t *left) {
+   int r, c;
+   for (r = 0; r < bs; ++r) {
+@@ -93,7 +93,7 @@
+ }
+ intra_pred_allsizes(d63)
+ 
+-static INLINE void d45_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void d45_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                  const uint8_t *above, const uint8_t *left) {
+   int r, c;
+   for (r = 0; r < bs; ++r) {
+@@ -107,7 +107,7 @@
+ }
+ intra_pred_allsizes(d45)
+ 
+-static INLINE void d117_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void d117_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                   const uint8_t *above, const uint8_t *left) {
+   int r, c;
+ 
+@@ -137,7 +137,7 @@
+ }
+ intra_pred_allsizes(d117)
+ 
+-static INLINE void d135_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void d135_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                   const uint8_t *above, const uint8_t *left) {
+   int r, c;
+   dst[0] = ROUND_POWER_OF_TWO(left[0] + above[-1] * 2 + above[0], 2);
+@@ -158,7 +158,7 @@
+ }
+ intra_pred_allsizes(d135)
+ 
+-static INLINE void d153_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void d153_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                   const uint8_t *above, const uint8_t *left) {
+   int r, c;
+   dst[0] = ROUND_POWER_OF_TWO(above[-1] + left[0], 1);
+@@ -185,7 +185,7 @@
+ }
+ intra_pred_allsizes(d153)
+ 
+-static INLINE void v_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void v_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                const uint8_t *above, const uint8_t *left) {
+   int r;
+ 
+@@ -196,7 +196,7 @@
+ }
+ intra_pred_allsizes(v)
+ 
+-static INLINE void h_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void h_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                const uint8_t *above, const uint8_t *left) {
+   int r;
+ 
+@@ -207,7 +207,7 @@
+ }
+ intra_pred_allsizes(h)
+ 
+-static INLINE void tm_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void tm_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                 const uint8_t *above, const uint8_t *left) {
+   int r, c;
+   int ytop_left = above[-1];
+@@ -220,7 +220,7 @@
+ }
+ intra_pred_allsizes(tm)
+ 
+-static INLINE void dc_128_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void dc_128_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                     const uint8_t *above, const uint8_t *left) {
+   int r;
+ 
+@@ -231,7 +231,7 @@
+ }
+ intra_pred_allsizes(dc_128)
+ 
+-static INLINE void dc_left_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void dc_left_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                      const uint8_t *above,
+                                      const uint8_t *left) {
+   int i, r, expected_dc, sum = 0;
+@@ -247,7 +247,7 @@
+ }
+ intra_pred_allsizes(dc_left)
+ 
+-static INLINE void dc_top_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void dc_top_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                     const uint8_t *above, const uint8_t *left) {
+   int i, r, expected_dc, sum = 0;
+ 
+@@ -262,7 +262,7 @@
+ }
+ intra_pred_allsizes(dc_top)
+ 
+-static INLINE void dc_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
++static void dc_predictor(uint8_t *dst, ptrdiff_t stride, int bs,
+                                 const uint8_t *above, const uint8_t *left) {
+   int i, r, expected_dc, sum = 0;
+   const int count = 2 * bs;
+diff --git a/media/libvpx/vp9/common/vp9_sadmxn.h b/media/libvpx/vp9/common/vp9_sadmxn.h
+--- a/media/libvpx/vp9/common/vp9_sadmxn.h
++++ b/media/libvpx/vp9/common/vp9_sadmxn.h
+@@ -14,7 +14,7 @@
+ #include "./vpx_config.h"
+ #include "vpx/vpx_integer.h"
+ 
+-static INLINE unsigned int sad_mx_n_c(const uint8_t *src_ptr,
++static unsigned int sad_mx_n_c(const uint8_t *src_ptr,
+                                       int src_stride,
+                                       const uint8_t *ref_ptr,
+                                       int ref_stride,
+diff --git a/media/libvpx/vp9/common/vp9_scale.c b/media/libvpx/vp9/common/vp9_scale.c
+--- a/media/libvpx/vp9/common/vp9_scale.c
++++ b/media/libvpx/vp9/common/vp9_scale.c
+@@ -12,11 +12,11 @@
+ #include "vp9/common/vp9_filter.h"
+ #include "vp9/common/vp9_scale.h"
+ 
+-static INLINE int scaled_x(int val, const struct scale_factors_common *sfc) {
++static int scaled_x(int val, const struct scale_factors_common *sfc) {
+   return val * sfc->x_scale_fp >> REF_SCALE_SHIFT;
+ }
+ 
+-static INLINE int scaled_y(int val, const struct scale_factors_common *sfc) {
++static int scaled_y(int val, const struct scale_factors_common *sfc) {
+   return val * sfc->y_scale_fp >> REF_SCALE_SHIFT;
+ }
+ 
+diff --git a/media/libvpx/vp9/common/vp9_scan.h b/media/libvpx/vp9/common/vp9_scan.h
+--- a/media/libvpx/vp9/common/vp9_scan.h
++++ b/media/libvpx/vp9/common/vp9_scan.h
+@@ -70,7 +70,7 @@
+ 
+ void vp9_init_neighbors();
+ 
+-static INLINE const int16_t* get_scan_4x4(TX_TYPE tx_type) {
++static  const int16_t* get_scan_4x4(TX_TYPE tx_type) {
+   switch (tx_type) {
+     case ADST_DCT:
+       return vp9_row_scan_4x4;
+@@ -81,7 +81,7 @@
+   }
+ }
+ 
+-static INLINE void get_scan_nb_4x4(TX_TYPE tx_type,
++static  void get_scan_nb_4x4(TX_TYPE tx_type,
+                                    const int16_t **scan, const int16_t **nb) {
+   switch (tx_type) {
+     case ADST_DCT:
+@@ -99,7 +99,7 @@
+   }
+ }
+ 
+-static INLINE const int16_t* get_iscan_4x4(TX_TYPE tx_type) {
++static  const int16_t* get_iscan_4x4(TX_TYPE tx_type) {
+   switch (tx_type) {
+     case ADST_DCT:
+       return vp9_row_iscan_4x4;
+@@ -110,7 +110,7 @@
+   }
+ }
+ 
+-static INLINE const int16_t* get_scan_8x8(TX_TYPE tx_type) {
++static  const int16_t* get_scan_8x8(TX_TYPE tx_type) {
+   switch (tx_type) {
+     case ADST_DCT:
+       return vp9_row_scan_8x8;
+@@ -121,7 +121,7 @@
+   }
+ }
+ 
+-static INLINE void get_scan_nb_8x8(TX_TYPE tx_type,
++static  void get_scan_nb_8x8(TX_TYPE tx_type,
+                                    const int16_t **scan, const int16_t **nb) {
+   switch (tx_type) {
+     case ADST_DCT:
+@@ -139,7 +139,7 @@
+   }
+ }
+ 
+-static INLINE const int16_t* get_iscan_8x8(TX_TYPE tx_type) {
++static  const int16_t* get_iscan_8x8(TX_TYPE tx_type) {
+   switch (tx_type) {
+     case ADST_DCT:
+       return vp9_row_iscan_8x8;
+@@ -150,7 +150,7 @@
+   }
+ }
+ 
+-static INLINE const int16_t* get_scan_16x16(TX_TYPE tx_type) {
++static  const int16_t* get_scan_16x16(TX_TYPE tx_type) {
+   switch (tx_type) {
+     case ADST_DCT:
+       return vp9_row_scan_16x16;
+@@ -161,7 +161,7 @@
+   }
+ }
+ 
+-static INLINE void get_scan_nb_16x16(TX_TYPE tx_type,
++static  void get_scan_nb_16x16(TX_TYPE tx_type,
+                                      const int16_t **scan, const int16_t **nb) {
+   switch (tx_type) {
+     case ADST_DCT:
+@@ -179,7 +179,7 @@
+   }
+ }
+ 
+-static INLINE const int16_t* get_iscan_16x16(TX_TYPE tx_type) {
++static  const int16_t* get_iscan_16x16(TX_TYPE tx_type) {
+   switch (tx_type) {
+     case ADST_DCT:
+       return vp9_row_iscan_16x16;
+@@ -190,7 +190,7 @@
+   }
+ }
+ 
+-static INLINE int get_coef_context(const int16_t *neighbors,
++static  int get_coef_context(const int16_t *neighbors,
+                                    const uint8_t *token_cache, int c) {
+   return (1 + token_cache[neighbors[MAX_NEIGHBORS * c + 0]] +
+           token_cache[neighbors[MAX_NEIGHBORS * c + 1]]) >> 1;
+diff --git a/media/libvpx/vp9/common/vp9_treecoder.h b/media/libvpx/vp9/common/vp9_treecoder.h
+--- a/media/libvpx/vp9/common/vp9_treecoder.h
++++ b/media/libvpx/vp9/common/vp9_treecoder.h
+@@ -53,7 +53,7 @@
+                                       const unsigned int num_events[ /* n */ ]);
+ 
+ 
+-static INLINE vp9_prob clip_prob(int p) {
++static vp9_prob clip_prob(int p) {
+   return (p > 255) ? 255u : (p < 1) ? 1u : p;
+ }
+ 
+@@ -61,25 +61,25 @@
+ // However when outputing entropy stats accumulated over many frames
+ // or even clips we can overflow int math.
+ #ifdef ENTROPY_STATS
+-static INLINE vp9_prob get_prob(int num, int den) {
++static vp9_prob get_prob(int num, int den) {
+   return (den == 0) ? 128u : clip_prob(((int64_t)num * 256 + (den >> 1)) / den);
+ }
+ #else
+-static INLINE vp9_prob get_prob(int num, int den) {
++static vp9_prob get_prob(int num, int den) {
+   return (den == 0) ? 128u : clip_prob((num * 256 + (den >> 1)) / den);
+ }
+ #endif
+ 
+-static INLINE vp9_prob get_binary_prob(int n0, int n1) {
++static vp9_prob get_binary_prob(int n0, int n1) {
+   return get_prob(n0, n0 + n1);
+ }
+ 
+ /* this function assumes prob1 and prob2 are already within [1,255] range */
+-static INLINE vp9_prob weighted_prob(int prob1, int prob2, int factor) {
++static vp9_prob weighted_prob(int prob1, int prob2, int factor) {
+   return ROUND_POWER_OF_TWO(prob1 * (256 - factor) + prob2 * factor, 8);
+ }
+ 
+-static INLINE vp9_prob merge_probs(vp9_prob pre_prob,
++static vp9_prob merge_probs(vp9_prob pre_prob,
+                                    const unsigned int ct[2],
+                                    unsigned int count_sat,
+                                    unsigned int max_update_factor) {
+diff --git a/media/libvpx/vp9/common/x86/vp9_idct_intrin_sse2.c b/media/libvpx/vp9/common/x86/vp9_idct_intrin_sse2.c
+--- a/media/libvpx/vp9/common/x86/vp9_idct_intrin_sse2.c
++++ b/media/libvpx/vp9/common/x86/vp9_idct_intrin_sse2.c
+@@ -172,7 +172,7 @@
+   RECON_AND_STORE4X4(dest, dc_value);
+ }
+ 
+-static INLINE void transpose_4x4(__m128i *res) {
++void transpose_4x4(__m128i *res) {
+   const __m128i tr0_0 = _mm_unpacklo_epi16(res[0], res[1]);
+   const __m128i tr0_1 = _mm_unpacklo_epi16(res[2], res[3]);
+   res[0] = _mm_unpacklo_epi32(tr0_0, tr0_1);
+@@ -591,7 +591,7 @@
+ }
+ 
+ // perform 8x8 transpose
+-static INLINE void array_transpose_8x8(__m128i *in, __m128i *res) {
++void array_transpose_8x8(__m128i *in, __m128i *res) {
+   const __m128i tr0_0 = _mm_unpacklo_epi16(in[0], in[1]);
+   const __m128i tr0_1 = _mm_unpacklo_epi16(in[2], in[3]);
+   const __m128i tr0_2 = _mm_unpackhi_epi16(in[0], in[1]);
+@@ -1475,7 +1475,7 @@
+   }
+ }
+ 
+-static INLINE void array_transpose_16x16(__m128i *res0, __m128i *res1) {
++void array_transpose_16x16(__m128i *res0, __m128i *res1) {
+   __m128i tbuf[8];
+   array_transpose_8x8(res0, res0);
+   array_transpose_8x8(res1, tbuf);
+@@ -2318,7 +2318,7 @@
+   iadst16_1d_8col(in1);
+ }
+ 
+-static INLINE void load_buffer_8x16(const int16_t *input, __m128i *in) {
++void load_buffer_8x16(const int16_t *input, __m128i *in) {
+   in[0]  = _mm_load_si128((const __m128i *)(input + 0 * 16));
+   in[1]  = _mm_load_si128((const __m128i *)(input + 1 * 16));
+   in[2]  = _mm_load_si128((const __m128i *)(input + 2 * 16));
+@@ -2338,7 +2338,7 @@
+   in[15]  = _mm_load_si128((const __m128i *)(input + 15 * 16));
+ }
+ 
+-static INLINE void write_buffer_8x16(uint8_t *dest, __m128i *in, int stride) {
++void write_buffer_8x16(uint8_t *dest, __m128i *in, int stride) {
+   const __m128i final_rounding = _mm_set1_epi16(1<<5);
+   const __m128i zero = _mm_setzero_si128();
+   // Final rounding and shift
+diff --git a/media/libvpx/vp9/common/x86/vp9_loopfilter_intrin_sse2.c b/media/libvpx/vp9/common/x86/vp9_loopfilter_intrin_sse2.c
+--- a/media/libvpx/vp9/common/x86/vp9_loopfilter_intrin_sse2.c
++++ b/media/libvpx/vp9/common/x86/vp9_loopfilter_intrin_sse2.c
+@@ -1093,7 +1093,7 @@
+   }
+ }
+ 
+-static INLINE void transpose8x16(unsigned char *in0, unsigned char *in1,
++void transpose8x16(unsigned char *in0, unsigned char *in1,
+                                  int in_p, unsigned char *out, int out_p) {
+   __m128i x0, x1, x2, x3, x4, x5, x6, x7;
+   __m128i x8, x9, x10, x11, x12, x13, x14, x15;
+@@ -1159,7 +1159,7 @@
+   _mm_storeu_si128((__m128i *)(out + 7 * out_p), _mm_unpackhi_epi64(x7, x15));
+ }
+ 
+-static INLINE void transpose(unsigned char *src[], int in_p,
++void transpose(unsigned char *src[], int in_p,
+                              unsigned char *dst[], int out_p,
+                              int num_8x8_to_transpose) {
+   int idx8x8 = 0;
+diff --git a/media/libvpx/vp9/decoder/vp9_decodemv.c b/media/libvpx/vp9/decoder/vp9_decodemv.c
+--- a/media/libvpx/vp9/decoder/vp9_decodemv.c
++++ b/media/libvpx/vp9/decoder/vp9_decodemv.c
+@@ -239,7 +239,7 @@
+   return sign ? -mag : mag;
+ }
+ 
+-static INLINE void read_mv(vp9_reader *r, MV *mv, const MV *ref,
++static void read_mv(vp9_reader *r, MV *mv, const MV *ref,
+                            const nmv_context *ctx,
+                            nmv_context_counts *counts, int allow_hp) {
+   const MV_JOINT_TYPE j = treed_read(r, vp9_mv_joint_tree, ctx->joints);
+@@ -315,7 +315,7 @@
+ }
+ 
+ 
+-static INLINE INTERPOLATION_TYPE read_switchable_filter_type(
++static INTERPOLATION_TYPE read_switchable_filter_type(
+     VP9_COMMON *const cm, MACROBLOCKD *const xd, vp9_reader *r) {
+   const int ctx = vp9_get_pred_context_switchable_interp(xd);
+   const int type = treed_read(r, vp9_switchable_interp_tree,
+@@ -358,7 +358,7 @@
+   mbmi->uv_mode = read_intra_mode_uv(cm, r, mbmi->mode);
+ }
+ 
+-static INLINE int assign_mv(VP9_COMMON *cm, MB_PREDICTION_MODE mode,
++static int assign_mv(VP9_COMMON *cm, MB_PREDICTION_MODE mode,
+                              int_mv mv[2], int_mv best_mv[2],
+                              int_mv nearest_mv[2], int_mv near_mv[2],
+                              int is_compound, int allow_hp, vp9_reader *r) {
+diff --git a/media/libvpx/vp9/decoder/vp9_decodframe.c b/media/libvpx/vp9/decoder/vp9_decodframe.c
+--- a/media/libvpx/vp9/decoder/vp9_decodframe.c
++++ b/media/libvpx/vp9/decoder/vp9_decodframe.c
+@@ -125,7 +125,7 @@
+       vp9_diff_update_prob(r, &fc->inter_mode_probs[i][j]);
+ }
+ 
+-static INLINE COMPPREDMODE_TYPE read_comp_pred_mode(vp9_reader *r) {
++static COMPPREDMODE_TYPE read_comp_pred_mode(vp9_reader *r) {
+   COMPPREDMODE_TYPE mode = vp9_read_bit(r);
+   if (mode)
+     mode += vp9_read_bit(r);
+diff --git a/media/libvpx/vp9/encoder/vp9_bitstream.c b/media/libvpx/vp9/encoder/vp9_bitstream.c
+--- a/media/libvpx/vp9/encoder/vp9_bitstream.c
++++ b/media/libvpx/vp9/encoder/vp9_bitstream.c
+@@ -151,7 +151,7 @@
+ }
+ #endif
+ 
+-static INLINE void write_be32(uint8_t *p, int value) {
++static void write_be32(uint8_t *p, int value) {
+   p[0] = value >> 24;
+   p[1] = value >> 16;
+   p[2] = value >> 8;
+diff --git a/media/libvpx/vp9/encoder/vp9_dct.c b/media/libvpx/vp9/encoder/vp9_dct.c
+--- a/media/libvpx/vp9/encoder/vp9_dct.c
++++ b/media/libvpx/vp9/encoder/vp9_dct.c
+@@ -20,7 +20,7 @@
+ 
+ #include "vp9/encoder/vp9_dct.h"
+ 
+-static INLINE int fdct_round_shift(int input) {
++static int fdct_round_shift(int input) {
+   int rv = ROUND_POWER_OF_TWO(input, DCT_CONST_BITS);
+   assert(INT16_MIN <= rv && rv <= INT16_MAX);
+   return rv;
+@@ -986,13 +986,13 @@
+   }
+ }
+ 
+-static INLINE int dct_32_round(int input) {
++static int dct_32_round(int input) {
+   int rv = ROUND_POWER_OF_TWO(input, DCT_CONST_BITS);
+   assert(-131072 <= rv && rv <= 131071);
+   return rv;
+ }
+ 
+-static INLINE int half_round_shift(int input) {
++static int half_round_shift(int input) {
+   int rv = (input + 1 + (input < 0)) >> 2;
+   return rv;
+ }
+diff --git a/media/libvpx/vp9/encoder/vp9_encodeframe.c b/media/libvpx/vp9/encoder/vp9_encodeframe.c
+--- a/media/libvpx/vp9/encoder/vp9_encodeframe.c
++++ b/media/libvpx/vp9/encoder/vp9_encodeframe.c
+@@ -50,7 +50,7 @@
+ int enc_debug = 0;
+ #endif
+ 
+-static INLINE uint8_t *get_sb_index(MACROBLOCK *x, BLOCK_SIZE subsize) {
++static uint8_t *get_sb_index(MACROBLOCK *x, BLOCK_SIZE subsize) {
+   switch (subsize) {
+     case BLOCK_64X64:
+     case BLOCK_64X32:
+@@ -1465,11 +1465,11 @@
+   }
+ }
+ 
+-static INLINE void store_pred_mv(MACROBLOCK *x, PICK_MODE_CONTEXT *ctx) {
++static void store_pred_mv(MACROBLOCK *x, PICK_MODE_CONTEXT *ctx) {
+   vpx_memcpy(ctx->pred_mv, x->pred_mv, sizeof(x->pred_mv));
+ }
+ 
+-static INLINE void load_pred_mv(MACROBLOCK *x, PICK_MODE_CONTEXT *ctx) {
++static void load_pred_mv(MACROBLOCK *x, PICK_MODE_CONTEXT *ctx) {
+   vpx_memcpy(x->pred_mv, ctx->pred_mv, sizeof(x->pred_mv));
+ }
+ 
+diff --git a/media/libvpx/vp9/encoder/vp9_mcomp.c b/media/libvpx/vp9/encoder/vp9_mcomp.c
+--- a/media/libvpx/vp9/encoder/vp9_mcomp.c
++++ b/media/libvpx/vp9/encoder/vp9_mcomp.c
+@@ -59,7 +59,7 @@
+   return sr;
+ }
+ 
+-static INLINE int mv_cost(const MV *mv,
++static int mv_cost(const MV *mv,
+                           const int *joint_cost, int *comp_cost[2]) {
+   return joint_cost[vp9_get_mv_joint(mv)] +
+              comp_cost[0][mv->row] + comp_cost[1][mv->col];
+diff --git a/media/libvpx/vp9/encoder/vp9_onyx_if.c b/media/libvpx/vp9/encoder/vp9_onyx_if.c
+--- a/media/libvpx/vp9/encoder/vp9_onyx_if.c
++++ b/media/libvpx/vp9/encoder/vp9_onyx_if.c
+@@ -121,7 +121,7 @@
+ static int afq_low_motion_minq[QINDEX_RANGE];
+ static int afq_high_motion_minq[QINDEX_RANGE];
+ 
+-static INLINE void Scale2Ratio(int mode, int *hr, int *hs) {
++static void Scale2Ratio(int mode, int *hr, int *hs) {
+   switch (mode) {
+     case NORMAL:
+       *hr = 1;
+diff --git a/media/libvpx/vp9/encoder/vp9_quantize.c b/media/libvpx/vp9/encoder/vp9_quantize.c
+--- a/media/libvpx/vp9/encoder/vp9_quantize.c
++++ b/media/libvpx/vp9/encoder/vp9_quantize.c
+@@ -144,7 +144,7 @@
+ 
+ // TODO(jkoleszar): returning a struct so it can be used in a const context,
+ // expect to refactor this further later.
+-static INLINE struct plane_block_idx plane_block_idx(int y_blocks,
++static struct plane_block_idx plane_block_idx(int y_blocks,
+                                                      int b_idx) {
+   const int v_offset = y_blocks * 5 / 4;
+   struct plane_block_idx res;
+diff --git a/media/libvpx/vp9/encoder/vp9_rdopt.c b/media/libvpx/vp9/encoder/vp9_rdopt.c
+--- a/media/libvpx/vp9/encoder/vp9_rdopt.c
++++ b/media/libvpx/vp9/encoder/vp9_rdopt.c
+@@ -280,7 +280,7 @@
+   }
+ }
+ 
+-static INLINE void linear_interpolate2(double x, int ntab, int inv_step,
++static void linear_interpolate2(double x, int ntab, int inv_step,
+                                        const double *tab1, const double *tab2,
+                                        double *v1, double *v2) {
+   double y = x * inv_step;
+@@ -485,7 +485,7 @@
+   { 1, 2, 3, 4, 11, 1024 - 21, 0 },
+ };
+ 
+-static INLINE int cost_coeffs(MACROBLOCK *x,
++static int cost_coeffs(MACROBLOCK *x,
+                               int plane, int block,
+                               ENTROPY_CONTEXT *A, ENTROPY_CONTEXT *L,
+                               TX_SIZE tx_size,
+@@ -1637,7 +1637,7 @@
+   int mvthresh;
+ } BEST_SEG_INFO;
+ 
+-static INLINE int mv_check_bounds(MACROBLOCK *x, int_mv *mv) {
++static int mv_check_bounds(MACROBLOCK *x, int_mv *mv) {
+   int r = 0;
+   r |= (mv->as_mv.row >> 3) < x->mv_row_min;
+   r |= (mv->as_mv.row >> 3) > x->mv_row_max;
+@@ -1646,7 +1646,7 @@
+   return r;
+ }
+ 
+-static INLINE void mi_buf_shift(MACROBLOCK *x, int i) {
++static void mi_buf_shift(MACROBLOCK *x, int i) {
+   MB_MODE_INFO *const mbmi = &x->e_mbd.mi_8x8[0]->mbmi;
+   struct macroblock_plane *const p = &x->plane[0];
+   struct macroblockd_plane *const pd = &x->e_mbd.plane[0];
+@@ -1661,7 +1661,7 @@
+                                                pd->pre[1].stride);
+ }
+ 
+-static INLINE void mi_buf_restore(MACROBLOCK *x, struct buf_2d orig_src,
++static void mi_buf_restore(MACROBLOCK *x, struct buf_2d orig_src,
+                                   struct buf_2d orig_pre[2]) {
+   MB_MODE_INFO *mbmi = &x->e_mbd.mi_8x8[0]->mbmi;
+   x->plane[0].src = orig_src;
+@@ -2349,7 +2349,7 @@
+   return scaled_ref_frame;
+ }
+ 
+-static INLINE int get_switchable_rate(const MACROBLOCK *x) {
++static int get_switchable_rate(const MACROBLOCK *x) {
+   const MACROBLOCKD *const xd = &x->e_mbd;
+   const MB_MODE_INFO *const mbmi = &xd->mi_8x8[0]->mbmi;
+   const int ctx = vp9_get_pred_context_switchable_interp(xd);
+diff --git a/media/libvpx/vp9/encoder/vp9_treewriter.h b/media/libvpx/vp9/encoder/vp9_treewriter.h
+--- a/media/libvpx/vp9/encoder/vp9_treewriter.h
++++ b/media/libvpx/vp9/encoder/vp9_treewriter.h
+@@ -33,18 +33,18 @@
+ 
+ 
+ /* Both of these return bits, not scaled bits. */
+-static INLINE unsigned int cost_branch256(const unsigned int ct[2],
++static unsigned int cost_branch256(const unsigned int ct[2],
+                                           vp9_prob p) {
+   return ct[0] * vp9_cost_zero(p) + ct[1] * vp9_cost_one(p);
+ }
+ 
+-static INLINE unsigned int cost_branch(const unsigned int ct[2],
++static unsigned int cost_branch(const unsigned int ct[2],
+                                        vp9_prob p) {
+   return cost_branch256(ct, p) >> 8;
+ }
+ 
+ 
+-static INLINE void treed_write(vp9_writer *w,
++static void treed_write(vp9_writer *w,
+                                vp9_tree tree, const vp9_prob *probs,
+                                int bits, int len) {
+   vp9_tree_index i = 0;
+@@ -56,13 +56,13 @@
+   } while (len);
+ }
+ 
+-static INLINE void write_token(vp9_writer *w, vp9_tree tree,
++static void write_token(vp9_writer *w, vp9_tree tree,
+                                const vp9_prob *probs,
+                                const struct vp9_token *token) {
+   treed_write(w, tree, probs, token->value, token->len);
+ }
+ 
+-static INLINE int treed_cost(vp9_tree tree, const vp9_prob *probs,
++static int treed_cost(vp9_tree tree, const vp9_prob *probs,
+                              int bits, int len) {
+   int cost = 0;
+   vp9_tree_index i = 0;
+@@ -76,7 +76,7 @@
+   return cost;
+ }
+ 
+-static INLINE int cost_token(vp9_tree tree, const vp9_prob *probs,
++static int cost_token(vp9_tree tree, const vp9_prob *probs,
+                              const struct vp9_token *token) {
+   return treed_cost(tree, probs, token->value, token->len);
+ }
+diff --git a/media/libvpx/vp9/encoder/x86/vp9_dct32x32_sse2.c b/media/libvpx/vp9/encoder/x86/vp9_dct32x32_sse2.c
+--- a/media/libvpx/vp9/encoder/x86/vp9_dct32x32_sse2.c
++++ b/media/libvpx/vp9/encoder/x86/vp9_dct32x32_sse2.c
+@@ -13,7 +13,7 @@
+ #include "vpx_ports/mem.h"
+ 
+ #if FDCT32x32_HIGH_PRECISION
+-static INLINE __m128i k_madd_epi32(__m128i a, __m128i b) {
++static __m128i k_madd_epi32(__m128i a, __m128i b) {
+   __m128i buf0, buf1;
+   buf0 = _mm_mul_epu32(a, b);
+   a = _mm_srli_epi64(a, 32);
+@@ -22,7 +22,7 @@
+   return _mm_add_epi64(buf0, buf1);
+ }
+ 
+-static INLINE __m128i k_packs_epi64(__m128i a, __m128i b) {
++static __m128i k_packs_epi64(__m128i a, __m128i b) {
+   __m128i buf0 = _mm_shuffle_epi32(a, _MM_SHUFFLE(0, 0, 2, 0));
+   __m128i buf1 = _mm_shuffle_epi32(b, _MM_SHUFFLE(0, 0, 2, 0));
+   return _mm_unpacklo_epi64(buf0, buf1);
+diff --git a/media/libvpx/vp9/encoder/x86/vp9_dct_sse2.c b/media/libvpx/vp9/encoder/x86/vp9_dct_sse2.c
+--- a/media/libvpx/vp9/encoder/x86/vp9_dct_sse2.c
++++ b/media/libvpx/vp9/encoder/x86/vp9_dct_sse2.c
+@@ -111,7 +111,7 @@
+   }
+ }
+ 
+-static INLINE void load_buffer_4x4(const int16_t *input, __m128i *in,
++static void load_buffer_4x4(const int16_t *input, __m128i *in,
+                                    int stride) {
+   const __m128i k__nonzero_bias_a = _mm_setr_epi16(0, 1, 1, 1, 1, 1, 1, 1);
+   const __m128i k__nonzero_bias_b = _mm_setr_epi16(1, 0, 0, 0, 0, 0, 0, 0);
+@@ -132,7 +132,7 @@
+   in[0] = _mm_add_epi16(in[0], k__nonzero_bias_b);
+ }
+ 
+-static INLINE void write_buffer_4x4(int16_t *output, __m128i *res) {
++static void write_buffer_4x4(int16_t *output, __m128i *res) {
+   const __m128i kOne = _mm_set1_epi16(1);
+   __m128i in01 = _mm_unpacklo_epi64(res[0], res[1]);
+   __m128i in23 = _mm_unpacklo_epi64(res[2], res[3]);
+@@ -144,7 +144,7 @@
+   _mm_store_si128((__m128i *)(output + 1 * 8), out23);
+ }
+ 
+-static INLINE void transpose_4x4(__m128i *res) {
++static void transpose_4x4(__m128i *res) {
+   // Combine and transpose
+   // 00 01 02 03 20 21 22 23
+   // 10 11 12 13 30 31 32 33
+@@ -529,7 +529,7 @@
+ }
+ 
+ // load 8x8 array
+-static INLINE void load_buffer_8x8(const int16_t *input, __m128i *in,
++static void load_buffer_8x8(const int16_t *input, __m128i *in,
+                                    int stride) {
+   in[0]  = _mm_load_si128((const __m128i *)(input + 0 * stride));
+   in[1]  = _mm_load_si128((const __m128i *)(input + 1 * stride));
+@@ -551,7 +551,7 @@
+ }
+ 
+ // right shift and rounding
+-static INLINE void right_shift_8x8(__m128i *res, int const bit) {
++static void right_shift_8x8(__m128i *res, int const bit) {
+   const __m128i kOne = _mm_set1_epi16(1);
+   const int bit_m02 = bit - 2;
+   __m128i sign0 = _mm_srai_epi16(res[0], 15);
+@@ -595,7 +595,7 @@
+ }
+ 
+ // write 8x8 array
+-static INLINE void write_buffer_8x8(int16_t *output, __m128i *res, int stride) {
++static void write_buffer_8x8(int16_t *output, __m128i *res, int stride) {
+   _mm_store_si128((__m128i *)(output + 0 * stride), res[0]);
+   _mm_store_si128((__m128i *)(output + 1 * stride), res[1]);
+   _mm_store_si128((__m128i *)(output + 2 * stride), res[2]);
+@@ -607,7 +607,7 @@
+ }
+ 
+ // perform in-place transpose
+-static INLINE void array_transpose_8x8(__m128i *in, __m128i *res) {
++static void array_transpose_8x8(__m128i *in, __m128i *res) {
+   const __m128i tr0_0 = _mm_unpacklo_epi16(in[0], in[1]);
+   const __m128i tr0_1 = _mm_unpacklo_epi16(in[2], in[3]);
+   const __m128i tr0_2 = _mm_unpackhi_epi16(in[0], in[1]);
+@@ -1682,7 +1682,7 @@
+   }
+ }
+ 
+-static INLINE void load_buffer_16x16(const int16_t* input, __m128i *in0,
++static void load_buffer_16x16(const int16_t* input, __m128i *in0,
+                                      __m128i *in1, int stride) {
+   // load first 8 columns
+   load_buffer_8x8(input, in0, stride);
+@@ -1694,7 +1694,7 @@
+   load_buffer_8x8(input + 8 * stride, in1 + 8, stride);
+ }
+ 
+-static INLINE void write_buffer_16x16(int16_t *output, __m128i *in0,
++static void write_buffer_16x16(int16_t *output, __m128i *in0,
+                                       __m128i *in1, int stride) {
+   // write first 8 columns
+   write_buffer_8x8(output, in0, stride);
+@@ -1705,7 +1705,7 @@
+   write_buffer_8x8(output + 8 * stride, in1 + 8, stride);
+ }
+ 
+-static INLINE void array_transpose_16x16(__m128i *res0, __m128i *res1) {
++static void array_transpose_16x16(__m128i *res0, __m128i *res1) {
+   __m128i tbuf[8];
+   array_transpose_8x8(res0, res0);
+   array_transpose_8x8(res1, tbuf);
+@@ -1722,7 +1722,7 @@
+   res0[15] = tbuf[7];
+ }
+ 
+-static INLINE void right_shift_16x16(__m128i *res0, __m128i *res1) {
++static void right_shift_16x16(__m128i *res0, __m128i *res1) {
+   // perform rounding operations
+   right_shift_8x8(res0, 2);
+   right_shift_8x8(res0 + 8, 2);
+diff --git a/media/libvpx/vpx/src/svc_encodeframe.c b/media/libvpx/vpx/src/svc_encodeframe.c
+--- a/media/libvpx/vpx/src/svc_encodeframe.c
++++ b/media/libvpx/vpx/src/svc_encodeframe.c
+@@ -23,15 +23,39 @@
+ #include "vpx/vp8cx.h"
+ #include "vpx/vpx_encoder.h"
+ 
+-#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++#if defined(__MINGW32__) && defined(MINGW_HAS_SECURE_API)
+ #define strtok_r strtok_s
+ // proto from /usr/x86_64-w64-mingw32/include/sec_api/string_s.h
+-_CRTIMP char *__cdecl strtok_s(char *str, const char *delim, char **context);
+-#endif
+-
+-#ifdef _MSC_VER
++//_CRTIMP char *__cdecl strtok_s(char *str, const char *delim, char **context);
++#elif defined(_MSC_VER)
+ #define strdup _strdup
+ #define strtok_r strtok_s
++#else
++#undef strtok_r
++static char *strtok_r(char *s, const char *delim, char **save_ptr) {  
++    char *token;  
++  
++    if (s == NULL) s = *save_ptr;  
++  
++    /* Scan leading delimiters.  */  
++    s += strspn(s, delim);  
++    if (*s == '\0')   
++        return NULL;  
++  
++    /* Find the end of the token.  */  
++    token = s;  
++    s = strpbrk(token, delim);  
++    if (s == NULL)  
++        /* This token finishes the string.  */  
++        *save_ptr = strchr(token, '\0');  
++    else {  
++        /* Terminate the token and make *SAVE_PTR point past it.  */  
++        *s = '\0';  
++        *save_ptr = s + 1;  
++    }  
++  
++    return token;  
++}  
+ #endif
+ 
+ #define SVC_REFERENCE_FRAMES 8
+diff --git a/mfbt/TypedEnum.h b/mfbt/TypedEnum.h
+--- a/mfbt/TypedEnum.h
++++ b/mfbt/TypedEnum.h
+@@ -28,7 +28,7 @@
+ #  endif
+ #elif defined(__GNUC__)
+ #  if defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L
+-#    if MOZ_GCC_VERSION_AT_LEAST(4, 6, 3)
++#    if MOZ_GCC_VERSION_AT_LEAST(4, 8, 3)
+ #      define MOZ_HAVE_CXX11_ENUM_TYPE
+ #      define MOZ_HAVE_CXX11_STRONG_ENUMS
+ #    endif
+diff --git a/netwerk/sctp/datachannel/DataChannel.cpp b/netwerk/sctp/datachannel/DataChannel.cpp
+--- a/netwerk/sctp/datachannel/DataChannel.cpp
++++ b/netwerk/sctp/datachannel/DataChannel.cpp
+@@ -178,8 +178,10 @@
+ 
+   if (PR_LOG_TEST(GetSCTPLog(), PR_LOG_ALWAYS)) {
+     va_start(ap, format);
+-#ifdef _WIN32
++#if defined(MINGW_HAS_SECURE_API) || _MSC_VER >= 1300
+     if (vsnprintf_s(buffer, sizeof(buffer), _TRUNCATE, format, ap) > 0) {
++#elif defined(__MINGW32__)
++	if (_vsnprintf(buffer, sizeof(buffer), format, ap) > 0) {
+ #else
+     if (vsnprintf(buffer, sizeof(buffer), format, ap) > 0) {
+ #endif
+diff --git a/security/build/Makefile.in b/security/build/Makefile.in
+--- a/security/build/Makefile.in
++++ b/security/build/Makefile.in
+@@ -126,7 +126,7 @@
+ DEFAULT_GMAKE_FLAGS += NO_MDUPDATE=1
+ DEFAULT_GMAKE_FLAGS += NSS_ENABLE_ECC=1
+ ifeq ($(OS_ARCH)_$(GNU_CC),WINNT_1)
+-DEFAULT_GMAKE_FLAGS += OS_DLLFLAGS='-static-libgcc'
++DEFAULT_GMAKE_FLAGS += OS_DLLFLAGS=''
+ endif
+ ifndef MOZ_NATIVE_SQLITE
+ ifdef MOZ_FOLD_LIBS
+diff --git a/security/nss/lib/ckfw/builtins/certdata.txt b/security/nss/lib/ckfw/builtins/certdata.txt
+--- a/security/nss/lib/ckfw/builtins/certdata.txt
++++ b/security/nss/lib/ckfw/builtins/certdata.txt
+@@ -16390,129 +16390,6 @@
+ CKA_TRUST_STEP_UP_APPROVED CK_BBOOL CK_FALSE
+ 
+ #
+-# Certificate "CNNIC ROOT"
+-#
+-# Issuer: CN=CNNIC ROOT,O=CNNIC,C=CN
+-# Serial Number: 1228079105 (0x49330001)
+-# Subject: CN=CNNIC ROOT,O=CNNIC,C=CN
+-# Not Valid Before: Mon Apr 16 07:09:14 2007
+-# Not Valid After : Fri Apr 16 07:09:14 2027
+-# Fingerprint (MD5): 21:BC:82:AB:49:C4:13:3B:4B:B2:2B:5C:6B:90:9C:19
+-# Fingerprint (SHA1): 8B:AF:4C:9B:1D:F0:2A:92:F7:DA:12:8E:B9:1B:AC:F4:98:60:4B:6F
+-CKA_CLASS CK_OBJECT_CLASS CKO_CERTIFICATE
+-CKA_TOKEN CK_BBOOL CK_TRUE
+-CKA_PRIVATE CK_BBOOL CK_FALSE
+-CKA_MODIFIABLE CK_BBOOL CK_FALSE
+-CKA_LABEL UTF8 "CNNIC ROOT"
+-CKA_CERTIFICATE_TYPE CK_CERTIFICATE_TYPE CKC_X_509
+-CKA_SUBJECT MULTILINE_OCTAL
+-\060\062\061\013\060\011\006\003\125\004\006\023\002\103\116\061
+-\016\060\014\006\003\125\004\012\023\005\103\116\116\111\103\061
+-\023\060\021\006\003\125\004\003\023\012\103\116\116\111\103\040
+-\122\117\117\124
+-END
+-CKA_ID UTF8 "0"
+-CKA_ISSUER MULTILINE_OCTAL
+-\060\062\061\013\060\011\006\003\125\004\006\023\002\103\116\061
+-\016\060\014\006\003\125\004\012\023\005\103\116\116\111\103\061
+-\023\060\021\006\003\125\004\003\023\012\103\116\116\111\103\040
+-\122\117\117\124
+-END
+-CKA_SERIAL_NUMBER MULTILINE_OCTAL
+-\002\004\111\063\000\001
+-END
+-CKA_VALUE MULTILINE_OCTAL
+-\060\202\003\125\060\202\002\075\240\003\002\001\002\002\004\111
+-\063\000\001\060\015\006\011\052\206\110\206\367\015\001\001\005
+-\005\000\060\062\061\013\060\011\006\003\125\004\006\023\002\103
+-\116\061\016\060\014\006\003\125\004\012\023\005\103\116\116\111
+-\103\061\023\060\021\006\003\125\004\003\023\012\103\116\116\111
+-\103\040\122\117\117\124\060\036\027\015\060\067\060\064\061\066
+-\060\067\060\071\061\064\132\027\015\062\067\060\064\061\066\060
+-\067\060\071\061\064\132\060\062\061\013\060\011\006\003\125\004
+-\006\023\002\103\116\061\016\060\014\006\003\125\004\012\023\005
+-\103\116\116\111\103\061\023\060\021\006\003\125\004\003\023\012
+-\103\116\116\111\103\040\122\117\117\124\060\202\001\042\060\015
+-\006\011\052\206\110\206\367\015\001\001\001\005\000\003\202\001
+-\017\000\060\202\001\012\002\202\001\001\000\323\065\367\077\163
+-\167\255\350\133\163\027\302\321\157\355\125\274\156\352\350\244
+-\171\262\154\303\243\357\341\237\261\073\110\205\365\232\134\041
+-\042\020\054\305\202\316\332\343\232\156\067\341\207\054\334\271
+-\014\132\272\210\125\337\375\252\333\037\061\352\001\361\337\071
+-\001\301\023\375\110\122\041\304\125\337\332\330\263\124\166\272
+-\164\261\267\175\327\300\350\366\131\305\115\310\275\255\037\024
+-\332\337\130\104\045\062\031\052\307\176\176\216\256\070\260\060
+-\173\107\162\011\061\360\060\333\303\033\166\051\273\151\166\116
+-\127\371\033\144\242\223\126\267\157\231\156\333\012\004\234\021
+-\343\200\037\313\143\224\020\012\251\341\144\202\061\371\214\047
+-\355\246\231\000\366\160\223\030\370\241\064\206\243\335\172\302
+-\030\171\366\172\145\065\317\220\353\275\063\223\237\123\253\163
+-\073\346\233\064\040\057\035\357\251\035\143\032\240\200\333\003
+-\057\371\046\032\206\322\215\273\251\276\122\072\207\147\110\015
+-\277\264\240\330\046\276\043\137\163\067\177\046\346\222\004\243
+-\177\317\040\247\267\363\072\312\313\231\313\002\003\001\000\001
+-\243\163\060\161\060\021\006\011\140\206\110\001\206\370\102\001
+-\001\004\004\003\002\000\007\060\037\006\003\125\035\043\004\030
+-\060\026\200\024\145\362\061\255\052\367\367\335\122\226\012\307
+-\002\301\016\357\246\325\073\021\060\017\006\003\125\035\023\001
+-\001\377\004\005\060\003\001\001\377\060\013\006\003\125\035\017
+-\004\004\003\002\001\376\060\035\006\003\125\035\016\004\026\004
+-\024\145\362\061\255\052\367\367\335\122\226\012\307\002\301\016
+-\357\246\325\073\021\060\015\006\011\052\206\110\206\367\015\001
+-\001\005\005\000\003\202\001\001\000\113\065\356\314\344\256\277
+-\303\156\255\237\225\073\113\077\133\036\337\127\051\242\131\312
+-\070\342\271\032\377\236\346\156\062\335\036\256\352\065\267\365
+-\223\221\116\332\102\341\303\027\140\120\362\321\134\046\271\202
+-\267\352\155\344\234\204\347\003\171\027\257\230\075\224\333\307
+-\272\000\347\270\277\001\127\301\167\105\062\014\073\361\264\034
+-\010\260\375\121\240\241\335\232\035\023\066\232\155\267\307\074
+-\271\341\305\331\027\372\203\325\075\025\240\074\273\036\013\342
+-\310\220\077\250\206\014\374\371\213\136\205\313\117\133\113\142
+-\021\107\305\105\174\005\057\101\261\236\020\151\033\231\226\340
+-\125\171\373\116\206\231\270\224\332\206\070\152\223\243\347\313
+-\156\345\337\352\041\125\211\234\175\175\177\230\365\000\211\356
+-\343\204\300\134\226\265\305\106\352\106\340\205\125\266\033\311
+-\022\326\301\315\315\200\363\002\001\074\310\151\313\105\110\143
+-\330\224\320\354\205\016\073\116\021\145\364\202\214\246\075\256
+-\056\042\224\011\310\134\352\074\201\135\026\052\003\227\026\125
+-\011\333\212\101\202\236\146\233\021
+-END
+-
+-# Trust for Certificate "CNNIC ROOT"
+-# Issuer: CN=CNNIC ROOT,O=CNNIC,C=CN
+-# Serial Number: 1228079105 (0x49330001)
+-# Subject: CN=CNNIC ROOT,O=CNNIC,C=CN
+-# Not Valid Before: Mon Apr 16 07:09:14 2007
+-# Not Valid After : Fri Apr 16 07:09:14 2027
+-# Fingerprint (MD5): 21:BC:82:AB:49:C4:13:3B:4B:B2:2B:5C:6B:90:9C:19
+-# Fingerprint (SHA1): 8B:AF:4C:9B:1D:F0:2A:92:F7:DA:12:8E:B9:1B:AC:F4:98:60:4B:6F
+-CKA_CLASS CK_OBJECT_CLASS CKO_NSS_TRUST
+-CKA_TOKEN CK_BBOOL CK_TRUE
+-CKA_PRIVATE CK_BBOOL CK_FALSE
+-CKA_MODIFIABLE CK_BBOOL CK_FALSE
+-CKA_LABEL UTF8 "CNNIC ROOT"
+-CKA_CERT_SHA1_HASH MULTILINE_OCTAL
+-\213\257\114\233\035\360\052\222\367\332\022\216\271\033\254\364
+-\230\140\113\157
+-END
+-CKA_CERT_MD5_HASH MULTILINE_OCTAL
+-\041\274\202\253\111\304\023\073\113\262\053\134\153\220\234\031
+-END
+-CKA_ISSUER MULTILINE_OCTAL
+-\060\062\061\013\060\011\006\003\125\004\006\023\002\103\116\061
+-\016\060\014\006\003\125\004\012\023\005\103\116\116\111\103\061
+-\023\060\021\006\003\125\004\003\023\012\103\116\116\111\103\040
+-\122\117\117\124
+-END
+-CKA_SERIAL_NUMBER MULTILINE_OCTAL
+-\002\004\111\063\000\001
+-END
+-CKA_TRUST_SERVER_AUTH CK_TRUST CKT_NSS_TRUSTED_DELEGATOR
+-CKA_TRUST_EMAIL_PROTECTION CK_TRUST CKT_NSS_MUST_VERIFY_TRUST
+-CKA_TRUST_CODE_SIGNING CK_TRUST CKT_NSS_MUST_VERIFY_TRUST
+-CKA_TRUST_STEP_UP_APPROVED CK_BBOOL CK_FALSE
+-
+-#
+ # Certificate "ApplicationCA - Japanese Government"
+ #
+ # Issuer: OU=ApplicationCA,O=Japanese Government,C=JP
+@@ -27615,153 +27492,6 @@
+ CKA_TRUST_CODE_SIGNING CK_TRUST CKT_NSS_TRUSTED_DELEGATOR
+ CKA_TRUST_STEP_UP_APPROVED CK_BBOOL CK_FALSE
+ 
+-#
+-# Certificate "China Internet Network Information Center EV Certificates Root"
+-#
+-# Issuer: CN=China Internet Network Information Center EV Certificates Root,O=China Internet Network Information Center,C=CN
+-# Serial Number: 1218379777 (0x489f0001)
+-# Subject: CN=China Internet Network Information Center EV Certificates Root,O=China Internet Network Information Center,C=CN
+-# Not Valid Before: Tue Aug 31 07:11:25 2010
+-# Not Valid After : Sat Aug 31 07:11:25 2030
+-# Fingerprint (MD5): 55:5D:63:00:97:BD:6A:97:F5:67:AB:4B:FB:6E:63:15
+-# Fingerprint (SHA1): 4F:99:AA:93:FB:2B:D1:37:26:A1:99:4A:CE:7F:F0:05:F2:93:5D:1E
+-CKA_CLASS CK_OBJECT_CLASS CKO_CERTIFICATE
+-CKA_TOKEN CK_BBOOL CK_TRUE
+-CKA_PRIVATE CK_BBOOL CK_FALSE
+-CKA_MODIFIABLE CK_BBOOL CK_FALSE
+-CKA_LABEL UTF8 "China Internet Network Information Center EV Certificates Root"
+-CKA_CERTIFICATE_TYPE CK_CERTIFICATE_TYPE CKC_X_509
+-CKA_SUBJECT MULTILINE_OCTAL
+-\060\201\212\061\013\060\011\006\003\125\004\006\023\002\103\116
+-\061\062\060\060\006\003\125\004\012\014\051\103\150\151\156\141
+-\040\111\156\164\145\162\156\145\164\040\116\145\164\167\157\162
+-\153\040\111\156\146\157\162\155\141\164\151\157\156\040\103\145
+-\156\164\145\162\061\107\060\105\006\003\125\004\003\014\076\103
+-\150\151\156\141\040\111\156\164\145\162\156\145\164\040\116\145
+-\164\167\157\162\153\040\111\156\146\157\162\155\141\164\151\157
+-\156\040\103\145\156\164\145\162\040\105\126\040\103\145\162\164
+-\151\146\151\143\141\164\145\163\040\122\157\157\164
+-END
+-CKA_ID UTF8 "0"
+-CKA_ISSUER MULTILINE_OCTAL
+-\060\201\212\061\013\060\011\006\003\125\004\006\023\002\103\116
+-\061\062\060\060\006\003\125\004\012\014\051\103\150\151\156\141
+-\040\111\156\164\145\162\156\145\164\040\116\145\164\167\157\162
+-\153\040\111\156\146\157\162\155\141\164\151\157\156\040\103\145
+-\156\164\145\162\061\107\060\105\006\003\125\004\003\014\076\103
+-\150\151\156\141\040\111\156\164\145\162\156\145\164\040\116\145
+-\164\167\157\162\153\040\111\156\146\157\162\155\141\164\151\157
+-\156\040\103\145\156\164\145\162\040\105\126\040\103\145\162\164
+-\151\146\151\143\141\164\145\163\040\122\157\157\164
+-END
+-CKA_SERIAL_NUMBER MULTILINE_OCTAL
+-\002\004\110\237\000\001
+-END
+-CKA_VALUE MULTILINE_OCTAL
+-\060\202\003\367\060\202\002\337\240\003\002\001\002\002\004\110
+-\237\000\001\060\015\006\011\052\206\110\206\367\015\001\001\005
+-\005\000\060\201\212\061\013\060\011\006\003\125\004\006\023\002
+-\103\116\061\062\060\060\006\003\125\004\012\014\051\103\150\151
+-\156\141\040\111\156\164\145\162\156\145\164\040\116\145\164\167
+-\157\162\153\040\111\156\146\157\162\155\141\164\151\157\156\040
+-\103\145\156\164\145\162\061\107\060\105\006\003\125\004\003\014
+-\076\103\150\151\156\141\040\111\156\164\145\162\156\145\164\040
+-\116\145\164\167\157\162\153\040\111\156\146\157\162\155\141\164
+-\151\157\156\040\103\145\156\164\145\162\040\105\126\040\103\145
+-\162\164\151\146\151\143\141\164\145\163\040\122\157\157\164\060
+-\036\027\015\061\060\060\070\063\061\060\067\061\061\062\065\132
+-\027\015\063\060\060\070\063\061\060\067\061\061\062\065\132\060
+-\201\212\061\013\060\011\006\003\125\004\006\023\002\103\116\061
+-\062\060\060\006\003\125\004\012\014\051\103\150\151\156\141\040
+-\111\156\164\145\162\156\145\164\040\116\145\164\167\157\162\153
+-\040\111\156\146\157\162\155\141\164\151\157\156\040\103\145\156
+-\164\145\162\061\107\060\105\006\003\125\004\003\014\076\103\150
+-\151\156\141\040\111\156\164\145\162\156\145\164\040\116\145\164
+-\167\157\162\153\040\111\156\146\157\162\155\141\164\151\157\156
+-\040\103\145\156\164\145\162\040\105\126\040\103\145\162\164\151
+-\146\151\143\141\164\145\163\040\122\157\157\164\060\202\001\042
+-\060\015\006\011\052\206\110\206\367\015\001\001\001\005\000\003
+-\202\001\017\000\060\202\001\012\002\202\001\001\000\233\176\163
+-\356\275\073\170\252\144\103\101\365\120\337\224\362\056\262\215
+-\112\216\106\124\322\041\022\310\071\062\102\006\351\203\325\237
+-\122\355\345\147\003\073\124\301\214\231\231\314\351\300\017\377
+-\015\331\204\021\262\270\321\313\133\334\036\371\150\061\144\341
+-\233\372\164\353\150\271\040\225\367\306\017\215\107\254\132\006
+-\335\141\253\342\354\330\237\027\055\234\312\074\065\227\125\161
+-\315\103\205\261\107\026\365\054\123\200\166\317\323\000\144\275
+-\100\231\335\314\330\333\304\237\326\023\137\101\203\213\371\015
+-\207\222\126\064\154\032\020\013\027\325\132\034\227\130\204\074
+-\204\032\056\134\221\064\156\031\137\177\027\151\305\145\357\153
+-\041\306\325\120\072\277\141\271\005\215\357\157\064\072\262\157
+-\024\143\277\026\073\233\251\052\375\267\053\070\146\006\305\054
+-\342\252\147\036\105\247\215\004\146\102\366\217\053\357\210\040
+-\151\217\062\214\024\163\332\053\206\221\143\042\232\362\247\333
+-\316\211\213\253\135\307\024\301\133\060\152\037\261\267\236\056
+-\201\001\002\355\317\226\136\143\333\250\346\070\267\002\003\001
+-\000\001\243\143\060\141\060\037\006\003\125\035\043\004\030\060
+-\026\200\024\174\162\113\071\307\300\333\142\245\117\233\252\030
+-\064\222\242\312\203\202\131\060\017\006\003\125\035\023\001\001
+-\377\004\005\060\003\001\001\377\060\016\006\003\125\035\017\001
+-\001\377\004\004\003\002\001\006\060\035\006\003\125\035\016\004
+-\026\004\024\174\162\113\071\307\300\333\142\245\117\233\252\030
+-\064\222\242\312\203\202\131\060\015\006\011\052\206\110\206\367
+-\015\001\001\005\005\000\003\202\001\001\000\052\303\307\103\067
+-\217\335\255\244\262\014\356\334\024\155\217\050\244\230\111\313
+-\014\200\352\363\355\043\146\165\175\305\323\041\147\171\321\163
+-\305\265\003\267\130\254\014\124\057\306\126\023\017\061\332\006
+-\347\145\073\035\157\066\333\310\035\371\375\200\006\312\243\075
+-\146\026\250\235\114\026\175\300\225\106\265\121\344\342\037\327
+-\352\006\115\143\215\226\214\357\347\063\127\102\072\353\214\301
+-\171\310\115\166\175\336\366\261\267\201\340\240\371\241\170\106
+-\027\032\126\230\360\116\075\253\034\355\354\071\334\007\110\367
+-\143\376\006\256\302\244\134\152\133\062\210\305\307\063\205\254
+-\146\102\107\302\130\044\231\341\345\076\345\165\054\216\103\326
+-\135\074\170\036\250\225\202\051\120\321\321\026\272\357\301\276
+-\172\331\264\330\314\036\114\106\341\167\261\061\253\275\052\310
+-\316\217\156\241\135\177\003\165\064\344\255\211\105\124\136\276
+-\256\050\245\273\077\170\171\353\163\263\012\015\375\276\311\367
+-\126\254\366\267\355\057\233\041\051\307\070\266\225\304\004\362
+-\303\055\375\024\052\220\231\271\007\314\237
+-END
+-
+-# Trust for "China Internet Network Information Center EV Certificates Root"
+-# Issuer: CN=China Internet Network Information Center EV Certificates Root,O=China Internet Network Information Center,C=CN
+-# Serial Number: 1218379777 (0x489f0001)
+-# Subject: CN=China Internet Network Information Center EV Certificates Root,O=China Internet Network Information Center,C=CN
+-# Not Valid Before: Tue Aug 31 07:11:25 2010
+-# Not Valid After : Sat Aug 31 07:11:25 2030
+-# Fingerprint (MD5): 55:5D:63:00:97:BD:6A:97:F5:67:AB:4B:FB:6E:63:15
+-# Fingerprint (SHA1): 4F:99:AA:93:FB:2B:D1:37:26:A1:99:4A:CE:7F:F0:05:F2:93:5D:1E
+-CKA_CLASS CK_OBJECT_CLASS CKO_NSS_TRUST
+-CKA_TOKEN CK_BBOOL CK_TRUE
+-CKA_PRIVATE CK_BBOOL CK_FALSE
+-CKA_MODIFIABLE CK_BBOOL CK_FALSE
+-CKA_LABEL UTF8 "China Internet Network Information Center EV Certificates Root"
+-CKA_CERT_SHA1_HASH MULTILINE_OCTAL
+-\117\231\252\223\373\053\321\067\046\241\231\112\316\177\360\005
+-\362\223\135\036
+-END
+-CKA_CERT_MD5_HASH MULTILINE_OCTAL
+-\125\135\143\000\227\275\152\227\365\147\253\113\373\156\143\025
+-END
+-CKA_ISSUER MULTILINE_OCTAL
+-\060\201\212\061\013\060\011\006\003\125\004\006\023\002\103\116
+-\061\062\060\060\006\003\125\004\012\014\051\103\150\151\156\141
+-\040\111\156\164\145\162\156\145\164\040\116\145\164\167\157\162
+-\153\040\111\156\146\157\162\155\141\164\151\157\156\040\103\145
+-\156\164\145\162\061\107\060\105\006\003\125\004\003\014\076\103
+-\150\151\156\141\040\111\156\164\145\162\156\145\164\040\116\145
+-\164\167\157\162\153\040\111\156\146\157\162\155\141\164\151\157
+-\156\040\103\145\156\164\145\162\040\105\126\040\103\145\162\164
+-\151\146\151\143\141\164\145\163\040\122\157\157\164
+-END
+-CKA_SERIAL_NUMBER MULTILINE_OCTAL
+-\002\004\110\237\000\001
+-END
+-CKA_TRUST_SERVER_AUTH CK_TRUST CKT_NSS_TRUSTED_DELEGATOR
+-CKA_TRUST_EMAIL_PROTECTION CK_TRUST CKT_NSS_MUST_VERIFY_TRUST
+-CKA_TRUST_CODE_SIGNING CK_TRUST CKT_NSS_MUST_VERIFY_TRUST
+-CKA_TRUST_STEP_UP_APPROVED CK_BBOOL CK_FALSE
+ 
+ #
+ # Certificate "Swisscom Root CA 2"
+diff --git a/security/nss/lib/ckfw/builtins/nssckbi.h b/security/nss/lib/ckfw/builtins/nssckbi.h
+--- a/security/nss/lib/ckfw/builtins/nssckbi.h
++++ b/security/nss/lib/ckfw/builtins/nssckbi.h
+@@ -45,8 +45,8 @@
+  * of the comment in the CK_VERSION type definition.
+  */
+ #define NSS_BUILTINS_LIBRARY_VERSION_MAJOR 1
+-#define NSS_BUILTINS_LIBRARY_VERSION_MINOR 96
+-#define NSS_BUILTINS_LIBRARY_VERSION "1.96"
++#define NSS_BUILTINS_LIBRARY_VERSION_MINOR 97
++#define NSS_BUILTINS_LIBRARY_VERSION "1.97"
+ 
+ /* These version numbers detail the semantic changes to the ckfw engine. */
+ #define NSS_BUILTINS_HARDWARE_VERSION_MAJOR 1
+diff --git a/toolkit/crashreporter/google-breakpad/src/client/windows/common/auto_critical_section.h b/toolkit/crashreporter/google-breakpad/src/client/windows/common/auto_critical_section.h
+--- a/toolkit/crashreporter/google-breakpad/src/client/windows/common/auto_critical_section.h
++++ b/toolkit/crashreporter/google-breakpad/src/client/windows/common/auto_critical_section.h
+@@ -30,7 +30,7 @@
+ #ifndef CLIENT_WINDOWS_COMMON_AUTO_CRITICAL_SECTION_H__
+ #define CLIENT_WINDOWS_COMMON_AUTO_CRITICAL_SECTION_H__
+ 
+-#include <Windows.h>
++#include <windows.h>
+ 
+ namespace google_breakpad {
+ 
+diff --git a/toolkit/crashreporter/google-breakpad/src/client/windows/common/ipc_protocol.h b/toolkit/crashreporter/google-breakpad/src/client/windows/common/ipc_protocol.h
+--- a/toolkit/crashreporter/google-breakpad/src/client/windows/common/ipc_protocol.h
++++ b/toolkit/crashreporter/google-breakpad/src/client/windows/common/ipc_protocol.h
+@@ -30,8 +30,8 @@
+ #ifndef CLIENT_WINDOWS_COMMON_IPC_PROTOCOL_H__
+ #define CLIENT_WINDOWS_COMMON_IPC_PROTOCOL_H__
+ 
+-#include <Windows.h>
+-#include <DbgHelp.h>
++#include <windows.h>
++#include <dbghelp.h>
+ #include <string>
+ #include <utility>
+ #include "common/windows/string_utils-inl.h"
+diff --git a/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/client_info.h b/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/client_info.h
+--- a/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/client_info.h
++++ b/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/client_info.h
+@@ -30,8 +30,8 @@
+ #ifndef CLIENT_WINDOWS_CRASH_GENERATION_CLIENT_INFO_H__
+ #define CLIENT_WINDOWS_CRASH_GENERATION_CLIENT_INFO_H__
+ 
+-#include <Windows.h>
+-#include <DbgHelp.h>
++#include <windows.h>
++#include <dbghelp.h>
+ #include "client/windows/common/ipc_protocol.h"
+ #include "common/scoped_ptr.h"
+ #include "google_breakpad/common/minidump_format.h"
+diff --git a/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/minidump_generator.cc b/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/minidump_generator.cc
+--- a/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/minidump_generator.cc
++++ b/toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/minidump_generator.cc
+@@ -175,9 +175,13 @@
+   stream_data->Reserved = 0;
+   std::copy(operations_.begin(),
+             operations_.end(),
+-            stdext::checked_array_iterator<AVRF_HANDLE_OPERATION*>(
+-                reinterpret_cast<AVRF_HANDLE_OPERATION*>(stream_data + 1),
+-                operations_.size()));
++	  #ifdef __MINGW32__
++	    reinterpret_cast<AVRF_HANDLE_OPERATION*>(stream_data + 1)
++	  #else
++            stdext::checked_array_iterator<AVRF_HANDLE_OPERATION*>(reinterpret_cast<AVRF_HANDLE_OPERATION*>(stream_data + 1),
++	    operations_.size())
++	  #endif
++                );
+ 
+   return true;
+ }
+diff --git a/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.cc b/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.cc
+--- a/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.cc
++++ b/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.cc
+@@ -27,7 +27,7 @@
+ // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-#include <ObjBase.h>
++#include <objbase.h>
+ 
+ #include <algorithm>
+ #include <cassert>
+diff --git a/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.h b/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.h
+--- a/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.h
++++ b/toolkit/crashreporter/google-breakpad/src/client/windows/handler/exception_handler.h
+@@ -57,8 +57,8 @@
+ #define CLIENT_WINDOWS_HANDLER_EXCEPTION_HANDLER_H__
+ 
+ #include <stdlib.h>
+-#include <Windows.h>
+-#include <DbgHelp.h>
++#include <windows.h>
++#include <wbghelp.h>
+ #include <rpc.h>
+ 
+ #pragma warning( push )
+diff --git a/toolkit/crashreporter/google-breakpad/src/client/windows/tests/crash_generation_app/crash_generation_app.cc b/toolkit/crashreporter/google-breakpad/src/client/windows/tests/crash_generation_app/crash_generation_app.cc
+--- a/toolkit/crashreporter/google-breakpad/src/client/windows/tests/crash_generation_app/crash_generation_app.cc
++++ b/toolkit/crashreporter/google-breakpad/src/client/windows/tests/crash_generation_app/crash_generation_app.cc
+@@ -42,6 +42,10 @@
+ 
+ #include "client/windows/tests/crash_generation_app/abstract_class.h"
+ 
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++#define swprintf_s _snwprintf
++#endif
++
+ namespace google_breakpad {
+ 
+ const int kMaxLoadString = 100;
+diff --git a/toolkit/crashreporter/google-breakpad/src/common/logging.cc b/toolkit/crashreporter/google-breakpad/src/common/logging.cc
+--- a/toolkit/crashreporter/google-breakpad/src/common/logging.cc
++++ b/toolkit/crashreporter/google-breakpad/src/common/logging.cc
+@@ -32,6 +32,11 @@
+ // See logging.h for documentation.
+ //
+ // Author: Mark Mentovai
++#ifdef __GNUC__
++#undef _POSIX
++#undef localtime_r
++#define _POSIX
++#endif
+ 
+ #include <assert.h>
+ #include <errno.h>
+@@ -61,7 +66,7 @@
+   time_t clock;
+   time(&clock);
+   struct tm tm_struct;
+-#ifdef _WIN32
++#if (defined(__MINGW32__) && defined(MINGW_HAS_SECURE_API)) || _MSC_VER>=1300
+   localtime_s(&tm_struct, &clock);
+ #else
+   localtime_r(&clock, &tm_struct);
+diff --git a/toolkit/crashreporter/google-breakpad/src/common/windows/guid_string.h b/toolkit/crashreporter/google-breakpad/src/common/windows/guid_string.h
+--- a/toolkit/crashreporter/google-breakpad/src/common/windows/guid_string.h
++++ b/toolkit/crashreporter/google-breakpad/src/common/windows/guid_string.h
+@@ -32,7 +32,7 @@
+ #ifndef COMMON_WINDOWS_GUID_STRING_H__
+ #define COMMON_WINDOWS_GUID_STRING_H__
+ 
+-#include <Guiddef.h>
++#include <guiddef.h>
+ 
+ #include <string>
+ 
+diff --git a/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.cc b/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.cc
+--- a/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.cc
++++ b/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.cc
+@@ -33,7 +33,7 @@
+ #pragma warning( disable : 4530 )
+ 
+ #include <fstream>
+-
++#include <cstdio>
+ #include "common/windows/string_utils-inl.h"
+ 
+ #include "common/windows/http_upload.h"
+@@ -327,11 +327,12 @@
+   // wchar_t* filename, so use _wfopen directly in that case.  For VC8 and
+   // later, _wfopen has been deprecated in favor of _wfopen_s, which does
+   // not exist in earlier versions, so let the ifstream open the file itself.
++  ifstream file;
+ #if _MSC_VER >= 1400  // MSVC 2005/8
+-  ifstream file;
+   file.open(filename.c_str(), ios::binary);
+ #else  // _MSC_VER >= 1400
+-  ifstream file(_wfopen(filename.c_str(), L"rb"));
++  std::string fs = WideToUTF8(filename);
++  file.open(fs, ios::binary);
+ #endif  // _MSC_VER >= 1400
+   if (file.is_open()) {
+     file.seekg(0, ios::end);
+diff --git a/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.h b/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.h
+--- a/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.h
++++ b/toolkit/crashreporter/google-breakpad/src/common/windows/http_upload.h
+@@ -38,8 +38,8 @@
+ // Disable exception handler warnings.
+ #pragma warning( disable : 4530 ) 
+ 
+-#include <Windows.h>
+-#include <WinInet.h>
++#include <windows.h>
++#include <wininet.h>
+ 
+ #include <map>
+ #include <string>
+diff --git a/toolkit/crashreporter/google-breakpad/src/common/windows/pdb_source_line_writer.cc b/toolkit/crashreporter/google-breakpad/src/common/windows/pdb_source_line_writer.cc
+--- a/toolkit/crashreporter/google-breakpad/src/common/windows/pdb_source_line_writer.cc
++++ b/toolkit/crashreporter/google-breakpad/src/common/windows/pdb_source_line_writer.cc
+@@ -29,7 +29,7 @@
+ 
+ #include <atlbase.h>
+ #include <dia2.h>
+-#include <ImageHlp.h>
++#include <imagehlp.h>
+ #include <stdio.h>
+ 
+ #include "common/windows/string_utils-inl.h"
+diff --git a/toolkit/crashreporter/google-breakpad/src/common/windows/string_utils-inl.h b/toolkit/crashreporter/google-breakpad/src/common/windows/string_utils-inl.h
+--- a/toolkit/crashreporter/google-breakpad/src/common/windows/string_utils-inl.h
++++ b/toolkit/crashreporter/google-breakpad/src/common/windows/string_utils-inl.h
+@@ -54,7 +54,7 @@
+ // also available via an overload, it is not reliably chosen.  _snwprintf
+ // behaves as a standards-confirming swprintf should, so force the use of
+ // _snwprintf when using older CRTs.
+-#if _MSC_VER < 1400  // MSVC 2005/8
++#if _MSC_VER < 1400 || !defined(MINGW_HAS_SECURE_API)  // MSVC 2005/8
+ #define swprintf _snwprintf
+ #else
+ // For MSVC8 and newer, swprintf_s is the recommended method. Conveniently,
+@@ -105,7 +105,7 @@
+ inline void WindowsStringUtils::safe_wcscpy(wchar_t *destination,
+                                             size_t destination_size,
+                                             const wchar_t *source) {
+-#if _MSC_VER >= 1400  // MSVC 2005/8
++#if _MSC_VER >= 1400 || defined(MINGW_HAS_SECURE_API)  // MSVC 2005/8
+   wcscpy_s(destination, destination_size, source);
+ #else  // _MSC_VER >= 1400
+   // Pre-MSVC 2005/8 doesn't have wcscpy_s.  Simulate it with wcsncpy.
+@@ -122,7 +122,7 @@
+                                              size_t destination_size,
+                                              const wchar_t *source,
+                                              size_t count) {
+-#if _MSC_VER >= 1400  // MSVC 2005/8
++#if _MSC_VER >= 1400 || defined(MINGW_HAS_SECURE_API)  // MSVC 2005/8
+   wcsncpy_s(destination, destination_size, source, count);
+ #else  // _MSC_VER >= 1400
+   // Pre-MSVC 2005/8 doesn't have wcsncpy_s.  Simulate it with wcsncpy.
+diff --git a/toolkit/crashreporter/google-breakpad/src/google_breakpad/common/breakpad_types.h b/toolkit/crashreporter/google-breakpad/src/google_breakpad/common/breakpad_types.h
+--- a/toolkit/crashreporter/google-breakpad/src/google_breakpad/common/breakpad_types.h
++++ b/toolkit/crashreporter/google-breakpad/src/google_breakpad/common/breakpad_types.h
+@@ -58,7 +58,7 @@
+  */
+ #include BREAKPAD_CUSTOM_STDINT_H
+ #else
+-#include <WTypes.h>
++#include <wtypes.h>
+ 
+ typedef unsigned __int8  uint8_t;
+ typedef unsigned __int16 uint16_t;
+diff --git a/toolkit/crashreporter/google-breakpad/src/processor/basic_source_line_resolver.cc b/toolkit/crashreporter/google-breakpad/src/processor/basic_source_line_resolver.cc
+--- a/toolkit/crashreporter/google-breakpad/src/processor/basic_source_line_resolver.cc
++++ b/toolkit/crashreporter/google-breakpad/src/processor/basic_source_line_resolver.cc
+@@ -54,8 +54,39 @@
+ 
+ namespace google_breakpad {
+ 
+-#ifdef _WIN32
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++#undef strtok_r
++static char *strtok_r(char *s, const char *delim, char **save_ptr) {  
++    char *token;  
++  
++    if (s == NULL) s = *save_ptr;  
++  
++    /* Scan leading delimiters.  */  
++    s += strspn(s, delim);  
++    if (*s == '\0')   
++        return NULL;  
++  
++    /* Find the end of the token.  */  
++    token = s;  
++    s = strpbrk(token, delim);  
++    if (s == NULL)  
++        /* This token finishes the string.  */  
++        *save_ptr = strchr(token, '\0');  
++    else {  
++        /* Terminate the token and make *SAVE_PTR point past it.  */  
++        *s = '\0';  
++        *save_ptr = s + 1;  
++    }  
++  
++    return token;  
++}  
++#endif
++
++#if defined(MINGW_HAS_SECURE_API) || (_MSC_VER>=1300)
+ #define strtok_r strtok_s
++#endif
++
++#if defined(_WIN32)
+ #define strtoull _strtoui64
+ #endif
+ 
+diff --git a/toolkit/crashreporter/google-breakpad/src/processor/cfi_frame_info.cc b/toolkit/crashreporter/google-breakpad/src/processor/cfi_frame_info.cc
+--- a/toolkit/crashreporter/google-breakpad/src/processor/cfi_frame_info.cc
++++ b/toolkit/crashreporter/google-breakpad/src/processor/cfi_frame_info.cc
+@@ -44,7 +44,35 @@
+ 
+ namespace google_breakpad {
+ 
+-#ifdef _WIN32
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++#undef strtok_r
++static char *strtok_r(char *s, const char *delim, char **save_ptr) {  
++    char *token;  
++  
++    if (s == NULL) s = *save_ptr;  
++  
++    /* Scan leading delimiters.  */  
++    s += strspn(s, delim);  
++    if (*s == '\0')   
++        return NULL;  
++  
++    /* Find the end of the token.  */  
++    token = s;  
++    s = strpbrk(token, delim);  
++    if (s == NULL)  
++        /* This token finishes the string.  */  
++        *save_ptr = strchr(token, '\0');  
++    else {  
++        /* Terminate the token and make *SAVE_PTR point past it.  */  
++        *s = '\0';  
++        *save_ptr = s + 1;  
++    }  
++  
++    return token;  
++}  
++#endif
++
++#if defined(MINGW_HAS_SECURE_API) || (_MSC_VER>=1300)
+ #define strtok_r strtok_s
+ #endif
+ 
+diff --git a/toolkit/crashreporter/google-breakpad/src/processor/minidump.cc b/toolkit/crashreporter/google-breakpad/src/processor/minidump.cc
+--- a/toolkit/crashreporter/google-breakpad/src/processor/minidump.cc
++++ b/toolkit/crashreporter/google-breakpad/src/processor/minidump.cc
+@@ -33,6 +33,12 @@
+ //
+ // Author: Mark Mentovai
+ 
++#if defined(__GNUC__)
++#undef _POSIX
++#undef gmtime_r
++#define _POSIX
++#endif
++
+ #include "google_breakpad/processor/minidump.h"
+ 
+ #include <assert.h>
+@@ -4098,7 +4104,7 @@
+   printf("  stream_directory_rva = 0x%x\n",    header_.stream_directory_rva);
+   printf("  checksum             = 0x%x\n",    header_.checksum);
+   struct tm timestruct;
+-#ifdef _WIN32
++#if defined(MINGW_HAS_SECURE_API) || (_MSC_VER>=1300)
+   gmtime_s(&timestruct, reinterpret_cast<time_t*>(&header_.time_date_stamp));
+ #else
+   gmtime_r(reinterpret_cast<time_t*>(&header_.time_date_stamp), &timestruct);
+diff --git a/toolkit/crashreporter/google-breakpad/src/processor/tokenize.cc b/toolkit/crashreporter/google-breakpad/src/processor/tokenize.cc
+--- a/toolkit/crashreporter/google-breakpad/src/processor/tokenize.cc
++++ b/toolkit/crashreporter/google-breakpad/src/processor/tokenize.cc
+@@ -36,7 +36,35 @@
+ 
+ namespace google_breakpad {
+ 
+-#ifdef _WIN32
++#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++#undef strtok_r
++static char *strtok_r(char *s, const char *delim, char **save_ptr) {  
++    char *token;  
++  
++    if (s == NULL) s = *save_ptr;  
++  
++    /* Scan leading delimiters.  */  
++    s += strspn(s, delim);  
++    if (*s == '\0')   
++        return NULL;  
++  
++    /* Find the end of the token.  */  
++    token = s;  
++    s = strpbrk(token, delim);  
++    if (s == NULL)  
++        /* This token finishes the string.  */  
++        *save_ptr = strchr(token, '\0');  
++    else {  
++        /* Terminate the token and make *SAVE_PTR point past it.  */  
++        *s = '\0';  
++        *save_ptr = s + 1;  
++    }  
++  
++    return token;  
++}  
++#endif
++
++#if defined(MINGW_HAS_SECURE_API) || (_MSC_VER>=1300)
+ #define strtok_r strtok_s
+ #endif
+ 
+diff --git a/toolkit/crashreporter/google-breakpad/src/third_party/glog/src/windows/port.h b/toolkit/crashreporter/google-breakpad/src/third_party/glog/src/windows/port.h
+--- a/toolkit/crashreporter/google-breakpad/src/third_party/glog/src/windows/port.h
++++ b/toolkit/crashreporter/google-breakpad/src/third_party/glog/src/windows/port.h
+@@ -45,6 +45,11 @@
+ 
+ #ifdef _WIN32
+ 
++#ifdef __GNUC__
++#undef _POSIX
++#undef localtime_r                       /* mingw64 support */
++#define _POSIX
++
+ #define WIN32_LEAN_AND_MEAN  /* We always want minimal includes */
+ #include <windows.h>
+ #include <winsock.h>         /* for gethostname */
+@@ -129,6 +134,7 @@
+ #define pthread_self  GetCurrentThreadId
+ #define pthread_equal(pthread_t_1, pthread_t_2)  ((pthread_t_1)==(pthread_t_2))
+ 
++#if defined(MINGW_HAS_SECURE_API) || (_MSC_VER>=1300)
+ inline struct tm* localtime_r(const time_t* timep, struct tm* result) {
+   localtime_s(result, timep);
+   return result;
+@@ -138,6 +144,17 @@
+   strerror_s(buf, buflen, errnum);
+   return buf;
+ }
++#else
++inline int strerror_r(int errnum, char *buf, size_t buflen)
++{
++	/* non-recursive implementation of strerror_r */
++	char * retbuf;
++	retbuf = strerror(errnum);
++	strncpy(buf, retbuf, buflen);
++	buf[buflen - 1] = '\0';
++	return 0;
++}
++#endif
+ 
+ #ifndef __cplusplus
+ /* I don't see how to get inlining for C code in MSVC.  Ah well. */
+diff --git a/toolkit/library/Makefile.in b/toolkit/library/Makefile.in
+--- a/toolkit/library/Makefile.in
++++ b/toolkit/library/Makefile.in
+@@ -454,3 +454,15 @@
+ 
+ $(FINAL_TARGET)/dependentlibs.list: dependentlibs.py $(SHARED_LIBRARY) $(wildcard $(if $(wildcard $(FINAL_TARGET)/dependentlibs.list),$(addprefix $(FINAL_TARGET)/,$(shell cat $(FINAL_TARGET)/dependentlibs.list))))
+ 	$(PYTHON) $< $(SHARED_LIBRARY) -L $(FINAL_TARGET) $(if $(TOOLCHAIN_PREFIX),$(addprefix -p ,$(TOOLCHAIN_PREFIX))) > $@
++
++ifdef MOZ_ZLIB_LIBS
++LDFLAGS += -lz
++endif
++
++ifeq ($(OS_ARCH), WINNT)
++ifdef GNU_CC
++LDFLAGS += -Wl,-u__imp__memset_nontemporal_tt -lportable32
++else
++LDFLAGS += /INCLUDE:"__imp__memset_nontemporal_tt" portable32.lib
++endif
++endif
+diff --git a/toolkit/xre/nsWindowsWMain.cpp b/toolkit/xre/nsWindowsWMain.cpp
+--- a/toolkit/xre/nsWindowsWMain.cpp
++++ b/toolkit/xre/nsWindowsWMain.cpp
+@@ -10,36 +10,15 @@
+ #error This file only makes sense on Windows.
+ #endif
+ 
++#ifdef __MINGW32__
++#include "auto_main.h"
++#endif
+ #include "nsUTF8Utils.h"
+ 
+ #ifndef XRE_DONT_PROTECT_DLL_LOAD
+ #include "nsSetDllDirectory.h"
+ #endif
+ 
+-#ifdef __MINGW32__
+-
+-/* MingW currently does not implement a wide version of the
+-   startup routines.  Workaround is to implement something like
+-   it ourselves.  See bug 411826 */
+-
+-#include <shellapi.h>
+-
+-int wmain(int argc, WCHAR **argv);
+-
+-int main(int argc, char **argv)
+-{
+-  LPWSTR commandLine = GetCommandLineW();
+-  int argcw = 0;
+-  LPWSTR *argvw = CommandLineToArgvW(commandLine, &argcw);
+-  if (!argvw)
+-    return 127;
+-
+-  int result = wmain(argcw, argvw);
+-  LocalFree(argvw);
+-  return result;
+-}
+-#endif /* __MINGW32__ */
+-
+ #define main NS_internal_main
+ 
+ #ifndef XRE_WANT_ENVIRON
+@@ -74,7 +53,7 @@
+   delete [] argv;
+ }
+ 
+-int wmain(int argc, WCHAR **argv)
++int _tmain(int argc, WCHAR **argv)
+ {
+ #ifndef XRE_DONT_PROTECT_DLL_LOAD
+   mozilla::SanitizeEnvironmentVariables();
+diff --git a/toolkit/xre/nsXREDirProvider.cpp b/toolkit/xre/nsXREDirProvider.cpp
+--- a/toolkit/xre/nsXREDirProvider.cpp
++++ b/toolkit/xre/nsXREDirProvider.cpp
+@@ -1010,9 +1010,13 @@
+     // application doesn't have the nsXREAppData vendor value defined check
+     // under SOFTWARE\Mozilla.
+     wchar_t regPath[1024] = { L'\0' };
++#if (_MSC_VER>=1300)
+     swprintf_s(regPath, mozilla::ArrayLength(regPath), L"SOFTWARE\\%S\\%S\\TaskBarIDs",
+                (hasVendor ? gAppData->vendor : "Mozilla"), MOZ_APP_BASENAME);
+-
++#else
++    _snwprintf(regPath, mozilla::ArrayLength(regPath), L"SOFTWARE\\%S\\%S\\TaskBarIDs",
++               (hasVendor ? gAppData->vendor : "Mozilla"), MOZ_APP_BASENAME);
++#endif
+     // If we pre-computed the hash, grab it from the registry.
+     pathHashResult = GetCachedHash(HKEY_LOCAL_MACHINE,
+                                    nsDependentString(regPath), appDirPath,
+diff --git a/xpcom/base/Makefile.in b/xpcom/base/Makefile.in
+--- a/xpcom/base/Makefile.in
++++ b/xpcom/base/Makefile.in
+@@ -33,3 +33,5 @@
+ 	ErrorListCxxDefines.h \
+ 	ErrorListCDefines.h \
+ 	$(NULL)
++
++nsCycleCollector.$(OBJ_SUFFIX): CXXFLAGS := $(filter-out -O2,$(CXXFLAGS)) -O0
+diff --git a/xpcom/build/LateWriteChecks.cpp b/xpcom/build/LateWriteChecks.cpp
+--- a/xpcom/build/LateWriteChecks.cpp
++++ b/xpcom/build/LateWriteChecks.cpp
+@@ -142,8 +142,18 @@
+   do {
+     // mkstemp isn't supported so keep trying until we get a file
+     int result = _mktemp_s(name, strlen(name) + 1);
+-    hFile = CreateFileA(name, GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+-                        FILE_ATTRIBUTE_NORMAL, nullptr);
++    hFile = CreateFileA(name, GENERIC_WRITE, 0, nullptr, CREATE_NEW,FILE_ATTRIBUTE_NORMAL, nullptr);
++	#if defined(__MINGW32__) && !defined(MINGW_HAS_SECURE_API)
++	{
++		char *ret= _mktemp(name);
++		hFile = CreateFileA(ret, GENERIC_WRITE, 0, nullptr, CREATE_NEW,FILE_ATTRIBUTE_NORMAL, nullptr);
++	}
++	#else
++	{
++		int  result = _mktemp_s(name, strlen(name) + 1);
++		hFile = CreateFileA(name, GENERIC_WRITE, 0, nullptr, CREATE_NEW,FILE_ATTRIBUTE_NORMAL, nullptr);
++	}
++	#endif
+   } while (GetLastError() == ERROR_FILE_EXISTS);
+ 
+   if (hFile == INVALID_HANDLE_VALUE) {
+diff --git a/xpcom/ds/nsWindowsRegKey.cpp b/xpcom/ds/nsWindowsRegKey.cpp
+--- a/xpcom/ds/nsWindowsRegKey.cpp
++++ b/xpcom/ds/nsWindowsRegKey.cpp
+@@ -333,7 +333,7 @@
+         return NS_ERROR_OUT_OF_MEMORY;
+ 
+       resultLen = ExpandEnvironmentStringsW(flatSource.get(),
+-                                            begin.get(),
++                                            wwc(begin.get()),
+                                             resultLen + 1);
+       if (resultLen <= 0) {
+         rv = ERROR_UNKNOWN_FEATURE;
+diff --git a/xpcom/glue/nsTextFormatter.cpp b/xpcom/glue/nsTextFormatter.cpp
+--- a/xpcom/glue/nsTextFormatter.cpp
++++ b/xpcom/glue/nsTextFormatter.cpp
+@@ -515,7 +515,7 @@
+     /* and away we go */
+     NS_NAMED_LITERAL_STRING(nullstr, "(null)");
+ 
+-    return fill2(ss, s ? s : nullstr.get(), slen, width, flags);
++    return fill2(ss, s ? s : MOZ_UTF16("(null)"), slen, width, flags);
+ }
+ 
+ /*
+diff --git a/xpcom/glue/nsVersionComparator.h b/xpcom/glue/nsVersionComparator.h
+--- a/xpcom/glue/nsVersionComparator.h
++++ b/xpcom/glue/nsVersionComparator.h
+@@ -100,7 +100,7 @@
+ {
+   VersionW(const char16_t *versionStringW)
+   {
+-    versionContentW = wcsdup(versionStringW);
++    versionContentW = reinterpret_cast<char16_t*>(wcsdup(char16ptr_t(versionStringW)));
+   }
+ 
+   const char16_t* ReadContentW() const
+diff --git a/xpcom/io/nsLocalFileWin.cpp b/xpcom/io/nsLocalFileWin.cpp
+--- a/xpcom/io/nsLocalFileWin.cpp
++++ b/xpcom/io/nsLocalFileWin.cpp
+@@ -1021,7 +1021,7 @@
+     if (mResolvedPath.Length() != MAX_PATH)
+         return NS_ERROR_OUT_OF_MEMORY;
+ 
+-    char16_t *resolvedPath = mResolvedPath.BeginWriting();
++    wchar_t *resolvedPath = wwc(mResolvedPath.BeginWriting());
+ 
+     // resolve this shortcut
+     nsresult rv = gResolver->Resolve(mWorkingPath.get(), resolvedPath);
+@@ -1256,7 +1256,7 @@
+     // Skip the first 'X:\' for the first form, and skip the first full
+     // '\\machine\volume\' segment for the second form.
+ 
+-    char16_t* path = mResolvedPath.BeginWriting();
++    wchar_t* path = wwc(mResolvedPath.BeginWriting());
+ 
+     if (path[0] == L'\\' && path[1] == L'\\')
+     {
+@@ -3446,7 +3446,7 @@
+     /* The string is null terminated */
+     if (!mDrives.SetLength(length+1, fallible_t()))
+         return NS_ERROR_OUT_OF_MEMORY;
+-    if (!GetLogicalDriveStringsW(length, mDrives.BeginWriting()))
++    if (!GetLogicalDriveStringsW(length, wwc(mDrives.BeginWriting())))
+         return NS_ERROR_FAILURE;
+     mDrives.BeginReading(mStartOfCurrentDrive);
+     mDrives.EndReading(mEndOfDrivesString);
+diff --git a/xpcom/io/nsNativeCharsetUtils.cpp b/xpcom/io/nsNativeCharsetUtils.cpp
+--- a/xpcom/io/nsNativeCharsetUtils.cpp
++++ b/xpcom/io/nsNativeCharsetUtils.cpp
+@@ -901,7 +901,7 @@
+ 
+         char16_t *result = out_iter.get();
+ 
+-        ::MultiByteToWideChar(CP_ACP, 0, buf, inputLen, result, resultLen);
++        ::MultiByteToWideChar(CP_ACP, 0, buf, inputLen, reinterpret_cast<wchar_t*>(result), resultLen);
+     }
+     return NS_OK;
+ }
+@@ -947,7 +947,7 @@
+ int32_t 
+ NS_ConvertAtoW(const char *aStrInA, int aBufferSize, char16_t *aStrOutW)
+ {
+-    return MultiByteToWideChar(CP_ACP, 0, aStrInA, -1, aStrOutW, aBufferSize);
++    return MultiByteToWideChar(CP_ACP, 0, aStrInA, -1, reinterpret_cast<wchar_t*>(aStrOutW), aBufferSize);
+ }
+ 
+ int32_t 
+diff --git a/xpcom/string/public/nsString.h b/xpcom/string/public/nsString.h
+--- a/xpcom/string/public/nsString.h
++++ b/xpcom/string/public/nsString.h
+@@ -183,6 +183,30 @@
+   };
+ 
+ 
++#ifdef MOZ_USE_CHAR16_WRAPPER
++
++inline char16_t*
++wwc(wchar_t *str)
++{
++    return reinterpret_cast<char16_t*>(str);
++}
++
++inline wchar_t*
++wwc(char16_t *str)
++{
++    return reinterpret_cast<wchar_t*>(str);
++}
++
++#else
++
++inline char16_t*
++wwc(char16_t *str)
++{
++    return str;
++}
++
++#endif
++
+ // the following are included/declared for backwards compatibility
+ typedef nsAutoString nsVoidableString;
+ 
+diff --git a/xulrunner/moz.build b/xulrunner/moz.build
+--- a/xulrunner/moz.build
++++ b/xulrunner/moz.build
+@@ -9,7 +9,6 @@
+ PARALLEL_DIRS += [
+     'app',
+     'stub',
+-    'examples',
+ ]
+ 
+ if CONFIG['MAKENSISU']:
